@@ -143,14 +143,6 @@ class SiteController extends Controller
         
     }
 
-    /**
-     * phpinfo action.
-     */
-    public function actionPhpinfo()
-    {
-        return $this->render('phpinfo');
-    }
-
     
     /**
      * Login action.

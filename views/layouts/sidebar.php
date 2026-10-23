@@ -17,7 +17,6 @@ $items = [
             ['label' => 'Developer', 'header' => true, 'visible' => User::isAdministrator()],
             ['label' => 'Debug', 'icon' => 'bug', 'url' => ['/debug'], 'target' => '_blank', 'visible' => User::isAdministrator()],
             ['label' => 'Gii',  'icon' => 'file-code', 'url' => ['/gii'], 'target' => '_blank', 'visible' => User::isAdministrator()],
-            ['label' => 'PHPInfo', 'iconStyle' => 'fab', 'icon' => 'php', 'url' => ['/site/phpinfo'], 'target' => '_blank', 'visible' => User::isAdministrator()],
         ];
 ?>
 <aside class="navbar navbar-vertical navbar-expand-lg d-print-none" aria-label="<?= Html::encode(Yii::t('app', 'Main navigation')) ?>">
