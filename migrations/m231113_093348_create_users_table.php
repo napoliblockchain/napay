@@ -9,6 +9,13 @@ class m231113_093348_create_users_table extends Migration
 {
     public function safeUp()
     {
+        // Earlier v2 releases recorded this migration under a different name.
+        // Recognize only that verified schema; never recreate restored users.
+        if ($this->db->schema->getTableSchema('{{%users}}', true) !== null) {
+            \app\components\db\V2UsersSchema::assertHistoricalAlias($this->db);
+            return;
+        }
+
         $tableOptions = null;
         if ($this->db->driverName === 'mysql') {
             $tableOptions = 'CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci ENGINE=InnoDB';
