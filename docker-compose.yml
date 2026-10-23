@@ -6,11 +6,97 @@ services:
       dockerfile: docker/Dockerfile
     env_file:
       - ${NAPAY_ENV_FILE:-.env}
+    restart: unless-stopped
+    entrypoint: ["sh", "/var/www/html/docker/web-entrypoint.sh"]
+    command: ["apache2-foreground"]
     ports:
       - "127.0.0.1:${NAPAY_HTTP_PORT:-18120}:80"
     volumes:
       - .:/var/www/html
-    container_name: napay_backoffice
-    network_mode: "bridge"
-    extra_hosts:
-      - "host.docker.internal:host-gateway"
+    depends_on:
+      mysql:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    healthcheck:
+      test: ["CMD-SHELL", "php /var/www/html/docker/bootstrap-check.php && curl --fail --silent --output /dev/null http://127.0.0.1/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    networks:
+      - default
+      - database
+
+  bootstrap:
+    image: napay/bootstrap:dev
+    user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"
+    build:
+      context: .
+      dockerfile: docker/Dockerfile.bootstrap
+    working_dir: /app
+    command: ["php", "docker/bootstrap.php"]
+    restart: "no"
+    read_only: true
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    tmpfs:
+      - /tmp
+    env_file:
+      - ${NAPAY_ENV_FILE:-.env}
+    environment:
+      NAPAY_CONSOLE_RUNTIME_PATH: /tmp/napay-runtime
+    volumes:
+      - .:/app:ro
+      - mysql_socket:/run/napay-mysql:ro
+      - type: bind
+        source: ${NAPAY_IMPORT_DIR:?Set reviewed v2 import directory outside repository}
+        target: /import
+        read_only: true
+        bind:
+          create_host_path: false
+    depends_on:
+      mysql:
+        condition: service_healthy
+    networks:
+      - database
+
+  mysql:
+    image: mysql:8.4
+    command: ["--event-scheduler=OFF"]
+    restart: unless-stopped
+    environment:
+      MYSQL_DATABASE: ${DB_DATABASE:-napay}
+      MYSQL_USER: ${DB_USERNAME:?Set DB_USERNAME}
+      MYSQL_PASSWORD: ${DB_PASSWORD:?Set DB_PASSWORD}
+      MYSQL_ROOT_PASSWORD_FILE: /run/secrets/mysql_root_password
+    secrets:
+      - mysql_root_password
+    volumes:
+      - mysql_data:/var/lib/mysql
+      - mysql_socket:/var/run/mysqld
+      - ./docker/mysql-tools.sh:/opt/napay/mysql-tools.sh:ro
+    networks:
+      - database
+    healthcheck:
+      test: ["CMD", "sh", "/opt/napay/mysql-tools.sh", "health"]
+      interval: 10s
+      timeout: 5s
+      retries: ${NAPAY_MYSQL_HEALTH_RETRIES:-30}
+      start_period: ${NAPAY_MYSQL_START_PERIOD:-60s}
+
+networks:
+  database:
+    internal: true
+
+volumes:
+  mysql_socket:
+  mysql_data:
+    external: true
+    name: ${NAPAY_MYSQL_VOLUME:-napay_mysql_data}
+
+secrets:
+  mysql_root_password:
+    file: ${NAPAY_MYSQL_ROOT_SECRET_FILE:?Set absolute root secret path outside repository}

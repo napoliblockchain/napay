@@ -33,3 +33,10 @@ web/sw.js
 /config/secrets.php
 .env.*
 !.env.example
+
+# Database exports must never enter Git or the application document root.
+/backups/
+*.sql
+*.sql.gz
+*.sql.partial
+*.sql.gz.partial
