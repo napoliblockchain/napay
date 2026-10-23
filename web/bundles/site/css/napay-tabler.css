@@ -1,0 +1,64 @@
+/* Application-only compatibility layer. Login and exports retain their own assets. */
+.napay-app {
+    min-width: 0;
+    background: linear-gradient(145deg, rgba(var(--tblr-primary-rgb), .035), transparent 45%), var(--tblr-body-bg);
+}
+.napay-app .page-wrapper, .napay-app .container-fluid, .napay-app .page-body { min-width: 0; }
+.napay-app .napay-topbar { background: var(--tblr-bg-surface); }
+.napay-app .navbar-brand-image { height: 2rem; width: auto; }
+.napay-app .navbar-vertical .navbar-brand { width: 100%; }
+.napay-app .navbar-vertical .nav-link-title { white-space: normal; }
+.napay-app .navbar-vertical .nav-link[aria-current="page"] { color: var(--tblr-primary); font-weight: 600; }
+.napay-app .form-group { margin-bottom: 1rem; }
+.napay-app .help-block, .napay-app .invalid-feedback { color: var(--tblr-danger); font-size: .875rem; }
+.napay-app .hint-block { display: block; margin-top: .25rem; color: var(--tblr-secondary); }
+.napay-app .error-summary { color: var(--tblr-danger); border-inline-start: 3px solid currentColor; padding: .75rem; }
+.napay-app .grid-view { max-width: 100%; overflow-x: auto; }
+.napay-app .grid-view th { white-space: nowrap; }
+.napay-app .single-line { max-width: 25rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.napay-app .not-set { color: var(--tblr-danger); font-style: italic; }
+.napay-app a.asc::after, .napay-app a.desc::after { margin-inline-start: .3rem; font-size: .75em; }
+.napay-app a.asc::after { content: "\25b2"; }
+.napay-app a.desc::after { content: "\25bc"; }
+.napay-app :focus-visible { outline: 2px solid var(--tblr-primary); outline-offset: 3px; }
+@media (min-width: 992px) {
+    html[data-napay-sidebar="folded"] { --tblr-sidebar-width: 4.5rem; }
+    html[data-napay-sidebar="folded"] .napay-app .navbar-vertical .nav-link { justify-content: center; }
+    html[data-napay-sidebar="folded"] .napay-app .nav-link-title,
+    html[data-napay-sidebar="folded"] .napay-brand-text,
+    html[data-napay-sidebar="folded"] .napay-profile-name {
+        position: absolute; width: 1px; height: 1px; overflow: hidden;
+        clip-path: inset(50%); white-space: nowrap;
+    }
+    html[data-napay-sidebar="folded"] .napay-app .navbar-vertical .navbar-brand { justify-content: center !important; }
+}
+@media print {
+    .napay-app { background: #fff; }
+    .napay-app .page-wrapper { margin: 0 !important; }
+}
+.napay-app .napay-topbar .nav-link, .napay-app .napay-topbar .btn-ghost-secondary { color: var(--tblr-body-color); }
+@media (min-width: 992px) {
+    html[data-napay-sidebar="folded"] .napay-menu-heading::after {
+        content: ""; width: 1rem; border-top: 1px solid var(--tblr-border-color); margin-block: .5rem;
+    }
+}
+/* Krajee ships fixed light colors; use semantic theme values without changing widget behavior. */
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-selection,
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-dropdown,
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-search__field {
+    background-color: var(--tblr-bg-surface); color: var(--tblr-body-color); border-color: var(--tblr-border-color);
+}
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-selection__rendered,
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-results__option[aria-selected] {
+    background-color: var(--tblr-bg-surface); color: var(--tblr-body-color);
+}
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-results__option--highlighted[aria-selected],
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-results__option[aria-selected="true"] {
+    background-color: var(--tblr-primary); color: #fff;
+}
+html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-selection__arrow {
+    background-color: transparent;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 16 16'%3E%3Cpath fill='none' stroke='%23d9d9d9' stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M2 5l6 6 6-6'/%3E%3C/svg%3E");
+}
+html[data-bs-theme="dark"] .napay-app .datepicker-dropdown { background-color: var(--tblr-bg-surface); color: var(--tblr-body-color); }
+html[data-bs-theme="dark"] .napay-app .datepicker table tr td.day:hover { background-color: var(--tblr-bg-surface-secondary); }

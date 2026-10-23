@@ -18,16 +18,11 @@ $config = [
             'defaultTimeZone' => $params['defaultTimeZone'],
         ],
         'view' => [
-            'theme' => [
-                'pathMap' => [
-                    // '@app/views' => '@vendor/hail812/yii2-adminlte3/src/views'
-                    '@app/views' => '@app/themes/adminlte'
-                ],
-            ],
+            'on beforeRender' => [\app\components\theme\NapayTheme::class, 'onBeforeRender'],
         ],
         'request' => [
             // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
-            'cookieValidationKey' => $secrets['cookieValidationKey'],
+            'cookieValidationKey' => env_required('COOKIE_VALIDATION_KEY'),
         ],
         'cache' => [
             'class' => 'yii\caching\FileCache',

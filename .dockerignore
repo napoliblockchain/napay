@@ -1,0 +1,9 @@
+.git
+.env
+.env.*
+**/secrets.php
+**/.env
+**/.env.*
+node_modules
+runtime
+!**/.env.example

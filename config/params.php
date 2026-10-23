@@ -1,23 +1,23 @@
 <?php
 
-$secrets = require __DIR__ . '/secrets.php';
+require_once __DIR__ . '/env.php';
 $version = require __DIR__ . '/version.php';
 
 return [
     /**
      * mailer 
      */
-    'adminName' => $secrets['adminName'],
-    'adminPhone' => $secrets['adminPhone'],
-    'adminEmail' => $secrets['adminEmail'],
-    'website' => $secrets['website'],
+    'adminName' => env('ADMIN_NAME', 'Napay'),
+    'adminPhone' => env('ADMIN_PHONE', ''),
+    'adminEmail' => env_required('ADMIN_EMAIL'),
+    'website' => env('APP_WEBSITE', ''),
 
     /**
      * app settings
      */
     'bsVersion' => '5.x', // this will set globally `bsVersion` to Bootstrap 5.x for all Krajee Extensions
-    'defaultTimeZone' => $secrets['defaultTimeZone'],
-    'localTimeZone' => $secrets['localTimeZone'],
+    'defaultTimeZone' => env('DEFAULT_TIME_ZONE', 'UTC'),
+    'localTimeZone' => env('LOCAL_TIME_ZONE', 'Europe/Rome'),
 
     'logoApplicazione' => '@web/bundles/site/images/logo.png',
     'icon-framework' => 'fa',  // Font Awesome Icon framework
@@ -26,8 +26,8 @@ return [
     /**
      * Parametrizzazione società 
      */
-    'webapp_society' => $secrets['webapp_society'],
-    'webapp_link' => $secrets['webapp_link'],
+    'webapp_society' => env('WEBAPP_SOCIETY', 'Napay'),
+    'webapp_link' => env('WEBAPP_LINK', ''),
 
     /**
      * Set the password reset token expiration time.
@@ -45,7 +45,7 @@ return [
      * Set the secret for encrypt/decrypt
      * generated from: https://randomkeygen.com/
      */
-    'secret_hash_key' => $secrets['secret_hash_key'],
+    'secret_hash_key' => env_required('SECRET_HASH_KEY'),
 
 
     /**

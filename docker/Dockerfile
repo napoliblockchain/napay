@@ -52,15 +52,5 @@ RUN . "$NVM_DIR/nvm.sh" && nvm use v${NODE_VERSION}
 RUN . "$NVM_DIR/nvm.sh" && nvm alias default v${NODE_VERSION}
 ENV PATH="/root/.nvm/versions/node/v${NODE_VERSION}/bin/:${PATH}"
 
-# from compose args
-ARG MYSQL_HOST
-ARG MYSQL_DBNAME
-ARG MYSQL_USER
-ARG MYSQL_PASSWORD
-
-# environment variables
+# Application credentials are supplied at runtime, never as build arguments.
 ENV DOCKERCONTAINER=true
-ENV MYSQL_HOST=$MYSQL_HOST
-ENV MYSQL_DBNAME=$MYSQL_DBNAME
-ENV MYSQL_USER=$MYSQL_USER
-ENV MYSQL_PASSWORD=$MYSQL_PASSWORD

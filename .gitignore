@@ -28,3 +28,8 @@ web/sw.js
 .env
 .stignore
 .vscode/
+
+# Local application configuration
+/config/secrets.php
+.env.*
+!.env.example

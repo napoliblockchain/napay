@@ -2,34 +2,25 @@
 
 use yii\helpers\Html;
 use yii\helpers\Url;
-
 ?>
-<!-- Navbar -->
-<nav class="main-header navbar navbar-expand navbar-dark">
-    <!-- Left navbar links -->
-    <ul class="navbar-nav">
-        <li class="nav-item">
-            <a class="nav-link" data-widget="pushmenu" href="#" role="button"><i class="fas fa-bars"></i></a>
-        </li>
-        <li class="nav-item d-none d-sm-inline-block">
-            <a href="<?= Url::to(['site/index'], true) ?>" class="nav-link">Home</a>
-        </li>
-    </ul>
-
-
-    <!-- Right navbar links -->
-    <ul class="navbar-nav ml-auto">
-        <!-- fullscreen button -->
-        <!-- <li class="nav-item">
-            <a class="nav-link" data-widget="fullscreen" href="#" role="button">
-                <i class="fas fa-expand-arrows-alt"></i>
-            </a>
-        </li> -->
-
-        <li class="nav-item">
-            <?= Html::a('<i class="fas fa-sign-out-alt"></i>', ['/site/logout'], ['data-method' => 'post', 'class' => 'nav-link']) ?>
-        </li>
-
-    </ul>
-</nav>
-<!-- /.navbar -->
+<header class="navbar d-print-none napay-topbar">
+    <div class="container-fluid gap-2">
+        <button class="btn btn-icon btn-ghost-secondary d-none d-lg-inline-flex" type="button"
+                data-napay-sidebar-toggle aria-label="<?= Html::encode(Yii::t('app', 'Toggle navigation')) ?>" aria-pressed="false">
+            <i class="fas fa-bars" aria-hidden="true"></i>
+        </button>
+        <a class="nav-link px-2" href="<?= Url::to(['site/index'], true) ?>">Home</a>
+        <div class="navbar-nav flex-row ms-auto gap-2">
+            <button type="button" class="btn btn-icon btn-ghost-secondary" data-napay-theme-toggle
+                    data-label-light="<?= Html::encode(Yii::t('app', 'Use light theme')) ?>"
+                    data-label-dark="<?= Html::encode(Yii::t('app', 'Use dark theme')) ?>"
+                    aria-label="<?= Html::encode(Yii::t('app', 'Use dark theme')) ?>" aria-pressed="false">
+                <i class="fas fa-moon" data-napay-theme-icon aria-hidden="true"></i>
+            </button>
+            <?= Html::a('<i class="fas fa-sign-out-alt" aria-hidden="true"></i>', ['/site/logout'], [
+                'data-method' => 'post', 'class' => 'btn btn-icon btn-ghost-secondary',
+                'aria-label' => Yii::t('app', 'Logout'), 'title' => Yii::t('app', 'Logout'),
+            ]) ?>
+        </div>
+    </div>
+</header>

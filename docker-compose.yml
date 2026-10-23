@@ -1,21 +1,16 @@
-version: "3"
 services:
   web:
+    image: napay/napay:dev
     build:
       context: .
       dockerfile: docker/Dockerfile
-      args:
-        MYSQL_HOST: "${MYSQL_HOST}"
-        MYSQL_DBNAME: "${MYSQL_DBNAME}"
-        MYSQL_USER: "${MYSQL_USER}"
-        MYSQL_PASSWORD: "${MYSQL_PASSWORD}"
+    env_file:
+      - ${NAPAY_ENV_FILE:-.env}
     ports:
-      - "80:80"
-      - "443:443"
+      - "127.0.0.1:${NAPAY_HTTP_PORT:-18120}:80"
     volumes:
       - .:/var/www/html
     container_name: napay_backoffice
     network_mode: "bridge"
     extra_hosts:
       - "host.docker.internal:host-gateway"
-

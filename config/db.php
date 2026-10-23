@@ -1,11 +1,11 @@
 <?php
-$secrets = require __DIR__ . '/secrets.php';
+require_once __DIR__ . '/env.php';
 
 return [
     'class' => 'yii\db\Connection',
-    'dsn' => $secrets['db_dsn'],
-    'username' => $secrets['db_username'],
-    'password' => $secrets['db_password'],
+    'dsn' => env_required('DB_DSN'),
+    'username' => env_required('DB_USERNAME'),
+    'password' => env_required('DB_PASSWORD'),
     'charset' => 'utf8',
 
     // Schema cache options (for production environment)

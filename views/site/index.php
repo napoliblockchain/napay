@@ -17,22 +17,22 @@ $this->params['breadcrumbs'][] = $this->title;
 <div class="body-content">
     <div class="row mt-2">
         <div class="col-lg-12 col-12">
-            <div class="row mx-1">
+            <div class="row g-3">
                 <?php if (User::can(40)) : ?>
                     <div class="col-lg-3 col-md-12">
-                        <a href="<?= Url::to(['merchants/index']) ?>" class="small-box-footer">
-                            <div class="info-box">
-                                <span class="info-box-icon bg-info elevation-1">
+                        <a href="<?= Url::to(['merchants/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
+                            <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
+                                <span class="avatar bg-info text-white">
                                     <div class="icon">
                                         <?= Icon::show('store') ?>
                                     </div>
                                 </span>
 
-                                <div class="info-box-content">
-                                    <span class="info-box-text">
+                                <div class="flex-fill">
+                                    <span class="text-secondary">
                                         <?= Yii::t('app', 'Totale Esercenti') ?>
                                     </span>
-                                    <span class="info-box-number">
+                                    <span class="d-block fw-semibold">
                                         <!-- <small>%</small> -->
                                     </span>
                                 </div>
@@ -44,19 +44,19 @@ $this->params['breadcrumbs'][] = $this->title;
                 <?php endif; ?>
                 <?php if (User::can(30)) : ?>
                     <div class="col-lg-3 col-md-12">
-                        <a href="<?= Url::to(['stores/index']) ?>" class="small-box-footer">
-                            <div class="info-box">
-                                <span class="info-box-icon bg-success elevation-1">
+                        <a href="<?= Url::to(['stores/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
+                            <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
+                                <span class="avatar bg-success text-white">
                                     <div class="icon">
                                         <?= Icon::show('shopping-cart') ?>
                                     </div>
                                 </span>
 
-                                <div class="info-box-content">
-                                    <span class="info-box-text">
+                                <div class="flex-fill">
+                                    <span class="text-secondary">
                                         <?= Yii::t('app', 'Totale Negozi') ?>
                                     </span>
-                                    <span class="info-box-number">
+                                    <span class="d-block fw-semibold">
                                         <!-- <small>%</small> -->
                                     </span>
                                 </div>
@@ -67,19 +67,19 @@ $this->params['breadcrumbs'][] = $this->title;
                     </div>
                 <?php endif; ?>
                 <div class="col-lg-3 col-md-12">
-                    <a href="<?= Url::to(['pos/index']) ?>" class="small-box-footer">
-                        <div class="info-box">
-                            <span class="info-box-icon bg-primary elevation-1">
+                    <a href="<?= Url::to(['pos/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
+                        <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
+                            <span class="avatar bg-primary text-white">
                                 <div class="icon">
                                     <?= Icon::show('mobile-alt') ?>
                                 </div>
                             </span>
 
-                            <div class="info-box-content">
-                                <span class="info-box-text">
+                            <div class="flex-fill">
+                                <span class="text-secondary">
                                     <?= Yii::t('app', 'Totale Pos') ?>
                                 </span>
-                                <span class="info-box-number">
+                                <span class="d-block fw-semibold">
                                     <!-- <small>%</small> -->
                                 </span>
                             </div>
@@ -90,19 +90,19 @@ $this->params['breadcrumbs'][] = $this->title;
                 </div>
 
                 <div class="col-lg-3 col-md-12">
-                    <a href="<?= Url::to(['invoices/index']) ?>" class="small-box-footer">
-                        <div class="info-box">
-                            <span class="info-box-icon bg-warning elevation-1">
+                    <a href="<?= Url::to(['invoices/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
+                        <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
+                            <span class="avatar bg-warning text-white">
                                 <div class="icon">
                                     <?= Icon::show('file-invoice') ?>
                                 </div>
                             </span>
 
-                            <div class="info-box-content">
-                                <span class="info-box-text">
+                            <div class="flex-fill">
+                                <span class="text-secondary">
                                     <?= Yii::t('app', 'Totale Transazioni') ?>
                                 </span>
-                                <span class="info-box-number">
+                                <span class="d-block fw-semibold">
                                     <!-- <small>%</small> -->
                                 </span>
                             </div>

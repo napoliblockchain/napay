@@ -275,4 +275,9 @@ return [
     'Website' => '',
     'create webhook' => '',
     'redirezione automaticamente' => '',
+    'Use light theme' => 'Usa tema chiaro',
+    'Use dark theme' => 'Usa tema scuro',
+    'Toggle navigation' => 'Apri o riduci navigazione',
+    'Main navigation' => 'Navigazione principale',
+    'Logout' => 'Esci',
 ];
