@@ -15,8 +15,8 @@
 # │   └── ...
 #
 ###################################################################
-# default VARIANT 8.2 if not provided at build time
-ARG VARIANT=8.2
+# default VARIANT 8.3.36 if not provided at build time
+ARG VARIANT=8.3.36
 FROM php:${VARIANT}-apache
 
 RUN apt-get update && apt-get install -y \
