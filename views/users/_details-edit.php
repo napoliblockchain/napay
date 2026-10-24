@@ -37,6 +37,7 @@ $icon = [0 => 'icon fas fa-exclamation-triangle', 1 => 'icon fas fa-check'];
 ?>
 <?php $form = ActiveForm::begin([
     'id' => 'users-form',
+    'action' => ['update', 'id' => Crypt::encrypt($model->id)],
 ]); ?>
 <div class="col-xl-12">
 
@@ -98,11 +99,10 @@ $icon = [0 => 'icon fas fa-exclamation-triangle', 1 => 'icon fas fa-check'];
                         <div class="col-lg-12 col-sm-12">
                             <p class="ml-auto">
                                 <?php if (User::isAdministrator() && $model->id != Yii::$app->user->id && Yii::$app->user->identity->privilege->level >= $model->privilege->level) : ?>
-                                    <?= Html::a('<i class="fas fa-save"></i> ' . Yii::t('app', 'Confirm'), ['update', 'id' => Crypt::encrypt($model->id)], [
+                                    <?= Html::submitButton('<i class="fas fa-save"></i> ' . Yii::t('app', 'Confirm'), [
                                         'class' => 'btn btn-primary',
                                         'data' => [
                                             'confirm' => Yii::t('app', 'Are you sure you want to update user'),
-                                            'method' => 'post',
                                         ],
                                     ]) ?>
                                 <?php endif; ?>

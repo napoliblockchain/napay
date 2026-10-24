@@ -5,10 +5,16 @@ namespace app\controllers;
 use Yii;
 use app\models\Users;
 use app\models\Merchants;
+use app\models\Privileges;
 use app\models\search\UsersSearch;
 
 use yii\web\Controller;
 use yii\web\NotFoundHttpException;
+use yii\web\BadRequestHttpException;
+use yii\web\ForbiddenHttpException;
+use yii\web\ServerErrorHttpException;
+use yii\web\Cookie;
+use yii\web\Response;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
 use yii\helpers\ArrayHelper;
@@ -20,6 +26,7 @@ use app\components\Log;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
+use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use yii\helpers\Json;
 
 
@@ -37,9 +44,13 @@ class UsersController extends Controller
             'verbs' => [
                 'class' => VerbFilter::class,
                 'actions' => [
-                    'delete' => ['POST'],
-                    // 'subscribe' => ['POST'],
-                    // 'activate' => ['post'],
+                    'view' => ['GET'],
+                    'index' => ['GET'],
+                    'update' => ['POST'],
+                    'enable' => ['POST'],
+                    'disable' => ['POST'],
+                    'export' => ['POST'],
+                    'change-collapsed' => ['POST'],
                 ],
             ],
             'access' => [
@@ -47,30 +58,12 @@ class UsersController extends Controller
                 'rules' => [
                     [
                         'actions' => [
-                            // 'index',
                             'view',
                             'change-collapsed',
-
-                            // 'update',
-                            // 'activate',
-                            
                         ],
                         'allow' => true,
-                        'roles' => ['@'] 
+                        'roles' => ['@'],
                     ],
-                   
-                ]
-            ],
-            'access' => [
-                'class' => AccessControl::class,
-                'only' => [
-                    'index',
-                    'update',
-                    'disable',
-                    'enable',
-                    'export',
-                ],
-                'rules' => [
                     [
                         'actions' => [
                             'index',
@@ -96,11 +89,15 @@ class UsersController extends Controller
      */
     public function actionChangeCollapsed()
     {
-        if (isset($_COOKIE['collapsed'])) {
-            setcookie('collapsed', "");
+        if (Yii::$app->request->cookies->has('collapsed')) {
+            Yii::$app->response->cookies->remove('collapsed');
         } else {
-            setcookie('collapsed', \yii\helpers\Json::encode([
-                'body' => 'sidebar-collapse',
+            Yii::$app->response->cookies->add(new Cookie([
+                'name' => 'collapsed',
+                'value' => Json::encode(['body' => 'sidebar-collapse']),
+                'httpOnly' => true,
+                'sameSite' => Cookie::SAME_SITE_LAX,
+                'secure' => Yii::$app->request->isSecureConnection,
             ]));
         }
         return true;
@@ -111,22 +108,26 @@ class UsersController extends Controller
      */
     public function actionExport()
     {
-        $queryParams = Json::decode($_POST['queryParams']);
+        $raw = Yii::$app->request->post('queryParams');
+        if (!is_string($raw) || strlen($raw) > 65536) {
+            throw new BadRequestHttpException('Invalid export filters.');
+        }
+        try {
+            $queryParams = Json::decode($raw);
+        } catch (\yii\base\InvalidArgumentException $error) {
+            throw new BadRequestHttpException('Invalid export filters.');
+        }
+        if (!is_array($queryParams)) {
+            throw new BadRequestHttpException('Invalid export filters.');
+        }
 
         $searchModel = new UsersSearch();
         $dataProvider = $searchModel->search($queryParams);
         $dataProvider->sort->defaultOrder = ['last_name' => SORT_ASC];
         $dataProvider->pagination->pageSize = false;
-        
-        if (User::isAdministrator()) {
-            $allModels = $dataProvider->getModels();
-            foreach ($allModels as $id => $model) {
-                if ($model->privilege->level > User::privilegeLevel()) {
-                    unset($allModels[$id]);
-                }
-            }
-            $dataProvider->setModels($allModels);
-        }
+        // Scope the query before counts/pagination/export, for every manager level.
+        $dataProvider->query->andWhere(['privilege_id' => Privileges::find()
+            ->select('id')->where(['<=', 'level', User::privilegeLevel()])]);
         $allModels = $dataProvider->getModels();
 
         // inizializzo la classe Excel
@@ -175,7 +176,8 @@ class UsersController extends Controller
 
                     $writeText = $model->$submodel->$field ?? '';
                 }
-                $sheet->setCellValue($this->getCellFromColnum($col) . $row, trim($writeText ?? ''), null);
+                // User-controlled text must never become an Excel formula.
+                $sheet->setCellValueExplicit($this->getCellFromColnum($col) . $row, trim((string) ($writeText ?? '')), DataType::TYPE_STRING);
                 $col++;
             }
             $row++;
@@ -183,17 +185,22 @@ class UsersController extends Controller
 
         // output the file
         $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
-        $date = date('Y/m/d H:i:s', time());
+        $date = date('Y-m-d_H-i-s');
         $filename = $date . '-users.xlsx';
         $response = Yii::$app->getResponse();
+        $response->format = Response::FORMAT_RAW;
         $headers = $response->getHeaders();
-        $headers->set('Content-Type', 'application/vnd.ms-excel');
+        $headers->set('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         $headers->set('Content-Disposition', 'attachment;filename="' . $filename . '"');
-        $headers->set('Cache-Control: max-age=0');
+        $headers->set('Cache-Control', 'no-store');
         ob_start();
-        $writer->save("php://output");
-        $content = ob_get_contents();
-        ob_clean();
+        try {
+            $writer->save('php://output');
+            $content = ob_get_contents();
+        } finally {
+            ob_end_clean();
+            $spreadsheet->disconnectWorksheets();
+        }
         return $content;
     }
 
@@ -214,15 +221,8 @@ class UsersController extends Controller
             $searchModel = new UsersSearch();
             $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
             $dataProvider->sort->defaultOrder = ['last_name' => SORT_ASC];
-            if (User::isAdministrator()){
-                $allModels = $dataProvider->getModels();
-                foreach ($allModels as $id => $model) {
-                    if ($model->privilege->level > User::privilegeLevel()) {
-                        unset($allModels[$id]);
-                    }
-                }
-                $dataProvider->setModels($allModels);            
-            }
+            $dataProvider->query->andWhere(['privilege_id' => Privileges::find()
+                ->select('id')->where(['<=', 'level', User::privilegeLevel()])]);
 
             return $this->render('index', [
                 'searchModel' => $searchModel,
@@ -242,11 +242,13 @@ class UsersController extends Controller
      */
     public function actionView($id)
     {
-        $merchants_list = ArrayHelper::map(Merchants::find()->all(), 'id', 'description');
+        $model = $this->findModel($id);
+        $merchants_list = User::can(40)
+            ? ArrayHelper::map(Merchants::find()->all(), 'id', 'description') : [];
         asort($merchants_list);
 
         return $this->render('view', [
-            'model' => $this->findModel(Crypt::decrypt($id)),
+            'model' => $model,
             'merchants_list' => $merchants_list,
         ]);
     }
@@ -260,29 +262,14 @@ class UsersController extends Controller
      */
     public function actionUpdate($id)
     {
-        $model = $this->findModel(Crypt::decrypt($id));
-
-        // echo "<pre>" . print_r($model->attributes, true) . "</pre>";
-        // echo "<pre>" . print_r($_POST, true) . "</pre>";
-        // exit;
-
-        if ($model->load(Yii::$app->request->post()) && $model->save()) {
-            // echo "<pre>" . print_r($model->attributes, true) . "</pre>";
-            // exit;
-            // Log message
-            $message_log = Yii::t('app', 'User {user} has updated {item}: {itemname}', [
-                'user' => Yii::$app->user->identity->username,
-                'item' => Yii::$app->controller->id,
-                'itemname' => $model->username
-            ]);
-            Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-            // end log message
-            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+        $model = $this->findModel($id);
+        $input = Yii::$app->request->post('Users');
+        // This form changes account status only, never credentials or privileges.
+        if (!is_array($input) || array_keys($input) !== ['is_active']
+            || !in_array($input['is_active'], ['0', '1', 0, 1], true)) {
+            throw new BadRequestHttpException('Invalid account status update.');
         }
-
-        return $this->redirect(['view', 'id' => $id]);
-
-        
+        return $this->changeStatus($model, (int) $input['is_active']);
     }
 
     /**
@@ -294,100 +281,67 @@ class UsersController extends Controller
      */
     public function actionEnable($id)
     {
-        $model = $this->findModel(Crypt::decrypt($id));
-        $userAttributes = [
-            [
-                'Name' => 'custom:Status',
-                'Value' => (string) 1,
-            ],
-        ];
-
-        // echo "<pre>".print_r($userAttributes,true)."</pre>";
-        // exit;
-
-        $cognito = new CognitoAuthenticator;
-
-        $result = $cognito->update([
-            'UserPoolId' => Yii::$app->params['aws']['userpool_id'],
-            'ClientId' => Yii::$app->params['aws']['client_id'],
-            'Username' => $model->username,
-            'UserAttributes' => $userAttributes,
-        ]);
-        // echo "<pre>".print_r($result,true)."</pre>";exit;
-        if ($result) {
-            $meta = $result->get('@metadata');
-            // echo '<pre>' . print_r($meta, true) . '</pre>';
-            if ($meta["statusCode"] == '200') {
-                // $this->sendEmailToAdmins($this->attributes);
-                $model->is_active = 1;
-                $model->save();
-                return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
-            }
-        }
-        
-        return $this->redirect(['view', 'id' => $id]);
+        return $this->changeStatus($this->findModel($id), Users::STATUS_ACTIVE);
     }
 
-    /**
-     * Activates an existing Users model.
-     * If deletion is successful, the browser will be redirected to the 'index' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
-     */
     public function actionDisable($id)
     {
-        $model = $this->findModel(Crypt::decrypt($id));
-        $userAttributes = [
-            [
-                'Name' => 'custom:Status',
-                'Value' => (string) 0,
-            ],
-        ];
-
-        // echo "<pre>".print_r($userAttributes,true)."</pre>";
-        // exit;
-
-        $cognito = new CognitoAuthenticator;
-
-        $result = $cognito->update([
-            'UserPoolId' => Yii::$app->params['aws']['userpool_id'],
-            'ClientId' => Yii::$app->params['aws']['client_id'],
-            'Username' => $model->username,
-            'UserAttributes' => $userAttributes,
-        ]);
-        // echo "<pre>".print_r($result,true)."</pre>";exit;
-        if ($result) {
-            $meta = $result->get('@metadata');
-            // echo '<pre>' . print_r($meta, true) . '</pre>';
-            if ($meta["statusCode"] == '200') {
-                // $this->sendEmailToAdmins($this->attributes);
-                $model->is_active = 0;
-                $model->save();
-                return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
-            }
-        }
-
-        return $this->redirect(['view', 'id' => $id]);
+        return $this->changeStatus($this->findModel($id), Users::STATUS_INSERTED);
     }
 
-
-
+    private function changeStatus(Users $model, int $status)
+    {
+        if ((string) $model->id === (string) Yii::$app->user->id) {
+            throw new ForbiddenHttpException("Self status changes are not allowed.");
+        }
+        $attributes = ["is_active"];
+        if ((int) $model->is_active !== $status) {
+            $model->is_active = $status;
+            if ($status !== Users::STATUS_ACTIVE) {
+                // Revoke existing sessions, remember-me cookies and API tokens.
+                $model->generateAuthKey();
+                $model->accessToken = Yii::$app->security->generateRandomString(60);
+                $attributes = array_merge($attributes, ["authKey", "accessToken"]);
+            }
+            if (!$model->save(false, $attributes)) {
+                throw new ServerErrorHttpException("Unable to update account status.");
+            }
+            Log::save($this->id, $this->action->id, "Account status changed: user ID " . $model->id . ", status " . $status);
+        }
+        return $this->redirect(["view", "id" => Crypt::encrypt($model->id)]);
+    }
 
     /**
-     * Finds the Users model based on its primary key value.
+     * Resolves a session-encrypted user ID and enforces record-level access.
      * If the model is not found, a 404 HTTP exception will be thrown.
-     * @param integer $id
+     * @param string $id encrypted identifier
      * @return Users the loaded model
      * @throws NotFoundHttpException if the model cannot be found
      */
     protected function findModel($id)
     {
-        if (($model = Users::findOne($id)) !== null) {
-            return $model;
+        if (!is_string($id) || strlen($id) > 1024 || base64_decode($id, true) === false) {
+            throw new NotFoundHttpException('The requested page does not exist.');
         }
-
-        throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        try {
+            $plain = @Crypt::decrypt($id);
+        } catch (\Throwable $error) {
+            $plain = '';
+        }
+        if (!preg_match('/^[1-9][0-9]*$/D', $plain)
+            || filter_var($plain, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 2147483647]]) === false
+            || ($model = Users::findOne((int) $plain)) === null) {
+            throw new NotFoundHttpException('The requested page does not exist.');
+        }
+        $actor = Yii::$app->user->identity;
+        $ownProfile = $actor !== null && (string) $actor->id === (string) $model->id;
+        $actorLevel = $actor->privilege->level ?? null;
+        $targetLevel = $model->privilege->level ?? null;
+        if (!$ownProfile && ($actorLevel === null || $targetLevel === null
+            || $actorLevel < 40 || $targetLevel > $actorLevel)) {
+            throw new ForbiddenHttpException('You are not allowed to access this account.');
+        }
+        return $model;
     }
 
 

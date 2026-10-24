@@ -24,7 +24,8 @@ $privilege_list = ArrayHelper::map(Privileges::find()->byLevelLessThen(Yii::$app
 
 $yesOrNot = [
     0 => Yii::t('app', 'No'),
-    1 => Yii::t('app', 'Si')
+    1 => Yii::t('app', 'Si'),
+    \app\models\Users::STATUS_BLOCKED => Yii::t('app', 'Blocked'),
 ];
 ?>
 
@@ -41,7 +42,7 @@ $yesOrNot = [
                             'action' => ['export'],
                             'method' => 'post',
                         ]); ?>
-                        <input type='hidden' name='queryParams' value='<?= $queryParams ?>' />
+                        <?= Html::hiddenInput('queryParams', $queryParams) ?>
 
                         <?= Html::submitButton('<i class="fas fa-file-excel mr-1"></i>' . Yii::t('app', 'Esporta'), [
                             'class' => 'btn btn-success',
@@ -94,7 +95,7 @@ $yesOrNot = [
                                 'attribute' => 'merchantSearch',
                                 'format' => 'raw',
                                 'value' => function ($data) {
-                                    return $data->merchants[0]->description ?? null;
+                                    return Html::encode($data->merchants[0]->description ?? '');
                                 },
                                 'filter' => false
                             ],
@@ -103,7 +104,7 @@ $yesOrNot = [
                                 'attribute' => 'privilege_id',
                                 'format' => 'raw',
                                 'value' => function ($data) {
-                                    return $data->privilege->description ?? null;
+                                    return Html::encode($data->privilege->description ?? '');
                                 },
                                 'filter' => $privilege_list,
                             ],
@@ -112,7 +113,7 @@ $yesOrNot = [
                                 'attribute' => 'is_active',
                                 'format' => 'raw',
                                 'value' => function ($data) use ($yesOrNot) {
-                                    return $yesOrNot[$data->is_active];
+                                    return $yesOrNot[$data->is_active] ?? Yii::t('app', 'Disabled');
                                 },
                                 'filter' => $yesOrNot,
                             ],

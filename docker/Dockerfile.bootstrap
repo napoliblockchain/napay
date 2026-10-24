@@ -1,8 +1,9 @@
 FROM php:8.3.36-cli
 
+COPY docker/install-php-extensions.sh /usr/local/bin/napay-install-php-extensions
+RUN sh /usr/local/bin/napay-install-php-extensions
 RUN apt-get update \
     && apt-get install -y --no-install-recommends default-mysql-client \
-    && docker-php-ext-install pdo_mysql \
     && rm -rf /var/lib/apt/lists/*
 WORKDIR /app
 CMD ["php", "docker/bootstrap.php"]

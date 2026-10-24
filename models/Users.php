@@ -158,7 +158,7 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
      */
     public function validateStatus()
     {
-        return $this->is_active;
+        return (int) $this->is_active === self::STATUS_ACTIVE;
     }
 
     /**
@@ -192,7 +192,7 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
      */
     public static function findIdentity($id)
     {
-        return self::findOne($id);
+        return self::find()->active()->andWhere(['id' => $id])->one();
     }
 
     /**
@@ -200,7 +200,7 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
      */
     public static function findIdentityByAccessToken($token, $type = null)
     {
-        return self::findOne(['accessToken' => $token]);
+        return self::find()->active()->andWhere(['accessToken' => $token])->one();
     }
 
     /**

@@ -11,8 +11,7 @@ Thumbs.db
 # runtime
 runtime/
 
-# composer lock
-composer.lock
+# composer.lock is versioned for reproducible application installs.
 
 
 tests/_output/*

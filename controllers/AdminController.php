@@ -7,6 +7,7 @@ use app\models\search\SettingsSearch;
 use app\models\search\UsersSearch;
 use app\models\search\PrivilegesSearch;
 use app\models\search\LogsSearch;
+use app\models\Privileges;
 
 use yii\web\Controller;
 use yii\filters\AccessControl;
@@ -60,6 +61,8 @@ class AdminController extends Controller
             // Users
             $searchUsers = new UsersSearch();
             $dataUsers = $searchUsers->search(Yii::$app->request->queryParams);
+            $dataUsers->query->andWhere(['privilege_id' => Privileges::find()
+                ->select('id')->where(['<=', 'level', User::privilegeLevel()])]);
             $dataUsers->pagination->pageSize = 5;
             $dataUsers->sort->defaultOrder = ['id' => SORT_DESC];
 

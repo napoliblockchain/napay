@@ -16,6 +16,8 @@ php composer.phar update
 
 ```bash
 npm install --save-dev workbox-cli@^2
+
+Run `npm install -g npm@10.5.0` to update!
 ```
 
 ```

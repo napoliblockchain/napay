@@ -1,56 +1,21 @@
+FROM composer:2.10.3 AS composer
 FROM php:8.3.36-apache
 
-RUN apt-get update && apt-get install -y \
-    git \
-    unzip \
-    curl \
-    libicu-dev \
-    libpng-dev \
-    libgmp-dev \
-    libjpeg62-turbo-dev \
-    libfreetype6-dev \
-    libzip-dev \
-    && docker-php-ext-install -j$(nproc) intl pdo_mysql gd zip bcmath gmp sockets
-
-# Install utility
-RUN apt-get install -y --no-install-recommends apt-utils
-RUN apt-get install -y net-tools iputils-ping
-RUN apt install -y htop
-RUN apt-get install -y nano
-RUN apt-get install -y certbot
-RUN apt-get install -y python3-certbot-apache
-
-RUN a2enmod rewrite
-
-# copy yii2 000-default.conf configurated file
-COPY docker/apache.conf /etc/apache2/sites-available/000-default.conf
-
-# set php cache
-RUN docker-php-ext-install opcache
-RUN { \
-    echo 'opcache.memory_consumption=128'; \
-    echo 'opcache.interned_strings_buffer=8'; \
-    echo 'opcache.max_accelerated_files=4000'; \
-    echo 'opcache.revalidate_freq=2'; \
-    echo 'opcache.fast_shutdown=1'; \
-    echo 'opcache.enable_cli=1'; \
+COPY docker/install-php-extensions.sh /usr/local/bin/napay-install-php-extensions
+RUN sh /usr/local/bin/napay-install-php-extensions \
+    && a2enmod rewrite \
+    && { \
+        echo 'opcache.memory_consumption=128'; \
+        echo 'opcache.interned_strings_buffer=8'; \
+        echo 'opcache.max_accelerated_files=10000'; \
+        echo 'opcache.revalidate_freq=2'; \
+        echo 'opcache.enable_cli=1'; \
     } > /usr/local/etc/php/conf.d/php-opcache-cfg.ini
 
+COPY --from=composer /usr/bin/composer /usr/local/bin/composer
+COPY docker/apache.conf /etc/apache2/sites-available/000-default.conf
 
-
-# Install Composer
-RUN curl -sS https://getcomposer.org/installer | php && \
-    mv composer.phar /usr/local/bin/composer && \
-    chmod +x /usr/local/bin/composer
-
-# Install nodejs
-ENV NODE_VERSION=19.6.1
-RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.39.0/install.sh | bash
-ENV NVM_DIR=/root/.nvm
-RUN . "$NVM_DIR/nvm.sh" && nvm install ${NODE_VERSION}
-RUN . "$NVM_DIR/nvm.sh" && nvm use v${NODE_VERSION}
-RUN . "$NVM_DIR/nvm.sh" && nvm alias default v${NODE_VERSION}
-ENV PATH="/root/.nvm/versions/node/v${NODE_VERSION}/bin/:${PATH}"
-
+# HTTPS belongs to Caddy; Node/Workbox is a separate asset-build concern.
 # Application credentials are supplied at runtime, never as build arguments.
 ENV DOCKERCONTAINER=true
+WORKDIR /var/www/html

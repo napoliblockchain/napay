@@ -5,7 +5,6 @@ namespace app\models\forms;
 use Yii;
 use yii\base\Model;
 use app\models\Users;
-use app\components\AuthHandler;
 
 
 /**

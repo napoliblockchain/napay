@@ -58,7 +58,8 @@ foreach (['admin' => 50, 'merchant' => 30, 'user' => 0] as $name => $role) {
     @$dom->loadHTML($html);
     $xpath = new DOMXPath($dom);
     $menuLinks = $xpath->query('//*[@id="napay-sidebar-menu"]//ul/li/a');
-    check($menuLinks->length === ($role === 50 ? 9 : ($role === 30 ? 5 : 1)), 'Original role menu items preserved for ' . $name . ': got ' . $menuLinks->length);
+    check($menuLinks->length === ($role === 50 ? 8 : ($role === 30 ? 5 : 1)), 'Role menu items preserved without removed PHPInfo for ' . $name . ': got ' . $menuLinks->length);
+    check(!str_contains($html, '/site/phpinfo'), 'Removed PHPInfo link stays unavailable for ' . $name);
     check(substr_count($html, 'card card-sm h-100') === ($role === 50 ? 4 : ($role === 30 ? 3 : 2)), 'Dashboard permissions preserved for ' . $name);
     check(substr_count($html, '/tabler/css/tabler.min.css') === 1, 'One Tabler CSS for ' . $name);
     check(substr_count($html, '/tabler/js/bootstrap.bundle.min.js') === 1, 'One Bootstrap JS for ' . $name);

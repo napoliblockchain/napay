@@ -44,8 +44,10 @@ $config = [
             'traceLevel' => YII_DEBUG ? 3 : 0,
             'targets' => [
                 [
-                    'class' => 'yii\log\FileTarget',
+                    'class' => \app\components\logging\AuthenticationFileTarget::class,
                     'levels' => ['error', 'warning'],
+                    // Request/session dumps may contain passwords, tokens or cookies.
+                    'logVars' => [],
                 ],
             ],
         ],

@@ -25,9 +25,9 @@ SidebarCollapseAsset::register($this);
                     'alt' => 'Profile',
                     'class' => "profile-user-img img-fluid img-circle",
                 ]) ?>
-                <h3 class="profile-username text-center"><?= $model->first_name . chr(32) . $model->last_name  ?></h3>
-                <p class="text-muted text-center mb-0"><?= 'Profilo: ' . $model->privilege->description ?></p>
-                <p class="text-muted text-center mt-0"><?= 'Email: ' . $model->email ?></p>
+                <h3 class="profile-username text-center"><?= Html::encode($model->first_name . ' ' . $model->last_name) ?></h3>
+                <p class="text-muted text-center mb-0"><?= Html::encode('Profilo: ' . $model->privilege->description) ?></p>
+                <p class="text-muted text-center mt-0"><?= Html::encode('Email: ' . $model->email) ?></p>
             </div>
         </div>
     </div>
