@@ -295,13 +295,15 @@ class UsersController extends Controller
             throw new ForbiddenHttpException("Self status changes are not allowed.");
         }
         $attributes = ["is_active"];
-        if ((int) $model->is_active !== $status) {
+        // Pending and disabled both use 0: explicit disable must revoke even pending links.
+        if ((int) $model->is_active !== $status || $status === Users::STATUS_INSERTED) {
             $model->is_active = $status;
             if ($status !== Users::STATUS_ACTIVE) {
                 // Revoke existing sessions, remember-me cookies and API tokens.
                 $model->generateAuthKey();
                 $model->accessToken = Yii::$app->security->generateRandomString(60);
-                $attributes = array_merge($attributes, ["authKey", "accessToken"]);
+                $model->activationCode = null;
+                $attributes = array_merge($attributes, ["authKey", "accessToken", "activationCode"]);
             }
             if (!$model->save(false, $attributes)) {
                 throw new ServerErrorHttpException("Unable to update account status.");

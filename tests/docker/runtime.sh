@@ -27,6 +27,8 @@ NAPAY_DB_WAIT_SECONDS=10
 COOKIE_VALIDATION_KEY=fixture-only-not-original
 SECRET_HASH_KEY=fixture-only-not-original
 ADMIN_EMAIL=fixture@example.invalid
+WEBAPP_LINK=https://napay.example.invalid
+MAIL_TRANSPORT=file
 ENV
 unset password
 cat > "$work/override.yml" <<YAML
@@ -59,6 +61,13 @@ compose run --rm --no-deps --entrypoint php bootstrap /app/tests/application/fix
 compose run --rm --no-deps --entrypoint php bootstrap /app/tests/application/users-access.php
 compose exec -T web php /var/www/html/tests/application/http.php
 compose exec -T web php /var/www/html/tests/application/users-state.php
+compose exec -T web php /var/www/html/tests/application/password-reset.php
+compose exec -T web php /var/www/html/tests/application/activation.php
+compose logs --no-color web | docker run --rm -i --network none --entrypoint php php:8.3.36-cli -r '
+    $log=stream_get_contents(STDIN);
+    if (str_contains($log,"token=") || str_contains($log,"sign=")) exit(1);
+    echo "PASS: Apache logs do not contain reset/activation bearer query strings.\n";
+'
 compose restart web
 compose exec -T web php /var/www/html/docker/bootstrap-check.php
 compose run --rm --no-deps bootstrap | grep -q already-complete

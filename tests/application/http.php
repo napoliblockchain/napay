@@ -33,7 +33,7 @@ function token($html): string {
 function profilePath($html, $username = null): string {
     $doc = new DOMDocument();
     @$doc->loadHTML($html, LIBXML_NONET);
-    $query = $username === null ? '//*[@id="napay-sidebar-menu"]/a/@href'
+    $query = $username === null ? '//header//a[@data-napay-profile-link]/@href'
         : '//tr[td[text()="' . $username . '"]]//a[contains(@href,"/users/view")]/@href';
     $nodes = (new DOMXPath($doc))->query($query);
     if ($nodes->length !== 1) throw new RuntimeException('Fixture profile link unavailable.');
@@ -80,6 +80,9 @@ $jar = tempnam(sys_get_temp_dir(), 'napay-http-');
 $jars = [$jar];
 try {
     check(request('/')['status'] === 302, 'Anonymous home redirects');
+    foreach (['/debug/default/index', '/gii/default/index'] as $path) {
+        check(request($path)['status'] === 404, 'Developer module unavailable to anonymous user');
+    }
     check(request('/users/index')['status'] === 302, 'Anonymous protected list redirects');
     check(request('/settings/index')['status'] === 302, 'Anonymous settings deep link redirects');
     check(request('/users/view?id=invalid')['status'] === 302, 'Anonymous profile deep link requires login');
@@ -94,6 +97,9 @@ try {
     check(login('disabled')['status'] === 200 && request('/')['status'] === 302, 'Disabled user cannot authenticate');
     check(login('blocked')['status'] === 200 && request('/')['status'] === 302, 'Blocked status 2 cannot authenticate');
     check(login('admin')['status'] === 302, 'Admin authenticates');
+    foreach (['/debug/default/index', '/gii/default/index'] as $path) {
+        check(request($path)['status'] === 404, 'Developer module unavailable to administrator');
+    }
     $dashboard = request('/');
     check($dashboard['status'] === 200 && str_contains($dashboard['body'], 'napay-app'), 'Real Tabler dashboard renders');
     $list = request('/users/index');

@@ -21,6 +21,7 @@ class ResetPasswordForm extends Model
      * @var \common\models\Users
      */
     private $_user;
+    private $_token;
 
 
     /**
@@ -39,6 +40,7 @@ class ResetPasswordForm extends Model
         if (!$this->_user) {
             throw new InvalidArgumentException('Wrong password reset token.');
         }
+        $this->_token = $token;
         parent::__construct($config);
     }
 
@@ -49,7 +51,11 @@ class ResetPasswordForm extends Model
     {
         return [
             [['password', 'repeat_password'], 'required'],
-            ['password', 'string', 'min' => Yii::$app->params['user.passwordMinLength']],
+            ['password', 'string', 'min' => Yii::$app->params['user.passwordMinLength'], 'max' => 72],
+            ['repeat_password', 'string', 'max' => 72],
+            ['password', function ($attribute) {
+                if (is_string($this->$attribute) && strlen($this->$attribute) > 72) $this->addError($attribute, 'Password exceeds 72 bytes.');
+            }],
 
             ['repeat_password', 'compare', 'compareAttribute' => 'password', 'message' => Yii::t('app',"Passwords do not match.")],
         ];
@@ -73,12 +79,18 @@ class ResetPasswordForm extends Model
      */
     public function resetPassword()
     {
+        if (!$this->validate() || !Users::isPasswordResetTokenValid($this->_token)) return false;
         $user = $this->_user;
         $user->setPassword($this->password);
         $user->removePasswordResetToken();
         $user->generateAuthKey();
-
-        return $user->save(false);
+        $user->accessToken = Yii::$app->security->generateRandomString(60);
+        // Compare-and-consume in one SQL statement: concurrent reuse cannot win.
+        return Users::updateAll([
+            'password' => $user->password, 'activationCode' => null,
+            'authKey' => $user->authKey, 'accessToken' => $user->accessToken,
+        ], ['id' => $user->id, 'is_active' => Users::STATUS_ACTIVE,
+            'activationCode' => Users::passwordResetDigest($this->_token)]) === 1;
     }
 
     /**
@@ -91,7 +103,7 @@ class ResetPasswordForm extends Model
         $user = $this->_user;
 
         // invio la mail all'utente
-        sendMail::toUser($user, 'resetPasswordUserSuccess', Yii::t('app', 'Password reset'));
+        sendMail::toUser($user, ['html' => 'resetPasswordUserSuccess', 'text' => 'resetPasswordUserSuccess-text'], Yii::t('app', 'Password reset'));
 
         // Log message
         $message_log = Yii::t('app', 'User {user} has changed the password.', [

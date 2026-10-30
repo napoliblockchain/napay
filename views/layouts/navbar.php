@@ -2,6 +2,7 @@
 
 use yii\helpers\Html;
 use yii\helpers\Url;
+use app\components\Crypt;
 ?>
 <header class="navbar d-print-none napay-topbar">
     <div class="container-fluid gap-2">
@@ -17,10 +18,24 @@ use yii\helpers\Url;
                     aria-label="<?= Html::encode(Yii::t('app', 'Use dark theme')) ?>" aria-pressed="false">
                 <i class="fas fa-moon" data-napay-theme-icon aria-hidden="true"></i>
             </button>
-            <?= Html::a('<i class="fas fa-sign-out-alt" aria-hidden="true"></i>', ['/site/logout'], [
-                'data-method' => 'post', 'class' => 'btn btn-icon btn-ghost-secondary',
-                'aria-label' => Yii::t('app', 'Logout'), 'title' => Yii::t('app', 'Logout'),
-            ]) ?>
+            <?php if (!Yii::$app->user->isGuest): ?>
+                <div class="nav-item dropdown">
+                    <button type="button" class="nav-link dropdown-toggle gap-2 border-0 bg-transparent"
+                            id="napay-account-menu" data-bs-toggle="dropdown" aria-expanded="false"
+                            aria-label="<?= Html::encode(Yii::t('app', 'Account')) ?>">
+                        <?= Html::img(Yii::$app->user->identity->picture, ['class' => 'avatar avatar-sm', 'alt' => '']) ?>
+                        <span class="napay-profile-name text-truncate d-none d-md-inline"><?= Html::encode(Yii::$app->user->identity->first_name . ' ' . Yii::$app->user->identity->last_name) ?></span>
+                    </button>
+                    <div class="dropdown-menu dropdown-menu-end" aria-labelledby="napay-account-menu">
+                        <?= Html::a(Html::encode(Yii::t('app', 'Profilo')), ['users/view', 'id' => Crypt::encrypt(Yii::$app->user->id)], [
+                            'class' => 'dropdown-item', 'data-napay-profile-link' => true,
+                        ]) ?>
+                        <?= Html::a(Html::encode(Yii::t('app', 'Logout')), ['/site/logout'], [
+                            'data-method' => 'post', 'class' => 'dropdown-item',
+                        ]) ?>
+                    </div>
+                </div>
+            <?php endif ?>
         </div>
     </div>
 </header>

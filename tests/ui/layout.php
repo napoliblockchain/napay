@@ -58,7 +58,10 @@ foreach (['admin' => 50, 'merchant' => 30, 'user' => 0] as $name => $role) {
     @$dom->loadHTML($html);
     $xpath = new DOMXPath($dom);
     $menuLinks = $xpath->query('//*[@id="napay-sidebar-menu"]//ul/li/a');
-    check($menuLinks->length === ($role === 50 ? 8 : ($role === 30 ? 5 : 1)), 'Role menu items preserved without removed PHPInfo for ' . $name . ': got ' . $menuLinks->length);
+    check($menuLinks->length === ($role === 50 ? 6 : ($role === 30 ? 5 : 1)), 'Role menu items preserved without developer tools for ' . $name . ': got ' . $menuLinks->length);
+    check($xpath->query('//aside//a[contains(@href,"users/view")]')->length === 0, 'Profile absent from sidebar for ' . $name);
+    check($xpath->query('//header[contains(@class,"napay-topbar")]//a[@data-napay-profile-link]')->length === 1, 'Profile in top-right account menu for ' . $name);
+    check($xpath->query('//a[contains(@href,"/debug") or contains(@href,"/gii")]')->length === 0 && !str_contains($html, '>Developer<'), 'No developer menu for ' . $name);
     check(!str_contains($html, '/site/phpinfo'), 'Removed PHPInfo link stays unavailable for ' . $name);
     check(substr_count($html, 'card card-sm h-100') === ($role === 50 ? 4 : ($role === 30 ? 3 : 2)), 'Dashboard permissions preserved for ' . $name);
     check(substr_count($html, '/tabler/css/tabler.min.css') === 1, 'One Tabler CSS for ' . $name);

@@ -11,6 +11,7 @@ use app\models\forms\LoginForm;
 use app\models\forms\SignupForm;
 use app\models\forms\PasswordResetRequestForm;
 use app\models\forms\ResetPasswordForm;
+use app\models\forms\ActivationResendForm;
 use app\models\Users;
 use app\models\UserConsensus;
 
@@ -28,6 +29,16 @@ use app\models\search\InvoicesSearch;
 
 class SiteController extends Controller
 {
+    public function beforeAction($action)
+    {
+        if (in_array($action->id, ['activate', 'reset-password'], true)) {
+            // Set before filters/CSRF so even rejected bearer requests are private.
+            Yii::$app->response->headers->set('Referrer-Policy', 'no-referrer');
+            Yii::$app->response->headers->set('Cache-Control', 'no-store');
+        }
+        return parent::beforeAction($action);
+    }
+
     /**
      * {@inheritdoc}
      */
@@ -52,6 +63,10 @@ class SiteController extends Controller
                 'class' => VerbFilter::class,
                 'actions' => [
                     'logout' => ['get','post'],
+                    'forgot-password' => ['GET', 'POST'],
+                    'reset-password' => ['GET', 'POST'],
+                    'activate' => ['GET', 'POST'],
+                    'resend-activation' => ['GET', 'POST'],
                 ],
             ],
         ];
@@ -225,13 +240,13 @@ class SiteController extends Controller
                         // echo "<pre>" . print_r($user->attributes, true) . "</pre>";exit;
                         $consensus->user_id = $user->id;
                         if ($consensus->save()){
+                            // A delivered link must refer to committed user/consent rows.
+                            $transaction->commit();
                             // invio la mail agli admins
                             sendMail::toAdmins($user, 'newAccountAdmin', Yii::t('app', 'Nuovo account'));
 
                             // invio la mail all'utente
-                            sendMail::toUser($user, 'newAccountUser', 'Nuovo account');
-
-                            $transaction->commit();
+                            $sent = sendMail::toUser($user, ['html' => 'newAccountUser', 'text' => 'newAccountUser-text'], 'Nuovo account');
 
                             // Log message
                             $message_log = Yii::t('app', 'User {user} has signup succesfully.', [
@@ -240,7 +255,7 @@ class SiteController extends Controller
                             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
                             // end log message
 
-                            Yii::$app->session->setFlash('success','Utente registrato con successo');
+                            Yii::$app->session->setFlash('success', $sent ? 'Utente registrato con successo' : 'Registrazione completata. Se non ricevi la mail, richiedi un nuovo link di attivazione dal login.');
                             return $this->redirect(['site/index']);
                         } else {
                             $transaction->rollback();
@@ -250,9 +265,10 @@ class SiteController extends Controller
                         $transaction->rollback();
                         Yii::$app->session->setFlash('warning', $consensus->getErrors());
                     }
-                } catch (\Exception $e) {
-                    $transaction->rollback();
-                    Yii::$app->session->setFlash('warning', $e->getMessage());
+                } catch (\Throwable $e) {
+                    if ($transaction->isActive) $transaction->rollback();
+                    Yii::warning('Registration could not be completed.', __METHOD__);
+                    Yii::$app->session->setFlash('warning', 'Registrazione non completata. Riprova oppure richiedi il recupero dal login.');
                 }
             } else {
                 $p = '<p>C\'è stato un errore.</p>';
@@ -286,69 +302,25 @@ class SiteController extends Controller
      *
      * @return Response|string
      */
-    public function actionActivate($id, $sign)
+    public function actionActivate($id = "", $sign = "")
     {
-        $this->layout = 'login';
-
-        $id_decrypted = Crypt::sqlDecrypt($id);
-
-        // check if the message is outdated
-        $microtime = explode(' ', microtime());
-        $nonce = $microtime[1] . str_pad(substr($microtime[0], 2, 6), 6, '0');
-        $a = substr($nonce, 1, 9) * 1;
-
-        $user = Users::findOne(['id' => $id_decrypted]);
-        
-        if (null !== $user) {
-            $b = (int) substr($user->authKey, 1, 9) * 1;
-
-            $diff = $a - $b;
-
-            // echo "<pre>".print_r('a: ' .$a ,true)."</pre>";;
-            // echo "<pre>".print_r('b: ' .$b,true)."</pre>";;
-            // echo "<pre>" . print_r('diff: ' . $diff, true) . "</pre>";
-            // echo "<pre>" . print_r('timeout: ' . Yii::$app->params['nonce.timeout'], true) . "</pre>";
-            // exit;
-            if ($diff > Yii::$app->params['nonce.timeout']) {
-                // verifica che non sia attivo e lo cancella
-                if ($user->is_active == 0) {
-                    $user->delete();
-                    Yii::$app->session->setFlash('warning', Yii::t('app', '<strong>Error!</strong> The registration time has expired. You have to register again!'));
-                }
-            }
-            // Now do the sign
-            $signature = base64_encode(hash_hmac('sha512', hash('sha256', $user->authKey . $user->accessToken, true), base64_decode($user->authKey), true));
-
-            // compare the two signatures
-            if (strcmp($signature, $sign) == 0) {
-                // echo "<pre>".print_r('sono uguali',true)."</pre>";exit;
-                $user->authKey = \Yii::$app->security->generateRandomString();
-                $user->accessToken = \Yii::$app->security->generateRandomString();
-                $user->is_active = Users::STATUS_ACTIVE;
-                $user->save();
-
-                // Log message
-                $message_log = Yii::t('app', 'User {user} has activated the account succesfully.', [
-                    'user' => $user->username,
-                ]);
-                Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-                // end log message
-
-                Yii::$app->session->setFlash('success', Yii::t('app', 'You have activated your account successfully.'));
-                // exit;
-            } else {
-                // echo "<pre>" . print_r('sono diversi', true) . "</pre>";
-                // echo "<pre>" . print_r('signature: ' . $signature, true) . "</pre>";
-                // echo "<pre>" . print_r('sign: ' . $sign, true) . "</pre>";
-                // exit;
-                $user->delete();
-                Yii::$app->session->setFlash('warning', Yii::t('app', '<strong>Error!</strong> The registration signature is wrong. You have to register again!'));
-            }
-        } else {
-            Yii::$app->session->setFlash('warning', Yii::t('app', '<strong>Error!</strong> Your account doesn\'t exist. You have to register again!'));
+        $this->layout = "login";
+        $plain = "";
+        if (is_string($id) && strlen($id) <= 2048 && is_string($sign) && strlen($sign) === 88) {
+            try { $plain = @Crypt::sqlDecrypt($id); } catch (\Throwable $error) { }
         }
-
-        return $this->redirect(['site/index']);
+        if (!preg_match("/^[1-9][0-9]*$/D", $plain)
+            || filter_var($plain, FILTER_VALIDATE_INT, ["options" => ["min_range" => 1, "max_range" => 2147483647]]) === false
+            || ($user = Users::findOne((int) $plain)) === null || !$user->canActivate($sign)) {
+            throw new BadRequestHttpException("Activation link is invalid or expired.");
+        }
+        if (Yii::$app->request->isPost) {
+            if (!$user->activate($sign)) throw new BadRequestHttpException("Activation link is invalid or expired.");
+            Log::save($this->id, $this->action->id, "Account activated: user ID " . $user->id);
+            Yii::$app->session->setFlash("success", Yii::t("app", "You have activated your account successfully."));
+            return $this->redirect(["site/login"]);
+        }
+        return $this->render("activate");
     }
 
     /**
@@ -365,10 +337,7 @@ class SiteController extends Controller
             
             $model->sendEmail();
 
-            // Log message
-            $message_log = Yii::t('app', 'User {user} has requested a password reset.', [
-                'user' => $model->email,
-            ]);
+            $message_log = 'Password reset request received.';
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
             // end log message
             
@@ -381,6 +350,18 @@ class SiteController extends Controller
         ]);
     }
 
+    public function actionResendActivation()
+    {
+        $this->layout = 'login';
+        $model = new ActivationResendForm();
+        if ($model->load(Yii::$app->request->post()) && $model->validate()) {
+            $model->sendEmail();
+            Yii::$app->session->setFlash('success', Yii::t('app', 'If an eligible account exists, activation instructions have been sent.'));
+            return $this->redirect(['site/login']);
+        }
+        return $this->render('resendActivation', ['model' => $model]);
+    }
+
     /**
      * Resets password.
      *
@@ -388,7 +369,7 @@ class SiteController extends Controller
      * @return mixed
      * @throws BadRequestHttpException
      */
-    public function actionResetPassword($token)
+    public function actionResetPassword($token = '')
     {
         $this->layout = 'login';
 
@@ -398,7 +379,8 @@ class SiteController extends Controller
             throw new BadRequestHttpException($e->getMessage());
         }
 
-        if ($model->load(Yii::$app->request->post()) && $model->validate() && $model->resetPassword()) {
+        if ($model->load(Yii::$app->request->post()) && $model->validate()) {
+            if (!$model->resetPassword()) throw new BadRequestHttpException('Password reset link is no longer valid.');
 
             $model->sendEmail();
 

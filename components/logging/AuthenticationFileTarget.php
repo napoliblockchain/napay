@@ -18,6 +18,9 @@ final class AuthenticationFileTarget extends \yii\log\FileTarget
 
     public function formatMessage($message)
     {
+        if ($message[2] === 'yii\\symfonymailer\\Mailer::sendMessage') {
+            $message[0] = 'Mail delivery failed.';
+        }
         if (in_array($message[2], ['yii\\web\\User::renewAuthStatus', 'yii\\web\\User::getIdentityAndDurationFromCookie'], true)) {
             $message[0] = is_string($message[0])
                 ? preg_replace('/: .*/s', ': [REDACTED]', $message[0])

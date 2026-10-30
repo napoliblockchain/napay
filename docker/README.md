@@ -1,5 +1,9 @@
 # Napay Docker: PHP 8.3.36 e configurazione runtime
 
+Primo accesso browser con Caddy, copia DB isolata e mail su file:
+[sandbox web locale](LOCAL-BROWSER.md). Porte dedicate `18121`/`18444`,
+nessuna modifica al gateway condiviso o a poawallet.
+
 Le immagini runtime restano fissate a PHP `8.3.36`: `Dockerfile` usa
 `php:8.3.36-apache`; `Dockerfile_Image` ha lo stesso default `VARIANT`.
 Il pin non sostituisce una scansione vulnerabilita dell'immagine e delle dipendenze.
@@ -246,3 +250,53 @@ Completamento 2026-10-24: adapter SSO `AuthHandler` senza chiamanti eliminato;
 scope livelli applicato nel DB a lista/export utenti e relativa scheda admin.
 Export validato, XLSX RAW con testi non eseguibili come formule e cache no-store.
 Schema e dati storici identita restano invariati.
+
+## Password Reset Ed Email
+
+Reset locale con hash token monouso, scadenza un'ora e consumo atomico; revoca
+sessioni/API, link HTTPS da `WEBAPP_LINK`, non dall'header Host. Email HTML/testo.
+Default `MAIL_TRANSPORT=file`: file mail privati, nessun invio esterno. SMTP
+opt-in tramite `.env`, TLS e verifica peer obbligatori. Procedura e limiti
+(rate limit locale, SMTP sincrono, log gateway): [password/email](PASSWORD-MAIL.md).
+Le vecchie richieste reset devono essere rinnovate dopo questo aggiornamento.
+
+## Attivazione Account
+
+Risolto blocco attivazione legacy: nessuna cancellazione su link errato o replay,
+GET solo conferma, POST con CSRF e transizione atomica. Scadenza 48 ore e provider
+locale verificati; dati/identita preservati. Email registrazione su origine HTTPS
+fidata e output codificato, layout originale mantenuto. [Dettagli e limiti](ACTIVATION.md).
+
+## Uso Locale: Mail Su File E Link
+
+In locale lasciare `MAIL_TRANSPORT=file` (default applicativo e `.env.example`).
+Nessun relay SMTP serve per provare registrazione, reinvio o reset. I test
+forzano file transport e seguono davvero i link estratti dai messaggi tramite
+GET/conferma POST sul web isolato. Non effettuano invii esterni.
+
+`site/resend-activation` e raggiungibile dal login e dai link di attivazione
+scaduti/invalidi. Nuovo link, vecchio invalidato, stato pending mantenuto fino
+alla conferma. Anche un invio iniziale fallito e recuperabile senza modificare
+DB, password o identita. Dettagli: [attivazione](ACTIVATION.md).
+
+Per una prova manuale nello stack locale normale, usare il suo `WEBAPP_LINK`
+HTTPS raggiungibile tramite Caddy. I messaggi sono in `runtime/mail` nel web,
+con directory 0700/file 0600: aprire gli `.eml` privatamente e seguire il link.
+Non aggiungere una route web per pubblicare l'outbox o copiare token nei log.
+Con la stessa configurazione Compose/env usata per lo stack, e possibile
+esportare i messaggi fuori Git senza stamparne il contenuto:
+
+```sh
+umask 077
+review="$HOME/.local/share/napay/mail-review"
+mkdir -p "$review"
+chmod 700 "$review"
+# Aggiungere gli stessi --env-file/-p/-f del proprio stack locale.
+docker compose cp web:/var/www/html/runtime/mail/. "$review/"
+find "$review" -maxdepth 1 -type f -name '*.eml' -exec chmod 600 {} +
+```
+
+Le mail contengono bearer link: non condividerle o committarle. Il runner di
+test elimina invece stack e mail temporanei al termine. La verifica automatica
+usa percorsi dei link sull'Apache isolato e verifica origine HTTPS dei messaggi;
+non sostituisce collaudo del gateway Caddy/TLS del deployment normale.

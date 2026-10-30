@@ -74,3 +74,41 @@ Esito finale 2026-10-24: 109 HTTP, 30 record-level, 15 stato/log, restart/no-op;
 regressioni 23 configurazione, 21 dipendenze, 38 layout, 34 schema e 32 bootstrap
 + 2 Compose passate. Nessun DB operativo modificato. Suite legacy Codeception
 non eseguita; nessun PHPStan/PHPCS configurato.
+
+## Password Reset E Mail
+
+`password-reset.php` gira nello stesso stack temporaneo dopo smoke utenti;
+usa solo account fixture e `MAIL_TRANSPORT=file`. Verifica email HTML/testo,
+origine Host alterata, permessi 0700/0600, token hash/TTL/monouso, consumo atomico
+con istanze stale, password non valide, vecchie sessioni/API, utenti inattivi,
+email duplicate, rate limit, rollback consegna fallita e log senza bearer.
+Il runner controlla anche i log Apache prima del cleanup. Trasporto SMTP viene
+costruito per verificarne TLS/timeout senza aprire connessioni. Nessun recapito
+reale, test provider o modifica a utenti/dump operativi.
+
+## Attivazione
+
+`activation.php` completa registrazione/consensi tramite HTTP in DB temporaneo,
+legge solo email file private e prova GET non mutante, POST/CSRF, replay, firme
+errate, nonce scaduti/futuri, stati/provider non ammessi, ID alterati e consumo
+atomico con istanze stale. Verifica login successivo e preservazione identita/
+password/ruolo/consensi. Nessun invio reale, nessuna cancellazione automatica.
+
+Esito attivazione 2026-10-24: 39 controlli registrazione/attivazione passati;
+ripetute con successo suite 68 password/mail, 109 HTTP, 30 record-level,
+15 stato/log, 33 configurazione, 21 dipendenze, 38 layout, 34 schema e
+32 bootstrap + 2 Compose. Controllo log bearer e riavvio/no-op passati.
+
+## Completamento Locale Recupero
+
+Reinvio da login/link scaduto, recupero dopo consegna fallita, email duplicate,
+account disabilitato pending, rate limit, validazione signup e uso dei link
+estratti dalle mail `.eml` sono coperti dalla suite attivazione. Trasporto file
+forzato; nessun SMTP reale. `EmailRequestForm` condivide i controlli fra reset e
+reinvio; la suite password viene ripetuta per verificare assenza di regressioni.
+
+Esito completamento locale: 86 registrazione/attivazione/reinvio, 68 password/
+mail, 109 HTTP, 30 record-level, 15 stato/log; regressioni 33 configurazione,
+21 dipendenze, 38 layout, 34 schema e 32 bootstrap + 2 Compose passate.
+I percorsi positivi di recupero seguono link estratti dai messaggi file;
+i casi negativi includono anche link costruiti/alterati dalla suite. Nessun SMTP.

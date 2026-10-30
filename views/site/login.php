@@ -66,6 +66,9 @@ $this->title = 'Login';
                                         </p>
                                     </div>
                                     <div class="col-6">
+                                        <p class="my-2">
+                                            <?= Html::a(Yii::t('app', 'Request activation link'), ['site/resend-activation'], ['class' => 'small text-info']) ?>
+                                        </p>
                                         <p class="my-2 text-right">
                                             <?= Html::a(Yii::t('app', 'Register new account'), Url::to(['site/signup']), [
                                                 'class' => 'small text-info',

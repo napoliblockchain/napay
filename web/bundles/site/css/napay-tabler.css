@@ -5,6 +5,7 @@
 }
 .napay-app .page-wrapper, .napay-app .container-fluid, .napay-app .page-body { min-width: 0; }
 .napay-app .napay-topbar { background: var(--tblr-bg-surface); }
+.napay-app .napay-topbar .napay-profile-name { max-width: 12rem; }
 .napay-app .navbar-brand-image { height: 2rem; width: auto; }
 .napay-app .navbar-vertical .navbar-brand { width: 100%; }
 .napay-app .navbar-vertical .nav-link-title { white-space: normal; }
@@ -25,8 +26,7 @@
     html[data-napay-sidebar="folded"] { --tblr-sidebar-width: 4.5rem; }
     html[data-napay-sidebar="folded"] .napay-app .navbar-vertical .nav-link { justify-content: center; }
     html[data-napay-sidebar="folded"] .napay-app .nav-link-title,
-    html[data-napay-sidebar="folded"] .napay-brand-text,
-    html[data-napay-sidebar="folded"] .napay-profile-name {
+    html[data-napay-sidebar="folded"] .napay-brand-text {
         position: absolute; width: 1px; height: 1px; overflow: hidden;
         clip-path: inset(50%); white-space: nowrap;
     }

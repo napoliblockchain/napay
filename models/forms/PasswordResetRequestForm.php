@@ -2,75 +2,36 @@
 namespace app\models\forms;
 
 use Yii;
-use yii\base\Model;
 use app\models\Users;
 use app\components\sendMail;
 
-/**
- * Password reset request form
- */
-class PasswordResetRequestForm extends Model
+class PasswordResetRequestForm extends EmailRequestForm
 {
-    public $email;
-
-
-    /**
-     * {@inheritdoc}
-     */
-    public function rules()
-    {
-        return [
-            ['email', 'trim'],
-            ['email', 'required'],
-            ['email', 'email'],
-            // ['email', 'exist',
-            //     'targetClass' => '\app\models\Users',
-            //     'filter' => ['is_active' => Users::STATUS_ACTIVE],
-            //     'message' => Yii::t('app','There is no user with this email address.')
-            // ],
-        ];
-    }
-    /**
-     * {@inheritdoc}
-     */
-    public function attributeLabels()
-    {
-        return [
-            'email' => Yii::t('app', 'Email'),
-        ];
-    }
-
-    /**
-     * Sends an email with a link, for resetting the password.
-     *
-     * @return bool whether the email was send
-     */
     public function sendEmail()
     {
-        /* @var $user User */
-        $user = Users::findOne([
-            'is_active' => Users::STATUS_ACTIVE,
-            'email' => $this->email,
-        ]);
-
-        // echo "<pre>" . print_r($user, true) . "</pre>";exit;
-
-        if (!$user) {
+        if (!$this->validate()) return false;
+        try {
+            if (!$this->acceptRequest()) return false;
+            // Ambiguous email ownership must never select an arbitrary identity.
+            $users = Users::find()->active()->andWhere(['email' => $this->email])->limit(2)->all();
+            if (count($users) !== 1) return false;
+            $user = $users[0];
+            $previous = $user->activationCode;
+            $token = $user->generatePasswordResetToken();
+            $url = sendMail::applicationUrl('site/reset-password', ['token' => $token]);
+            // Do not revive a reset after a concurrent password/status change.
+            if (Users::updateAll(['activationCode' => $user->activationCode], [
+                'id' => $user->id, 'is_active' => Users::STATUS_ACTIVE,
+                'authKey' => $user->authKey, 'activationCode' => $previous,
+            ]) !== 1) return false;
+            $sent = sendMail::toUser($user, ['html' => 'resetPasswordUser', 'text' => 'resetPasswordUser-text'], Yii::t('app', 'Password reset'), ['resetUrl' => $url]);
+            if (!$sent) {
+                Users::updateAll(['activationCode' => $previous], ['id' => $user->id, 'activationCode' => $user->activationCode]);
+            }
+            return $sent;
+        } catch (\Throwable $error) {
+            Yii::warning('Password reset request could not be processed.', __METHOD__);
             return false;
         }
-
-        if (!Users::isPasswordResetTokenValid($user->activationCode)) {
-            $user->generatePasswordResetToken();
-            if (!$user->save()) {
-                return false;
-            }
-        }
-
-        // invio la mail all'utente
-        sendMail::toUser($user, 'resetPasswordUser', Yii::t('app', 'Password reset'));
-
-        // invio solo return in quanto all'utente/hacker non è dato sapere se l'invio è stato effettuato o meno
-        return;
-
     }
 }

@@ -3,7 +3,6 @@
 use yii\helpers\Html;
 use yii\helpers\Url;
 use app\components\User;
-use app\components\Crypt;
 use app\widgets\TablerSidebarMenu;
 
 $items = [
@@ -14,9 +13,6 @@ $items = [
             ['label' => Yii::t('app', 'Transazioni'), 'url' => ['invoices/index'], 'iconStyle' => 'fas', 'icon' =>'file-invoice', 'visible' => User::isAdministrator() || User::isMerchant()],
             ['label' => Yii::t('app', 'Pannello Admin'), 'url' => ['admin/index'], 'iconStyle' => 'fas', 'icon' => 'cog', 'visible' => User::isAdministrator() || User::isMerchant()],
                       
-            ['label' => 'Developer', 'header' => true, 'visible' => User::isAdministrator()],
-            ['label' => 'Debug', 'icon' => 'bug', 'url' => ['/debug'], 'target' => '_blank', 'visible' => User::isAdministrator()],
-            ['label' => 'Gii',  'icon' => 'file-code', 'url' => ['/gii'], 'target' => '_blank', 'visible' => User::isAdministrator()],
         ];
 ?>
 <aside class="navbar navbar-vertical navbar-expand-lg d-print-none" aria-label="<?= Html::encode(Yii::t('app', 'Main navigation')) ?>">
@@ -33,12 +29,6 @@ $items = [
             </button>
         </div>
         <div class="collapse navbar-collapse" id="napay-sidebar-menu">
-            <?php if (!Yii::$app->user->isGuest): ?>
-                <a class="nav-link d-flex gap-2 align-items-center px-3 py-3" href="<?= Url::to(['users/view', 'id' => Crypt::encrypt(Yii::$app->user->id)]) ?>">
-                    <?= Html::img(Yii::$app->user->identity->picture, ['class' => 'avatar avatar-sm', 'alt' => '']) ?>
-                    <span class="napay-profile-name text-truncate"><?= Html::encode(Yii::$app->user->identity->first_name . ' ' . Yii::$app->user->identity->last_name) ?></span>
-                </a>
-            <?php endif ?>
             <?= TablerSidebarMenu::widget(['items' => $items]) ?>
         </div>
     </div>

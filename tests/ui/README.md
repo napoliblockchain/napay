@@ -5,6 +5,13 @@ Napay, renderizza dashboard per i tre ruoli, menu, layout e un form fixture con
 ActiveForm/Select2/DatePicker/Modal. Non esegue controller CRUD, login o pagamenti.
 Eseguibile solo da CLI; nessuna route di test viene aggiunta all'applicazione.
 
+Menu account in alto a destra: profilo con ID cifrato e logout POST;
+nessun profilo nella sidebar, nessuna sezione Developer/Debug/Gii.
+47 controlli layout, inclusi output encoding e menu per ruolo.
+Il test HTTPS `tests/browser/local.cjs` verifica apertura dropdown e profilo
+su desktop/mobile e logout reale. Moduli Debug/Gii non registrati in web/console
+in nessun ambiente; configurazione e test HTTP verificano questa assenza.
+
 ```sh
 php tests/ui/layout.php
 node tests/ui/browser.cjs

@@ -1,0 +1,16 @@
+{
+    admin off
+    auto_https disable_redirects
+    skip_install_trust
+}
+
+http://localhost:18121 {
+    redir https://localhost:18444{uri} permanent
+}
+
+https://localhost:18444 {
+    tls internal
+    header X-Content-Type-Options nosniff
+    header Referrer-Policy no-referrer
+    reverse_proxy web:80
+}

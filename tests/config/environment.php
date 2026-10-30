@@ -3,7 +3,7 @@
 $root = dirname(__DIR__, 2);
 $fixture = sys_get_temp_dir() . '/napay-env-' . bin2hex(random_bytes(6));
 mkdir($fixture . '/config', 0700, true);
-foreach (['env.php', 'db.php', 'params.php', 'web.php', 'console.php', 'version.php'] as $name) {
+foreach (['env.php', 'db.php', 'params.php', 'web.php', 'console.php', 'version.php', 'mailer.php'] as $name) {
     copy($root . '/config/' . $name, $fixture . '/config/' . $name);
 }
 file_put_contents($fixture . '/config/secrets.php', '<?php throw new RuntimeException("Legacy configuration executed");');
@@ -27,7 +27,17 @@ try {
         'username' => $db['username'], 'passwordMatch' => $db['password'] === 'literal#${HOME}=$()!',
         'environment' => YII_ENV, 'debug' => YII_DEBUG,
         'cookieConfigured' => $web['components']['request']['cookieValidationKey'] !== '',
+        'cookieSecurity' => [
+            $web['components']['request']['csrfCookie'],
+            $web['components']['user']['identityCookie'],
+            $web['components']['session']['cookieParams'],
+        ],
         'sameDb' => $console['components']['db'] === $db,
+        'developerToolsAbsent' => !isset($web['modules']['debug']) && !isset($web['modules']['gii'])
+            && !isset($console['modules']['debug']) && !isset($console['modules']['gii'])
+            && !array_intersect(['debug', 'gii'], array_merge($web['bootstrap'], $console['bootstrap'])),
+        'fileMail' => $web['components']['mailer']['useFileTransport'],
+        'tls' => $web['components']['mailer']['transport']['options']['require_tls'] ?? null,
     ]);
 } catch (Throwable $e) {
     echo json_encode(['error' => $e->getMessage()]);
@@ -57,6 +67,17 @@ try {
     check(!isset($r['error']) && $r['cookieConfigured'] && $r['sameDb'], 'Web and console load without secrets.php: ' . ($r['error'] ?? 'invalid response'));
     check($r['environment'] === 'prod' && $r['debug'] === false, 'Production and debug defaults');
     check($r['username'] === 'fixture', 'Process environment overrides stale superglobal');
+    foreach (['prod', 'dev', 'test'] as $environment) {
+        check(runCase($values + ['APP_ENV' => $environment])['developerToolsAbsent'], 'Developer modules absent in ' . $environment);
+    }
+    foreach ($r['cookieSecurity'] as $cookie) {
+        check($cookie['httpOnly'] && $cookie['sameSite'] === 'Lax' && !$cookie['secure'], 'HTTP diagnostic cookie compatibility');
+    }
+    $secure = runCase($values + ['HTTPS_ONLY' => 'true']);
+    foreach ($secure['cookieSecurity'] as $cookie) {
+        check($cookie['httpOnly'] && $cookie['sameSite'] === 'Lax' && $cookie['secure'], 'HTTPS cookie protection');
+    }
+    check(isset(runCase($values + ['HTTPS_ONLY' => 'invalid'])['error']), 'Invalid HTTPS boolean rejected');
     $r = runCase($values, "DB_USERNAME=from-file\nAPP_DEBUG=true\n");
     check($r['username'] === 'fixture' && $r['debug'] === true, 'Existing environment wins over file');
     $r = runCase($values + ['APP_DEBUG' => 'false'], "APP_DEBUG=true\n");
@@ -81,6 +102,20 @@ try {
     check(isset($r['error']), 'Invalid .env key rejected');
     $r = runCase(array_replace($values, ['DB_PASSWORD' => '   ']));
     check(isset($r['error']), 'Whitespace-only required value rejected');
+    check(runCase($values)['fileMail'] === true, 'Default mail is file only');
+    check(isset(runCase($values + ['MAIL_TRANSPORT' => 'invalid'])['error']), 'Invalid mail mode rejected');
+    $smtp = $values + ['MAIL_TRANSPORT' => 'smtp', 'MAIL_SMTP_HOST' => 'smtp.example.invalid', 'MAIL_SMTP_USERNAME' => 'fixture', 'MAIL_SMTP_PASSWORD' => 'fixture-smtp-password'];
+    foreach (['smtp', 'smtps'] as $scheme) {
+        $r = runCase($smtp + ['MAIL_SMTP_SCHEME' => $scheme]);
+        check(!isset($r['error']) && !$r['fileMail'] && $r['tls'] === true, 'SMTP requires TLS for ' . $scheme);
+    }
+    foreach (['MAIL_SMTP_HOST', 'MAIL_SMTP_USERNAME', 'MAIL_SMTP_PASSWORD'] as $key) {
+        $r = runCase(array_replace($smtp, [$key => '']));
+        check(isset($r['error']) && !str_contains($r['error'], 'fixture-smtp-password'), 'Incomplete SMTP fails without credential disclosure');
+    }
+    foreach (['MAIL_SMTP_PORT' => '70000', 'MAIL_SMTP_SCHEME' => 'sendmail', 'MAIL_SMTP_HOST' => "bad\nhost"] as $key => $value) {
+        check(isset(runCase(array_replace($smtp, [$key => $value]))['error']), 'Invalid SMTP option rejected: ' . $key);
+    }
     echo "PASS {$checks} environment configuration checks\n";
 } finally {
     foreach (glob($fixture . '/config/*') as $path) unlink($path);

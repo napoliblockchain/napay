@@ -37,8 +37,10 @@ class SignupForm extends Model
     public function rules()
     {
         return [
-            ['username', 'filter', 'filter' => 'trim'],
-            ['username', 'string', 'min' => 6, 'max' => 255],
+            [['username', 'first_name', 'last_name', 'email'], 'filter', 'filter' => static fn($value) => is_string($value) ? trim($value) : ''],
+            ['username', 'string', 'min' => 6, 'max' => 60],
+            [['first_name', 'last_name'], 'string', 'max' => 256],
+            ['email', 'string', 'max' => 60],
             ['username', 'match',  'not' => true,
                 // we do not want to allow users to pick one of spam/bad usernames
                 'pattern' => '/\b('.Yii::$app->params['user.spamNames'].')\b/i',
@@ -50,12 +52,16 @@ class SignupForm extends Model
             ['email', 'unique', 'targetClass' => '\app\models\Users',
                 'message' => Yii::t('app', 'La mail inserita è già stata utilizzata.')
             ],
-            [['username', 'first_name', 'last_name', 'email' ], 'required'],
-            ['password', 'string', 'min' => 8],
+            [['username', 'first_name', 'last_name', 'email', 'password', 'repeat_password', 'is_merchant'], 'required'],
+            ['password', 'string', 'min' => Yii::$app->params['user.passwordMinLength'], 'max' => 72],
+            ['repeat_password', 'string', 'max' => 72],
+            ['password', function ($attribute) {
+                if (is_string($this->$attribute) && strlen($this->$attribute) > 72) $this->addError($attribute, 'Password exceeds 72 bytes.');
+            }],
 
             ['repeat_password', 'compare', 'compareAttribute'=>'password'],
 
-            ['is_merchant', 'integer'],
+            ['is_merchant', 'in', 'range' => [0, 1, '0', '1'], 'strict' => true],
 
         ];
     }

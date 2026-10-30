@@ -1,8 +1,9 @@
 <?php
 
-use yii\helpers\Url;
+use yii\helpers\Html;
+use app\components\sendMail;
 
-$URL = Url::to(['site/login'], true);
+$URL = sendMail::applicationUrl('site/login');
 
 $isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
 ?>
@@ -70,8 +71,8 @@ $isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
 
 <div class="card">
     <div class="card-header">
-        <img src="<?php echo 'http://' . $_SERVER['HTTP_HOST']; ?>/bundles/site/images/logo-60.png" alt="Logo">
-        <span><?= Yii::$app->name; ?></span>
+        <img src="<?= Html::encode(sendMail::applicationUrl('bundles/site/images/logo-60.png')) ?>" alt="Logo">
+        <span><?= Html::encode(Yii::$app->name) ?></span>
     </div>
     <div class="card-title">
         <h2>Nuova richiesta di registrazione</h2>
@@ -82,16 +83,16 @@ $isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
         <p>ricevi questa mail perché qualcuno ha effettuato una richiesta di registrazione di un nuovo utente: </p>
         <p>
         <ul>
-            <li><b>Nome utente</b>: <?= $user->username ?></li>
-            <li><b>Nome</b>: <?= $user->first_name ?></li>
-            <li><b>Cognome</b>: <?= $user->last_name ?></li>
-            <li><b>Email</b>: <?= $user->email ?></li>
-            <li><b>Tipo</b>: <?= $isMerchant[$user->is_merchant] ?></li>
+            <li><b>Nome utente</b>: <?= Html::encode($user->username) ?></li>
+            <li><b>Nome</b>: <?= Html::encode($user->first_name) ?></li>
+            <li><b>Cognome</b>: <?= Html::encode($user->last_name) ?></li>
+            <li><b>Email</b>: <?= Html::encode($user->email) ?></li>
+            <li><b>Tipo</b>: <?= Html::encode($isMerchant[$user->is_merchant] ?? '') ?></li>
         </ul>
         </p>
 
         <div style="margin-top: 20px;">
-            <a href="<?php echo $URL; ?>">
+            <a href="<?= Html::encode($URL) ?>" rel="noreferrer">
                 <button type="button" style="padding: 3px 3px 3px 3px;
                     				outline: none;
                               		cursor: pointer;
@@ -110,7 +111,7 @@ $isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
         </div>
         <div>
             <p style="margin-top: 28px;font-size: 14px;">Buona giornata,
-                <br><strong><?php echo Yii::$app->params['adminName']; ?></strong>
+                <br><strong><?= Html::encode(Yii::$app->params['adminName']) ?></strong>
             </p>
         </div>
 
@@ -118,9 +119,9 @@ $isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
     <div class="card-footer">
         <div>
             <p style="font-size: 14px;">
-                <strong><?= Yii::$app->name; ?></strong>
-                <br><?= Yii::t('app', 'Phone: ') ?><?= Yii::$app->params['adminPhone'] ?>
-                <br><?php echo Yii::$app->params['adminEmail'] . ' | ' . Yii::$app->params['website']; ?>
+                <strong><?= Html::encode(Yii::$app->name) ?></strong>
+                <br><?= Yii::t('app', 'Phone: ') ?><?= Html::encode(Yii::$app->params['adminPhone']) ?>
+                <br><?= Html::encode(Yii::$app->params['adminEmail'] . ' | ' . Yii::$app->params['website']) ?>
             </p>
         </div>
         <div>

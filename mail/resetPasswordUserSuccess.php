@@ -1,8 +1,9 @@
 <?php
 
-use yii\helpers\Url;
+use yii\helpers\Html;
+use app\components\sendMail;
 
-$URL = Url::to(['site/login'], true);
+$URL = sendMail::applicationUrl('site/login');
 ?>
 
 <style>
@@ -68,20 +69,20 @@ $URL = Url::to(['site/login'], true);
 
 <div class="card">
     <div class="card-header">
-        <img src="<?php echo 'http://' . $_SERVER['HTTP_HOST']; ?>/landing-page/assets/img/logo.jpg" alt="Logo">
-        <span><?= Yii::$app->name; ?></span>
+        <img src="<?= Html::encode(sendMail::applicationUrl('bundles/site/images/logo-60.png')) ?>" alt="Logo">
+        <span><?= Html::encode(Yii::$app->name) ?></span>
     </div>
     <div class="card-title">
         <h2>Reimpostazione password completata con successo</h2>
     </div>
     <div class="card-content">
-        <p class="salutation">Ciao <?php echo ucfirst($user->first_name) ?? $user->username; ?>,</p>
-        <p>hai completato il processo di ripristino della password.</p>
+        <p class="salutation">Ciao <?= Html::encode($user->first_name ?: $user->username) ?>,</p>
+        <p>hai completato il processo di ripristino della password. Le precedenti sessioni sono state revocate.</p>
 
         <p><b>Se non sei stato tu ad effettuare questa richiesta, contatta subito un amministratore.</b></p>
 
         <div style="margin-top: 20px;">
-            <a href="<?php echo $URL; ?>">
+            <a href="<?= Html::encode($URL) ?>" rel="noreferrer">
                 <button type="button" style="padding: 3px 3px 3px 3px;
                     				outline: none;
                               		cursor: pointer;
@@ -100,7 +101,7 @@ $URL = Url::to(['site/login'], true);
         </div>
         <div>
             <p style="margin-top: 28px;font-size: 14px;">Buona giornata,
-                <br><strong><?php echo Yii::$app->params['adminName']; ?></strong>
+                <br><strong><?= Html::encode(Yii::$app->params['adminName']) ?></strong>
             </p>
         </div>
 
@@ -108,9 +109,9 @@ $URL = Url::to(['site/login'], true);
     <div class="card-footer">
         <div>
             <p style="font-size: 14px;">
-                <strong><?= Yii::$app->name; ?></strong>
-                <br><?= Yii::t('app', 'Phone: ') ?><?= Yii::$app->params['adminPhone'] ?>
-                <br><?php echo Yii::$app->params['adminEmail'] . ' | ' . Yii::$app->params['website']; ?>
+                <strong><?= Html::encode(Yii::$app->name) ?></strong>
+                <br><?= Yii::t('app', 'Phone: ') ?><?= Html::encode(Yii::$app->params['adminPhone']) ?>
+                <br><?= Html::encode(Yii::$app->params['adminEmail'] . ' | ' . Yii::$app->params['website']) ?>
             </p>
         </div>
         <div>

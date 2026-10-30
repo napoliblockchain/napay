@@ -181,10 +181,45 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
         $this->oauth_uid = Yii::$app->security->generateRandomString(60);
     }
 
-    public function activate()
+    public function getActivationSignature(): string
     {
-        $this->setUid();
-        return $this->save();
+        if (!is_string($this->authKey) || !preg_match('/^[0-9]{16}$/D', $this->authKey)) {
+            throw new \DomainException('Invalid activation credential.');
+        }
+        $key = base64_decode($this->authKey, true);
+        if ($key === false) throw new \DomainException('Invalid activation credential.');
+        return base64_encode(hash_hmac('sha512', hash('sha256', $this->authKey . $this->accessToken, true), $key, true));
+    }
+
+    public function canRequestActivation(): bool
+    {
+        return (int) $this->is_active === self::STATUS_INSERTED && $this->oauth_provider === 'SELF'
+            && is_string($this->authKey) && preg_match('/^[0-9]{16}$/D', $this->authKey) === 1
+            && is_string($this->accessToken) && strlen($this->accessToken) >= 32;
+    }
+
+    public function canActivate($signature): bool
+    {
+        if (!$this->canRequestActivation() || !is_string($signature) || strlen($signature) !== 88) return false;
+        $issued = (int) substr($this->authKey, 0, 10);
+        $decoded = base64_decode($signature, true);
+        return $issued <= time() && $issued + Yii::$app->params['nonce.timeout'] > time()
+            && $decoded !== false && strlen($decoded) === 64 && base64_encode($decoded) === $signature
+            && hash_equals($this->getActivationSignature(), $signature);
+    }
+
+    public function activate($signature = null)
+    {
+        if (!$this->canActivate($signature)) return false;
+        // Consume only this pending credential. Never replace the OAuth identity.
+        $updated = self::updateAll([
+            'is_active' => self::STATUS_ACTIVE, 'activationCode' => null,
+            'authKey' => Yii::$app->security->generateRandomString(),
+            'accessToken' => Yii::$app->security->generateRandomString(60),
+        ], ['id' => $this->id, 'is_active' => self::STATUS_INSERTED,
+            'oauth_provider' => 'SELF', 'authKey' => $this->authKey, 'accessToken' => $this->accessToken]);
+        if ($updated === 1) $this->refresh();
+        return $updated === 1;
     }
     
     /**
@@ -237,13 +272,13 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
      */
     public static function isPasswordResetTokenValid($token)
     {
-        if (empty($token)) {
+        if (!is_string($token) || !preg_match('/^[A-Za-z0-9_-]{48}_[0-9]{10}$/D', $token)) {
             return false;
         }
 
         $timestamp = (int) substr($token, strrpos($token, '_') + 1);
         $expire = Yii::$app->params['user.passwordResetTokenExpire'];
-        return $timestamp + $expire >= time();
+        return $timestamp <= time() && $timestamp + $expire > time();
     }
 
     /**
@@ -251,7 +286,14 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
      */
     public function generatePasswordResetToken()
     {
-        $this->activationCode = Yii::$app->security->generateRandomString() . '_' . time();
+        $token = Yii::$app->security->generateRandomString(48) . '_' . time();
+        $this->activationCode = self::passwordResetDigest($token);
+        return $token;
+    }
+
+    public static function passwordResetDigest(string $token): string
+    {
+        return hash('sha256', $token) . '_' . substr($token, -10);
     }
 
     /**
@@ -267,7 +309,7 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
         }
 
         return static::findOne([
-            'activationCode' => $token,
+            'activationCode' => self::passwordResetDigest($token),
             'is_active' => self::STATUS_ACTIVE,
         ]);
     }

@@ -23,6 +23,7 @@ $config = [
         'request' => [
             // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
             'cookieValidationKey' => env_required('COOKIE_VALIDATION_KEY'),
+            'csrfCookie' => ['httpOnly' => true, 'secure' => env_bool('HTTPS_ONLY', false), 'sameSite' => 'Lax'],
         ],
         'cache' => [
             'class' => 'yii\caching\FileCache',
@@ -30,15 +31,20 @@ $config = [
         'user' => [
             'identityClass' => 'app\models\Users',
             'enableAutoLogin' => true,
+            'identityCookie' => ['name' => '_identity', 'httpOnly' => true, 'secure' => env_bool('HTTPS_ONLY', false), 'sameSite' => 'Lax'],
+        ],
+        'session' => [
+            'cookieParams' => ['httpOnly' => true, 'secure' => env_bool('HTTPS_ONLY', false), 'sameSite' => 'Lax'],
         ],
         'errorHandler' => [
             'errorAction' => 'site/error',
         ],
-        'mailer' => [
-            'class' => \yii\symfonymailer\Mailer::class,
-            'viewPath' => '@app/mail',
-            // send all mails to a file by default.
-            'useFileTransport' => true,
+        'mailer' => require __DIR__ . '/mailer.php',
+        'mutex' => [
+            'class' => \yii\mutex\FileMutex::class,
+            'mutexPath' => '@runtime/password-reset-locks',
+            'dirMode' => 0700,
+            'fileMode' => 0600,
         ],
         'log' => [
             'traceLevel' => YII_DEBUG ? 3 : 0,
@@ -66,31 +72,5 @@ $config = [
     ],
     'params' => $params,
 ];
-
-if (YII_ENV_DEV) {
-    // configuration adjustments for 'dev' environment
-    $config['bootstrap'][] = 'debug';
-    $config['modules']['debug'] = [
-        'class' => 'yii\debug\Module',
-        // uncomment the following to add your IP if you are not connecting from localhost.
-        'allowedIPs' => ['127.0.0.1', '::1', '192.168.1.9'],
-    ];
-
-    $config['bootstrap'][] = 'gii';
-    $config['modules']['gii'] = [
-        'class' => 'yii\gii\Module',
-        // uncomment the following to add your IP if you are not connecting from localhost.
-        'allowedIPs' => ['127.0.0.1', '::1', '192.168.1.9'],
-        
-        'generators' => [ // here
-            'crud' => [ // generator name
-                'class' => 'yii\gii\generators\crud\Generator', // generator class
-                'templates' => [ // setting for our templates
-                    'yii2-adminlte3' => '@vendor/hail812/yii2-adminlte3/src/gii/generators/crud/default' // template name => path to template
-                ]
-            ]
-        ]
-    ];
-}
 
 return $config;
