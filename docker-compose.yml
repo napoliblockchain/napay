@@ -57,6 +57,13 @@ services:
         read_only: true
         bind:
           create_host_path: false
+      # TIP-020: PDF dei verbali della vecchia app (protected/verbali), sola lettura; senza variabile: cartella vuota
+      - type: bind
+        source: ${NAPAY_LEGACY_FILES_DIR:-./docker/legacy-files-none}
+        target: /legacy-files
+        read_only: true
+        bind:
+          create_host_path: false
     depends_on:
       mysql:
         condition: service_healthy

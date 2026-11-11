@@ -71,6 +71,9 @@ finished=$(docker inspect --format '{{.State.FinishedAt}}' "$job")
 [ "$started" \> "$finished" ]
 printf '%s\n' 'PASS: Compose writer starts only after completed bootstrap.'
 compose run --rm --no-deps --entrypoint php bootstrap /app/tests/db/bootstrap.php
+# TIP-020: synthetic legacy schema in the same disposable MySQL for the association import
+compose exec -T mysql sh -c 'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" exec mysql -uroot -e "CREATE DATABASE napay_test_legacy CHARACTER SET utf8mb4; GRANT ALL ON napay_test_legacy.* TO \`napay_test\`@\`%\`"'
+compose run --rm --no-deps --entrypoint php bootstrap /app/tests/db/legacy-import.php
 compose down -v --timeout 10
 docker volume inspect "$project-data" >/dev/null
 compose up -d --no-build web
