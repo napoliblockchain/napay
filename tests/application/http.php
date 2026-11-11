@@ -86,6 +86,7 @@ try {
     check(request('/users/index')['status'] === 302, 'Anonymous protected list redirects');
     check(request('/settings/index')['status'] === 302, 'Anonymous settings deep link redirects');
     check(request('/users/view?id=invalid')['status'] === 302, 'Anonymous profile deep link requires login');
+    check(request('/merchants/company')['status'] === 302, 'Anonymous company page requires login');
     $page = request('/site/login');
     check($page['status'] === 200 && str_contains($page['body'], 'login-form'), 'Pretty URL login rendered');
     check(token($page['body']) !== '', 'CSRF token generated');
@@ -97,6 +98,13 @@ try {
     check(login('disabled')['status'] === 200 && request('/')['status'] === 302, 'Disabled user cannot authenticate');
     check(login('blocked')['status'] === 200 && request('/')['status'] === 302, 'Blocked status 2 cannot authenticate');
     check(login('admin')['status'] === 302, 'Admin authenticates');
+    check(request('/merchants/company')['status'] === 403, 'Administrator manages company list, not merchant account page');
+    foreach (['/merchants/index', '/merchants/create', '/stores/index', '/stores/create', '/settings/index', '/privileges/index', '/logs/index'] as $path) {
+        check(request($path)['status'] === 200, 'Existing v2 administrative page opens: ' . $path);
+    }
+    foreach (['/merchants/view?id=bad!', '/merchants/update?id[]=1'] as $path) {
+        check(request($path)['status'] === 404, 'Malformed merchant identifier returns controlled 404');
+    }
     foreach (['/debug/default/index', '/gii/default/index'] as $path) {
         check(request($path)['status'] === 404, 'Developer module unavailable to administrator');
     }
@@ -178,8 +186,26 @@ try {
     check(request('/users/change-collapsed', ['_csrf' => $csrf])['status'] === 200, 'Legacy sidebar signed cookie toggles back');
     check(request('/users/index')['status'] === 403, 'Basic user denied admin list');
     check(request('/settings/index')['status'] === 403, 'Basic user denied settings deep link');
+    check(request('/merchants/company')['status'] === 403, 'Basic user cannot access own-company editor');
     check(request('/users/export', ['_csrf' => $csrf, 'queryParams' => '{}'])['status'] === 403, 'Basic user cannot export users');
     $basicJar = $jar;
+    $jar = tempnam(sys_get_temp_dir(), 'napay-http-'); $jars[] = $jar;
+    check(login('merchant')['status'] === 302, 'Merchant authenticates for own-company editor');
+    $merchantDashboard = request('/');
+    check(str_contains($merchantDashboard['body'], 'data-napay-company-link'), 'Merchant account menu exposes Azienda');
+    check(request('/merchants/index')['status'] === 403, 'Merchant cannot open administrator company list');
+    $company = request('/merchants/company?id=2147483647');
+    check($company['status'] === 200 && str_contains($company['body'], 'Runtime company merchant'), 'Own company ignores requested identifier');
+    $document = new DOMDocument(); @$document->loadHTML($company['body'], LIBXML_NONET);
+    check((new DOMXPath($document))->query('//input[@name="Merchants[vatNumber]" and @readonly]')->length === 1, 'Company VAT field read-only');
+    check(request('/merchants/company', ['Merchants' => ['description' => 'Injected']])['status'] === 400, 'Company updates require CSRF');
+    $saved = request('/merchants/company', ['_csrf' => token($company['body']), 'Merchants' => [
+        'description' => 'HTTP company edited', 'email' => 'edited@example.invalid', 'vatNumber' => ['invalid'], 'user_id' => 1, 'id' => 2147483647,
+    ]]);
+    check($saved['status'] === 302 && str_contains($saved['headers'], '/merchants/company'), 'Company details save through POST and redirect back');
+    $company = request('/merchants/company');
+    check(str_contains($company['body'], 'HTTP company edited') && str_contains($company['body'], 'edited@example.invalid')
+        && str_contains($company['body'], '12345678901'), 'Allowed company fields change while crafted VAT and owner are ignored');
     $jar = tempnam(sys_get_temp_dir(), 'napay-http-'); $jars[] = $jar;
     check(login('operator')['status'] === 302, 'Level-40 operator authenticates');
     $operatorList = request('/users/index');

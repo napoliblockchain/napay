@@ -12,7 +12,7 @@ use app\widgets\Alert;
 /* @var $searchModel app\models\search\CommerciantiSearch */
 /* @var $dataProvider yii\data\ActiveDataProvider */
 
-$this->title = Yii::t('app', 'Esercenti');
+$this->title = Yii::t('app', 'Aziende');
 $this->params['breadcrumbs'][] = $this->title;
 
 // $status_list = ['Attivo', 'Disabilitato'];

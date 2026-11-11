@@ -27,11 +27,11 @@ use app\components\User;
             ]
         ); ?>
     <?php else : ?>
-        <?= $form->field($model, 'user_id')->hiddenInput(['value' => Yii::$app->user->identity->id])->label(false) ?>
+        <?= $form->field($model, 'user_id')->hiddenInput(['value' => $model->isNewRecord ? Yii::$app->user->id : $model->user_id])->label(false) ?>
     <?php endif; ?>
 
     <?= $form->field($model, 'description')->textInput(['maxlength' => true]) ?>
-    <?= $form->field($model, 'vatNumber')->textInput(['maxlength' => true]) ?>
+    <?= $form->field($model, 'vatNumber')->textInput(['maxlength' => true, 'readonly' => !$model->isNewRecord]) ?>
 
     <?= $form->field($model, 'addressStreet')->textInput(['maxlength' => true]) ?>
     <?= $form->field($model, 'addressNumberHouse')->textInput(['maxlength' => true]) ?>

@@ -16,3 +16,9 @@ foreach (['admin' => 50, 'user' => 0, 'other' => 0, 'disabled' => 0, 'blocked' =
     $statement->execute(['runtime-' . $role, $role . '@example.invalid', password_hash('fixture-password-only', PASSWORD_BCRYPT), $role === 'user' ? 'Runtime <svg onload="window.pwned=true">' : 'Runtime', $role === 'other' ? '=1+1' : 'Fixture', 'fixture', $role, 'fixture-' . $role, 'fixture-' . $role, '/favicon.ico', $privilege, 0, $role === 'disabled' ? 0 : ($role === 'blocked' ? 2 : 1)]);
 }
 echo "PASS: disposable HTTP identities created after verified v2 restore\n";
+foreach (['merchant', 'other'] as $role) {
+    $owner = app\components\db\V2Bootstrap::rows($db, 'SELECT id FROM users WHERE username=?', ['runtime-' . $role])[0]['id'];
+    $db->prepare('INSERT INTO merchants (user_id,description,email,vatNumber,phone,mobile,addressStreet,addressNumberHouse,addressCity,addressZip,addressProvince,addressCountry) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
+        ->execute([$owner, 'Runtime company ' . $role, $role . '@example.invalid', '12345678901', '123', '456', 'Fixture street', '1', 'Napoli', '80100', 'NA', 'IT']);
+}
+echo "PASS: disposable merchant companies created\n";

@@ -8,6 +8,7 @@ use app\models\Merchants;
 use app\models\search\MerchantsSearch;
 use yii\web\Controller;
 use yii\web\NotFoundHttpException;
+use yii\web\ForbiddenHttpException;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
 use yii\helpers\ArrayHelper;
@@ -36,6 +37,7 @@ class MerchantsController extends Controller
                 'class' => VerbFilter::class,
                 'actions' => [
                     'delete' => ['POST'],
+                    'company' => ['GET', 'POST'],
                 ],
             ],
             'access' => [
@@ -46,6 +48,7 @@ class MerchantsController extends Controller
                             'create',
                             'view',
                             'update',
+                            'company',
                         ],
                         'allow' => true,
                         'roles' => ['@'],
@@ -99,7 +102,7 @@ class MerchantsController extends Controller
     public function actionView($id)
     {
         return $this->render('view', [
-            'model' => $this->findModel(Crypt::decrypt($id)),
+            'model' => $this->findModel($id),
         ]);
     }
 
@@ -160,9 +163,32 @@ class MerchantsController extends Controller
      */
     public function actionUpdate($id)
     {
-        $model = $this->findModel(Crypt::decrypt($id));
+        return $this->updateMerchant($this->findModel($id));
+    }
 
-        if ($model->load(Yii::$app->request->post()) && $model->save()) {
+    public function actionCompany()
+    {
+        $actor = Yii::$app->user->identity;
+        if ($actor === null || (int) ($actor->privilege->level ?? -1) !== User::ROLE_MERCHANT) {
+            throw new ForbiddenHttpException('You are not allowed to access this company.');
+        }
+        // Never select a company from request parameters or arbitrarily choose among duplicates.
+        $models = Merchants::find()->where(['user_id' => $actor->id])->limit(2)->all();
+        if (count($models) !== 1) {
+            throw new NotFoundHttpException('Company unavailable for this account.');
+        }
+        return $this->updateMerchant($models[0], true);
+    }
+
+    private function updateMerchant(Merchants $model, bool $ownCompany = false)
+    {
+        $model->scenario = Merchants::SCENARIO_UPDATE;
+        $ownerId = $model->user_id;
+
+        $loaded = $model->load(Yii::$app->request->post());
+        // Ownership changes require a separate workflow, never this details form.
+        $model->user_id = $ownerId;
+        if ($loaded && $model->save()) {
             Yii::$app->session->setFlash('success', Yii::t('app', 'Esercente aggiornato correttamente'));
             // Log message
             $message_log = Yii::t('app', 'User {user} has updated {item}: {itemname}', [
@@ -172,11 +198,12 @@ class MerchantsController extends Controller
             ]);
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
             // end log message
-            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+            return $this->redirect($ownCompany ? ['company'] : ['view', 'id' => Crypt::encrypt($model->id)]);
         }
 
         return $this->render('update', [
             'model' => $model,
+            'ownCompany' => $ownCompany,
         ]);
     }
 
@@ -189,7 +216,7 @@ class MerchantsController extends Controller
      */
     public function actionDelete($id)
     {
-        $model = $this->findModel(Crypt::decrypt($id));
+        $model = $this->findModel($id);
         
         // Log message
         $message_log = Yii::t('app', 'User {user} has deleted {item}: {itemname}', [
@@ -292,10 +319,25 @@ class MerchantsController extends Controller
      */
     protected function findModel($id)
     {
-        if (($model = Merchants::findOne($id)) !== null) {
-            return $model;
+        if (!is_string($id) || strlen($id) > 1024 || base64_decode($id, true) === false) {
+            throw new NotFoundHttpException('The requested page does not exist.');
         }
-
-        throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        try {
+            $plain = @Crypt::decrypt($id);
+        } catch (\Throwable $error) {
+            $plain = '';
+        }
+        if (!preg_match('/^[1-9][0-9]*$/D', $plain)
+            || filter_var($plain, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 2147483647]]) === false
+            || ($model = Merchants::findOne((int) $plain)) === null) {
+            throw new NotFoundHttpException('The requested page does not exist.');
+        }
+        $actor = Yii::$app->user->identity;
+        $level = (int) ($actor->privilege->level ?? -1);
+        if ($actor === null || ($level !== User::ROLE_ADMIN
+            && ($level !== User::ROLE_MERCHANT || (string) $model->user_id !== (string) $actor->id))) {
+            throw new ForbiddenHttpException('You are not allowed to access this merchant.');
+        }
+        return $model;
     }
 }

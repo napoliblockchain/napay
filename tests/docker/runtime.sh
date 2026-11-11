@@ -61,6 +61,7 @@ compose run --rm --no-deps --entrypoint php bootstrap /app/tests/application/fix
 compose run --rm --no-deps --entrypoint php bootstrap /app/tests/application/users-access.php
 compose exec -T web php /var/www/html/tests/application/http.php
 compose exec -T web php /var/www/html/tests/application/users-state.php
+compose exec -T web php /var/www/html/tests/application/merchants.php
 compose exec -T web php /var/www/html/tests/application/password-reset.php
 compose exec -T web php /var/www/html/tests/application/activation.php
 compose exec -T web php /var/www/html/tests/application/association.php

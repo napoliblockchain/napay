@@ -3,6 +3,7 @@
 use yii\helpers\Html;
 use yii\helpers\Url;
 use app\components\Crypt;
+use app\components\User;
 ?>
 <header class="navbar d-print-none napay-topbar">
     <div class="container-fluid gap-2">
@@ -30,6 +31,11 @@ use app\components\Crypt;
                         <?= Html::a(Html::encode(Yii::t('app', 'Profilo')), ['users/view', 'id' => Crypt::encrypt(Yii::$app->user->id)], [
                             'class' => 'dropdown-item', 'data-napay-profile-link' => true,
                         ]) ?>
+                        <?php if (User::isMerchant()): ?>
+                            <?= Html::a(Html::encode(Yii::t('app', 'Azienda')), ['/merchants/company'], [
+                                'class' => 'dropdown-item', 'data-napay-company-link' => true,
+                            ]) ?>
+                        <?php endif ?>
                         <?= Html::a(Html::encode(Yii::t('app', 'Logout')), ['/site/logout'], [
                             'data-method' => 'post', 'class' => 'dropdown-item',
                         ]) ?>

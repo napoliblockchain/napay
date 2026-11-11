@@ -25,6 +25,18 @@ use Yii;
  */
 class Merchants extends \yii\db\ActiveRecord
 {
+    public const SCENARIO_UPDATE = 'update';
+
+    public function scenarios()
+    {
+        $scenarios = parent::scenarios();
+        $scenarios[self::SCENARIO_UPDATE] = [
+            'description', 'email', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse',
+            'addressCity', 'addressZip', 'addressProvince', 'addressCountry',
+        ];
+        return $scenarios;
+    }
+
     /**
      * {@inheritdoc}
      */

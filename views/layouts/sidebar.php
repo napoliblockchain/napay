@@ -7,7 +7,7 @@ use app\widgets\TablerSidebarMenu;
 
 $items = [
             ['label' => Yii::t('app', 'Dashboard'), 'url' => ['site/index'], 'iconStyle' => 'fas', 'icon' => 'tachometer-alt'],
-            ['label' => Yii::t('app', 'Esercenti'), 'url' => ['merchants/index'], 'iconStyle' => 'fas', 'icon' => 'store', 'visible' => User::isAdministrator()], //administrator
+            ['label' => Yii::t('app', 'Aziende'), 'url' => ['merchants/index'], 'iconStyle' => 'fas', 'icon' => 'store', 'visible' => User::isAdministrator()], //administrator
             ['label' => Yii::t('app', 'Negozi'), 'url' => ['stores/index'], 'iconStyle' => 'fas', 'icon' => 'shopping-cart', 'visible' => User::isAdministrator() || User::isMerchant()],
             ['label' => Yii::t('app', 'Pos'), 'url' => ['pos/index'], 'iconStyle' => 'fas', 'icon' =>'mobile-alt', 'visible' => User::isAdministrator() || User::isMerchant()],
             ['label' => Yii::t('app', 'Transazioni'), 'url' => ['invoices/index'], 'iconStyle' => 'fas', 'icon' =>'file-invoice', 'visible' => User::isAdministrator() || User::isMerchant()],

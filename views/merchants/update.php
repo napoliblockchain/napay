@@ -2,16 +2,24 @@
 
 use yii\helpers\Html;
 use app\components\Crypt;
+use app\components\User;
 
 /* @var $this yii\web\View */
 /* @var $model app\models\Commercianti */
 
-$this->title = Yii::t('app', 'Esercente: {name}', [
+$ownCompany = $ownCompany ?? false;
+$this->title = $ownCompany ? Yii::t('app', 'Azienda') : Yii::t('app', 'Azienda: {name}', [
     'name' => $model->description,
 ]);
-$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Merchant'), 'url' => ['index']];
-$this->params['breadcrumbs'][] = ['label' => $model->description, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
-$this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
+if (User::isAdministrator()) {
+    $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Aziende'), 'url' => ['index']];
+}
+if (!$ownCompany) {
+    $this->params['breadcrumbs'][] = ['label' => $model->description, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
+    $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
+} else {
+    $this->params['breadcrumbs'][] = $this->title;
+}
 ?>
 <div class="container-fluid">
     <div class="row">

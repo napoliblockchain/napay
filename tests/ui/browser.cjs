@@ -25,7 +25,7 @@ const server = http.createServer((req, res) => {
     try {
         await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
         const base = `http://127.0.0.1:${server.address().port}`;
-        browser = await chromium.launch({ headless: true, args: ['--no-sandbox'] });
+        browser = await chromium.launch({ executablePath: process.env.NAPAY_CHROME_PATH, headless: true, args: ['--no-sandbox'] });
         fs.mkdirSync(path.join(output, 'screenshots'), { recursive: true });
         for (const width of [375, 768, 1440]) {
             const context = await browser.newContext({ viewport: { width, height: 960 }, serviceWorkers: 'block' });
@@ -36,6 +36,10 @@ const server = http.createServer((req, res) => {
             await page.goto(base + '/admin.html', { waitUntil: 'networkidle' });
             check(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth + 1), `No page overflow at ${width}px`);
             check(await page.evaluate(() => !window.pwned), 'Profile data remains text');
+            await page.locator('#napay-account-menu').click();
+            check(await page.locator('[data-napay-profile-link]').isVisible(), `Account profile opens at ${width}px`);
+            check(await page.locator('[data-napay-company-link]').count() === 0, 'Administrator uses company list, not merchant account entry');
+            await page.keyboard.press('Escape');
             if (width < 992) {
                 await page.screenshot({ path: path.join(output, 'screenshots', `before-${width}.png`), fullPage: true });
                 await page.locator('.navbar-toggler').click();
@@ -56,6 +60,14 @@ const server = http.createServer((req, res) => {
             check(errors.length === 0, `No uncaught JS errors at ${width}px: ${errors.join(', ')}`);
             await context.close();
         }
+        const merchant = await browser.newContext({ viewport: { width: 390, height: 844 }, serviceWorkers: 'block' });
+        const merchantPage = await merchant.newPage();
+        await merchantPage.goto(base + '/merchant.html', { waitUntil: 'networkidle' });
+        await merchantPage.locator('#napay-account-menu').click();
+        check(await merchantPage.locator('[data-napay-company-link]').isVisible(), 'Merchant opens Azienda from mobile account dropdown');
+        check(await merchantPage.locator('[data-napay-company-link]').getAttribute('href') === '/merchants/company', 'Own company link has no client-selected identifier');
+        check(await merchantPage.locator('aside a[href*="merchants/index"]').count() === 0, 'Merchant has no administrator company list');
+        await merchant.close();
         const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, serviceWorkers: 'block' });
         const page = await context.newPage();
         page.setDefaultTimeout(10000);
