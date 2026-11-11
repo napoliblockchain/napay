@@ -33,12 +33,14 @@ class SessionsController extends Controller
         // niente authenticator/rateLimiter generici: autenticazione e limiti espliciti qui sotto
         return [
             'contentNegotiator' => ['class' => ContentNegotiator::class, 'formats' => ['application/json' => Response::FORMAT_JSON]],
-            'verbFilter' => ['class' => VerbFilter::class, 'actions' => ['create' => ['POST']]],
+            'verbFilter' => ['class' => VerbFilter::class, 'actions' => ['create' => ['POST', 'DELETE'], 'delete' => ['DELETE']]],
         ];
     }
 
     public function actionCreate()
     {
+        // Existing public URL maps all verbs here; keep dispatch local to the API.
+        if (Yii::$app->request->isDelete) return $this->runAction('delete');
         try {
             return $this->login();
         } catch (InvalidConfigException $error) {
@@ -49,6 +51,11 @@ class SessionsController extends Controller
             Yii::error('POS API failure: ' . get_class($error), __METHOD__);
             return $this->error(503, 'backend_unavailable');
         }
+    }
+
+    public function actions()
+    {
+        return ['delete' => DeleteSessionAction::class];
     }
 
     private function login()

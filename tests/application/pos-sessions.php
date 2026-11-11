@@ -109,7 +109,7 @@ foreach ($malformed as $case => $body) {
 }
 check(code(api($good, $key, op(), 'POST', 'text/plain')) === 'validation_failed' && code(api($good, $key, op(), 'POST', '')) === 'validation_failed', 'Content-Type application/json required');
 check(api($good, $key, ['X-POS-Operator-IP: not-an-ip'])['status'] === 400, 'Invalid operator IP header rejected');
-foreach (['GET', 'PUT', 'DELETE'] as $method) {
+foreach (['GET', 'PUT', 'PATCH'] as $method) {
     $r = api(null, $key, op(), $method);
     check($r['status'] === 405 && !str_contains($r['body'], 'napos_') && stripos($r['headers'], 'set-cookie') === false, "Method $method not allowed");
 }
@@ -172,3 +172,4 @@ $leaks = array_filter(array_merge($secrets, [$token, $fresh]), fn($s) => str_con
 check($leaks === [], 'No password, token or client key in activity register or log files');
 check(str_contains($register, 'Login POS fallito') && str_contains($register, 'Sessione POS #'), 'Failures and sessions audited');
 echo "PASS {$checks} POS session API checks\n";
+require __DIR__ . '/pos-logout.php';
