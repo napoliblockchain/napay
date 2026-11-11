@@ -65,6 +65,9 @@ case "$action" in
         if ! docker volume inspect napay_browser_local_mysql_data >/dev/null 2>&1; then
             docker volume create --label napay.service=browser-local napay_browser_local_mysql_data >/dev/null
         fi
+        # web fermo durante il bootstrap: dopo un upgrade dello schema riparte con un healthcheck nuovo
+        # (altrimenti --wait vede ancora "unhealthy" dal periodo prima dell'upgrade e si interrompe)
+        "${compose[@]}" stop web >/dev/null 2>&1 || true
         # --remove-orphans: rimuove il vecchio gateway del sandbox (porte 18121/18444)
         "${compose[@]}" up -d --build --wait --wait-timeout 3600 --remove-orphans
         "${compose[@]}" run --rm -T --no-deps --entrypoint php bootstrap /app/docker/local/create-user.php < "$state/browser-password"
