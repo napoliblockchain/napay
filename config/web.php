@@ -74,6 +74,8 @@ $config = [
                 'quota' => 'pay-fee/index',
                 // webhook PayPal (equivalente del vecchio IPN): tutti i metodi qui, la action accetta solo POST
                 'api/paypal/v1/webhook' => 'webhooks/paypal/receive',
+                // webhook BTCPay Greenfield per i pagamenti quota in Bitcoin
+                'api/btcpay/v1/webhook' => 'webhooks/btcpay/receive',
                 // API server-to-server dei server POS (SIP-021): tutti i metodi qui, la action accetta solo POST (405)
                 'api/pos/v1/sessions' => 'posapi/sessions/create',
                 // Regola per le API v1

@@ -5,12 +5,14 @@ use yii\helpers\Html;
 /* @var $this yii\web\View */
 /* @var $quote array app\components\association\MembershipFee::quote() */
 /* @var $paypal bool */
+/* @var $bitcoin bool */
 /* @var $readOnly bool */
 /* @var $payments app\models\MembershipPayments[] */
 
 $this->title = Yii::t('app', 'Paga quota');
 $this->params['breadcrumbs'][] = $this->title;
 $f = Yii::$app->formatter;
+$pendingBitcoin = array_filter($payments, fn($p) => $p->status === 'pending' && $p->btcpay_invoice_id !== null);
 ?>
 <?php foreach (Yii::$app->session->getAllFlashes() as $type => $messages): ?>
     <?php foreach ((array) $messages as $message): ?>
@@ -34,11 +36,18 @@ $f = Yii::$app->formatter;
                         <?= Html::encode($f->asDate($quote['starts_on'], 'php:d/m/Y') . ' - ' . $f->asDate($quote['expires_on'], 'php:d/m/Y')) ?>
                     </p>
                     <?php if ($paypal): ?>
-                        <?= Html::beginForm(['start'], 'post') ?>
+                        <?= Html::beginForm(['start'], 'post', ['class' => 'mb-2']) ?>
                         <?= Html::hiddenInput('method', 'paypal') ?>
                         <?= Html::submitButton('<i class="fab fa-paypal me-1"></i>' . Yii::t('app', 'Paga con PayPal'), ['class' => 'btn btn-primary w-100']) ?>
                         <?= Html::endForm() ?>
-                    <?php else: ?>
+                    <?php endif; ?>
+                    <?php if ($bitcoin): ?>
+                        <?= Html::beginForm(['start'], 'post', ['class' => 'mb-2']) ?>
+                        <?= Html::hiddenInput('method', 'bitcoin') ?>
+                        <?= Html::submitButton('<i class="fab fa-bitcoin me-1"></i>' . Yii::t('app', 'Paga con Bitcoin'), ['class' => 'btn btn-warning w-100']) ?>
+                        <?= Html::endForm() ?>
+                    <?php endif; ?>
+                    <?php if (!$paypal && !$bitcoin): ?>
                         <p class="text-secondary"><?= Yii::t('app', 'Pagamento online non disponibile: contatta l\'associazione.') ?></p>
                     <?php endif; ?>
                 <?php elseif ($quote['reason'] === 'already_paid'): ?>
@@ -51,7 +60,16 @@ $f = Yii::$app->formatter;
     </div>
     <div class="col-lg-7">
         <div class="card">
-            <div class="card-header"><h3 class="card-title"><?= Yii::t('app', 'I tuoi pagamenti') ?></h3></div>
+            <div class="card-header">
+                <h3 class="card-title"><?= Yii::t('app', 'I tuoi pagamenti') ?></h3>
+                <?php if ($pendingBitcoin && $bitcoin): ?>
+                    <div class="card-actions">
+                        <?= Html::beginForm(['btcpay-refresh'], 'post') ?>
+                        <?= Html::submitButton('<i class="fas fa-sync me-1"></i>' . Yii::t('app', 'Aggiorna stato'), ['class' => 'btn btn-sm btn-outline-secondary']) ?>
+                        <?= Html::endForm() ?>
+                    </div>
+                <?php endif; ?>
+            </div>
             <div class="table-responsive">
                 <table class="table table-vcenter card-table">
                     <thead><tr><th><?= Yii::t('app', 'Data') ?></th><th><?= Yii::t('app', 'Quota') ?></th><th class="text-end"><?= Yii::t('app', 'Importo') ?></th><th><?= Yii::t('app', 'Metodo') ?></th><th><?= Yii::t('app', 'Stato') ?></th><th><?= Yii::t('app', 'Scadenza') ?></th></tr></thead>

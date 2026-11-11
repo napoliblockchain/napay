@@ -23,7 +23,8 @@ class Module extends \yii\base\Module
 
     public function beforeAction($action)
     {
-        if (!str_starts_with(Yii::$app->request->getPathInfo(), 'api/paypal/v1/')) {
+        $path = Yii::$app->request->getPathInfo();
+        if (!str_starts_with($path, 'api/paypal/v1/') && !str_starts_with($path, 'api/btcpay/v1/')) {
             throw new NotFoundHttpException();
         }
         $headers = Yii::$app->response->headers;
