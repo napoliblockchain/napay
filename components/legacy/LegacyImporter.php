@@ -73,6 +73,11 @@ final class LegacyImporter
             $privileges[$level] = (int) $rows[0]['id'];
         }
         $report = [];
+        // nel legacy città = ID di np_comuni_italiani (tabella vuota in v2): si importa il nome
+        $comuni = [];
+        foreach (Db::rows($source, 'SELECT id_comune, citta, sigla FROM np_comuni_italiani') as $row) {
+            $comuni[(int) $row['id_comune']] = trim($row['citta']) . (trim($row['sigla']) !== '' ? ' (' . trim($row['sigla']) . ')' : '');
+        }
 
         $roles = self::upsertLookup($source, $target, 'SELECT id_carica AS id, description FROM st_cariche',
             'association_roles', ['description'], static fn($r) => [trim((string) $r['description'])]);
@@ -136,7 +141,7 @@ final class LegacyImporter
                 'legacy_user_type' => $type, 'association_role_id' => $roles[(int) $row['id_carica']] ?? null,
                 'is_corporate' => (string) $row['corporate'] === '1' ? 1 : 0, 'denomination' => self::text($row['denomination']),
                 'vat' => self::text($row['vat']), 'address' => self::text($row['address']), 'cap' => self::text($row['cap']),
-                'city' => self::text($row['city']), 'country' => self::text($row['country']),
+                'city' => self::city($row['city'], $comuni), 'country' => self::text($row['country']),
             ], 'id', (int) $profile['id']);
             $userMap[(int) $row['id_user']] = $userId;
         }
@@ -194,7 +199,8 @@ final class LegacyImporter
         foreach ($values as $row) {
             $existing = Db::rows($target, 'SELECT id FROM settings WHERE code=? LIMIT 2', [$row['setting_name']]);
             if (count($existing) > 1) throw new LegacyImportException('Duplicate v2 setting code.');
-            $fields = ['description' => 'Associazione: ' . $row['setting_name'], 'code' => $row['setting_name'], 'value' => mb_substr((string) $row['setting_value'], 0, 2048)];
+            $value = $row['setting_name'] === 'gdpr_city' ? (string) self::city($row['setting_value'], $comuni) : (string) $row['setting_value'];
+            $fields = ['description' => 'Associazione: ' . $row['setting_name'], 'code' => $row['setting_name'], 'value' => mb_substr($value, 0, 2048)];
             $existing ? self::update($target, 'settings', $fields, 'id', (int) $existing[0]['id']) : self::insert($target, 'settings', $fields);
             $settings++;
         }
@@ -313,6 +319,12 @@ final class LegacyImporter
     {
         $text = trim((string) $value);
         return $text === '' ? null : $text;
+    }
+
+    private static function city($value, array $comuni): ?string
+    {
+        $text = self::text($value);
+        return $text !== null && ctype_digit($text) && isset($comuni[(int) $text]) ? $comuni[(int) $text] : $text;
     }
 
     private static function file(?string $directory, string $name): ?string

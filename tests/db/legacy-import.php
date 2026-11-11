@@ -31,7 +31,7 @@ function digest() {
 }
 function legacyChecksum() {
     global $legacy;
-    return json_encode(Db::rows($legacy, 'CHECKSUM TABLE np_users_type, np_users, st_cariche, st_quote, st_tipo_pagamenti, st_pagamenti, st_verbali, np_settings_webapp EXTENDED'));
+    return json_encode(Db::rows($legacy, 'CHECKSUM TABLE np_comuni_italiani, np_users_type, np_users, st_cariche, st_quote, st_tipo_pagamenti, st_pagamenti, st_verbali, np_settings_webapp EXTENDED'));
 }
 $files = '/tmp/napay-legacy-files';
 function import($filesDir = 'default') { global $legacy, $db, $files; return Importer::run($legacy, $db, $filesDir === 'default' ? $files : $filesDir); }
@@ -45,22 +45,25 @@ foreach ([
     "CREATE TABLE st_tipo_pagamenti (id_tipo_pagamento int NOT NULL AUTO_INCREMENT, permission int NOT NULL, description varchar(50) NOT NULL, PRIMARY KEY (id_tipo_pagamento)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "CREATE TABLE st_pagamenti (id_pagamento int NOT NULL AUTO_INCREMENT, id_user int NOT NULL, id_quota int NOT NULL, anno int NOT NULL DEFAULT '0', progressivo int NOT NULL DEFAULT '0', importo float NOT NULL, id_tipo_pagamento int NOT NULL, data_registrazione date NOT NULL DEFAULT '1901-01-01', data_inizio date NOT NULL DEFAULT '1901-01-01', data_scadenza date NOT NULL DEFAULT '1901-01-01', id_invoice_bps varchar(60) NOT NULL, paypal_txn_id varchar(60) NOT NULL DEFAULT '0', status varchar(250) NOT NULL, PRIMARY KEY (id_pagamento)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "CREATE TABLE st_verbali (id_verbali int NOT NULL AUTO_INCREMENT, data_verbale date NOT NULL, url_verbale varchar(250) NOT NULL, descrizione_verbale varchar(500) NOT NULL, PRIMARY KEY (id_verbali)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_comuni_italiani (id_comune int NOT NULL AUTO_INCREMENT, citta varchar(200) NOT NULL, provincia varchar(50) NOT NULL, sigla varchar(2) NOT NULL, PRIMARY KEY (id_comune)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "INSERT INTO np_comuni_italiani VALUES (5,'Napoli','Napoli','NA')",
     "CREATE TABLE np_settings_webapp (id_setting int NOT NULL AUTO_INCREMENT, setting_name varchar(50) NOT NULL, setting_value varchar(15000) NOT NULL, PRIMARY KEY (id_setting)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "INSERT INTO np_users_type VALUES (1,'POS','0','Profilo POS'),(2,'Commerciante','10','x'),(3,'Amministratore','20','x'),(5,'Socio','5','x'),(6,'Istituto','10','x')",
     "INSERT INTO st_cariche VALUES (1,3,'Presidente'),(4,3,'Segretario'),(5,5,'Socio ordinario')",
     "INSERT INTO st_quote VALUES (1,'Quota associativa annuale',1,20),(2,'Donazione',0,0)",
     "INSERT INTO st_tipo_pagamenti VALUES (1,0,'Bitcoin'),(2,0,'Paypal'),(9,20,'Contanti')",
     "INSERT INTO st_verbali VALUES (1,'2019-07-16','abc123.pdf','Assemblea 1'),(2,'2020-01-18','missing.pdf','Assemblea 2')",
-    "INSERT INTO np_settings_webapp (setting_name,setting_value) VALUES ('quota_iscrizione_socio','20'),('gdpr_titolare','Associazione Test'),('PAYPAL_CLIENT_SECRET','must-not-import'),('poa_sealerPrvKey','must-not-import')",
+    "INSERT INTO np_settings_webapp (setting_name,setting_value) VALUES ('quota_iscrizione_socio','20'),('gdpr_titolare','Associazione Test'),('gdpr_city','5'),('PAYPAL_CLIENT_SECRET','must-not-import'),('poa_sealerPrvKey','must-not-import')",
 ] as $sql) $legacy->exec($sql);
-$addUser = $legacy->prepare("INSERT INTO np_users VALUES (?,?,?,?,?,NULL,?,?,?,?,'',' Via Test 1 ','80100','Napoli','Italia','',1)");
+$addUser = $legacy->prepare("INSERT INTO np_users VALUES (?,?,?,?,?,NULL,?,?,?,?,'',' Via Test 1 ','80100',?,'Italia','',1)");
 foreach ([
     [10, 3, 4, 'segretario@example.invalid', 'Segre', '0', null], [11, 5, 5, "socio@example.invalid\t", 'Socio', '0', null],
     [12, 2, 5, 'shop@example.invalid', 'Shop', '1', 'Shop srl'], [13, 1, 5, 'pos@example.invalid', 'Pos', '0', null],
     [14, 6, 5, 'ist@example.invalid', 'Ist', '0', null], [15, 5, 5, 'not-an-email', 'Bad', '0', null],
     [16, 5, 5, 'Linked@Example.invalid', 'Linked', '0', null],
 ] as [$id, $type, $role, $email, $name, $corporate, $denomination]) {
-    $addUser->execute([$id, $type, $role, $email, password_hash('legacy-pass-' . $id, PASSWORD_BCRYPT), $name, 'Fixture', $corporate, $denomination]);
+    // città = ID comune legacy; 99999 non esiste e resta com'è
+    $addUser->execute([$id, $type, $role, $email, password_hash('legacy-pass-' . $id, PASSWORD_BCRYPT), $name, 'Fixture', $corporate, $denomination, $id === 11 ? '99999' : '5']);
 }
 $addPayment = $legacy->prepare("INSERT INTO st_pagamenti VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)");
 foreach ([
@@ -83,7 +86,7 @@ $report = import();
 check($report['users'] === ['created' => 4, 'updated' => 0, 'linked' => 1, 'skipped_type' => 1, 'skipped_email' => 1, 'inactive_pos' => 1], 'users: created, linked, istituto and invalid email skipped');
 check($report['payments'] === ['imported' => 5, 'skipped_user' => 2, 'removed' => 0], 'payments of skipped users not imported');
 check($report['minutes'] === ['imported' => 2, 'files' => 1, 'files_missing' => 1, 'removed' => 0], 'minutes and files reported');
-check($report['settings'] === 2 && $report['roles'] === 3 && $report['fees'] === 2 && $report['payment_methods'] === 3, 'reference tables and settings imported');
+check($report['settings'] === 3 && $report['roles'] === 3 && $report['fees'] === 2 && $report['payment_methods'] === 3, 'reference tables and settings imported');
 $socio = user('socio@example.invalid');
 check($socio && $socio['username'] === 'socio@example.invalid' && password_verify('legacy-pass-11', $socio['password']), 'legacy email trimmed, username = email, legacy password still valid');
 check($socio['level'] === '0' && $socio['is_active'] === '1' && $socio['oauth_provider'] === 'SELF', 'member is an active user');
@@ -92,6 +95,8 @@ check($admin['level'] === '50' && one($db, 'SELECT r.description FROM member_pro
 $shop = user('shop@example.invalid');
 $shopProfile = one($db, 'SELECT * FROM member_profiles WHERE user_id=?', [$shop['id']]);
 check($shop['level'] === '30' && $shop['is_merchant'] === '1' && $shopProfile['is_corporate'] === '1' && $shopProfile['denomination'] === 'Shop srl' && $shopProfile['address'] === 'Via Test 1', 'merchant privilege and company profile');
+check($shopProfile['city'] === 'Napoli (NA)' && one($db, 'SELECT city FROM member_profiles WHERE legacy_user_id=11')['city'] === '99999'
+    && one($db, "SELECT value FROM settings WHERE code='gdpr_city'")['value'] === 'Napoli (NA)', 'legacy city IDs resolved to municipality names, unknown kept');
 check(user('pos@example.invalid')['is_active'] === '0' && one($db, 'SELECT legacy_user_type FROM member_profiles WHERE legacy_user_id=13')['legacy_user_type'] === '1', 'POS imported disabled, legacy type kept');
 check(user('ist@example.invalid') === null && one($db, 'SELECT id FROM member_profiles WHERE legacy_user_id IN (14,15)') === null, 'istituto and invalid email not imported');
 $linked = user('linked@example.invalid');

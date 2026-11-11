@@ -11,6 +11,11 @@ $items = [
             ['label' => Yii::t('app', 'Negozi'), 'url' => ['stores/index'], 'iconStyle' => 'fas', 'icon' => 'shopping-cart', 'visible' => User::isAdministrator() || User::isMerchant()],
             ['label' => Yii::t('app', 'Pos'), 'url' => ['pos/index'], 'iconStyle' => 'fas', 'icon' =>'mobile-alt', 'visible' => User::isAdministrator() || User::isMerchant()],
             ['label' => Yii::t('app', 'Transazioni'), 'url' => ['invoices/index'], 'iconStyle' => 'fas', 'icon' =>'file-invoice', 'visible' => User::isAdministrator() || User::isMerchant()],
+            // associazione (TIP-020)
+            ['label' => Yii::t('app', 'Soci'), 'url' => ['association/members'], 'iconStyle' => 'fas', 'icon' => 'users', 'visible' => User::isAdministrator()],
+            ['label' => Yii::t('app', 'Quote associative'), 'url' => ['association/payments'], 'iconStyle' => 'fas', 'icon' => 'id-card', 'visible' => User::isAdministrator()],
+            ['label' => Yii::t('app', 'Verbali'), 'url' => ['association/minutes'], 'iconStyle' => 'fas', 'icon' => 'book', 'visible' => User::isAdministrator()],
+            ['label' => Yii::t('app', 'Tabelle associazione'), 'url' => ['association/tables'], 'iconStyle' => 'fas', 'icon' => 'table', 'visible' => User::isAdministrator()],
             ['label' => Yii::t('app', 'Pannello Admin'), 'url' => ['admin/index'], 'iconStyle' => 'fas', 'icon' => 'cog', 'visible' => User::isAdministrator() || User::isMerchant()],
                       
         ];
