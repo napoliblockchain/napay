@@ -5,7 +5,7 @@ require dirname(__DIR__) . '/bootstrap-common.php';
 if (env('NAPAY_LOCAL_BROWSER') !== 'isolated-copy'
     || env('DB_DATABASE') !== 'napay_browser_local'
     || env('MAIL_TRANSPORT') !== 'file'
-    || env('WEBAPP_LINK') !== 'https://localhost:18444') exit(1);
+    || env('WEBAPP_LINK') !== 'https://napay.local') exit(1);
 $config = napayBootstrapConfig();
 $db = app\components\db\V2Bootstrap::connect($config['dsn'], $config['user'], $config['password']);
 app\components\db\V2Bootstrap::ready($db, dirname(__DIR__, 2));

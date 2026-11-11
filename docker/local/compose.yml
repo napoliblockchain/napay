@@ -1,7 +1,11 @@
 services:
   web:
     ports: !reset []
-    networks: !override [database, browser]
+    # HTTPS terminato da napay-gateway (orchestratore napay-project): https://napay.local
+    networks: !override
+      database: {}
+      napay_local_browser:
+        aliases: [napay-local-web]
     volumes:
       - .:/var/www/html:ro
       - ./docker/local/https.conf:/etc/apache2/conf-enabled/napay-local-https.conf:ro
@@ -14,27 +18,11 @@ services:
         install -d -o 33 -g 33 -m 0700 /var/www/html/runtime
         install -d -o 33 -g 33 -m 0755 /var/www/html/web/assets
         exec sh /var/www/html/docker/web-entrypoint.sh apache2-foreground
-  gateway:
-    # Existing local Caddy image, pinned to its immutable digest; no shared gateway edits.
-    image: caddy@sha256:86deaf5e3d3408a6ccec08fbb79989783dd26e206ae10bcf78a801dc8c9ab794
-    restart: unless-stopped
-    ports:
-      - '127.0.0.1:18121:18121'
-      - '127.0.0.1:18444:18444'
-    volumes:
-      - ./docker/local/Caddyfile:/etc/caddy/Caddyfile:ro
-      - local_caddy_data:/data
-      - local_caddy_config:/config
-    networks: [browser, ingress]
-    depends_on:
-      web:
-        condition: service_healthy
 networks:
-  ingress:
-  browser:
-    internal: true
+  # interna, creata da start-localhost.sh: solo web e napay-gateway, nessuna uscita Internet
+  napay_local_browser:
+    name: napay_local_browser
+    external: true
 volumes:
   local_runtime:
   local_assets:
-  local_caddy_data:
-  local_caddy_config:

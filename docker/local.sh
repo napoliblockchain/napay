@@ -37,8 +37,8 @@ NAPAY_LOCAL_BROWSER=isolated-copy
 COOKIE_VALIDATION_KEY=$(openssl rand -hex 32)
 SECRET_HASH_KEY=$(openssl rand -hex 32)
 ADMIN_EMAIL=browser-admin@example.invalid
-WEBAPP_LINK=https://localhost:18444
-APP_WEBSITE=https://localhost:18444
+WEBAPP_LINK=https://napay.local
+APP_WEBSITE=https://napay.local
 WEBAPP_SOCIETY=Napay local test
 MAIL_TRANSPORT=file
 ENV
@@ -56,19 +56,17 @@ case "$action" in
         "${compose[@]}" config --quiet
         "${compose[@]}" config --format json | docker run --rm -i --network none --read-only \
             -v "$root/tests/docker/local-config.php:/check.php:ro" --entrypoint php php:8.3.36-cli /check.php
+        # rete interna condivisa con napay-gateway (vedi start-localhost.sh dell'orchestratore)
+        docker network inspect napay_local_browser >/dev/null 2>&1 \
+            || docker network create --internal --label napay.service=browser-local napay_local_browser >/dev/null
         if ! docker volume inspect napay_browser_local_mysql_data >/dev/null 2>&1; then
             docker volume create --label napay.service=browser-local napay_browser_local_mysql_data >/dev/null
         fi
-        "${compose[@]}" up -d --build --wait --wait-timeout 3600
+        # --remove-orphans: rimuove il vecchio gateway del sandbox (porte 18121/18444)
+        "${compose[@]}" up -d --build --wait --wait-timeout 3600 --remove-orphans
         "${compose[@]}" run --rm -T --no-deps --entrypoint php bootstrap /app/docker/local/create-user.php < "$state/browser-password"
-        for attempt in {1..30}; do
-            if "${compose[@]}" exec -T gateway test -f /data/caddy/pki/authorities/local/root.crt; then break; fi
-            sleep 1
-        done
-        "${compose[@]}" cp gateway:/data/caddy/pki/authorities/local/root.crt "$state/caddy-root.crt"
-        chmod 600 "$state/caddy-root.crt"
-        curl --fail --silent --show-error --retry 10 --retry-connrefused --retry-delay 1 --cacert "$state/caddy-root.crt" --output /dev/null https://localhost:18444/site/login
-        printf 'URL: https://localhost:18444\nUser: browser-admin\nPassword file: %s/browser-password\nLocal CA: %s/caddy-root.crt\n' "$state" "$state"
+        # HTTPS e CA locale (caddy-root.crt) da napay-gateway: avvio completo con start-localhost.sh
+        printf 'URL: https://napay.local\nUser: browser-admin\nPassword file: %s/browser-password\n' "$state"
         ;;
     status) "${compose[@]}" ps ;;
     stop) "${compose[@]}" stop ;;

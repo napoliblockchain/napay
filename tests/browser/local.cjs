@@ -7,7 +7,7 @@ const { execFileSync } = require('node:child_process');
 const { chromium } = require(process.env.PLAYWRIGHT_PACKAGE || 'playwright');
 const root = path.resolve(__dirname, '../..');
 const state = path.join(os.homedir(), '.local/share/napay/browser-local');
-const origin = 'https://localhost:18444';
+const origin = 'https://napay.local';
 const ca = path.join(state, 'caddy-root.crt');
 const compose = ['compose', '-p', 'napay-browser-local', '--project-directory', root,
   '--env-file', path.join(state, 'local.env'), '-f', path.join(root, 'docker-compose.yml'),
@@ -29,7 +29,7 @@ function mailLink(email, route) {
     const raw = fs.readFileSync(path.join(directory, name), 'utf8');
     if (!raw.split(/\r?\n/).some(line => line === `To: ${email}`)) continue;
     const decoded = raw.replace(/=\r?\n/g, '').replace(/=([0-9A-F]{2})/gi, (_, hex) => String.fromCharCode(parseInt(hex, 16)));
-    const match = decoded.match(new RegExp(`https://localhost:18444/site/${route}\\?[^"\\s<>]+`));
+    const match = decoded.match(new RegExp(`https://napay\\.local/site/${route}\\?[^"\\s<>]+`));
     if (match) return match[0].replace(/&amp;/g, '&');
   }
   throw new Error('Expected private file mail missing');
@@ -40,11 +40,11 @@ async function submit(page, selector) {
 (async () => {
   // curl validates the complete TLS chain against the exported local CA (no -k).
   execFileSync('curl', ['--fail', '--silent', '--cacert', ca, '--output', '/dev/null', `${origin}/site/login`]);
-  check(true, 'TLS chain and localhost certificate verified');
-  const redirect = execFileSync('curl', ['--silent', '--head', 'http://localhost:18121/site/login']).toString();
-  check(/HTTP\/\S+ (301|308)/.test(redirect) && redirect.includes(`${origin}/site/login`), 'HTTP redirects to correct nonstandard HTTPS port');
+  check(true, 'TLS chain and napay.local certificate verified');
+  const redirect = execFileSync('curl', ['--silent', '--head', 'http://napay.local/site/login']).toString();
+  check(/HTTP\/\S+ (301|308)/.test(redirect) && redirect.includes(`${origin}/site/login`), 'HTTP redirects to HTTPS');
   // Pin only this sandbox leaf key in the isolated automated browser; no global TLS bypass.
-  const certificate = execFileSync('openssl', ['s_client', '-connect', '127.0.0.1:18444', '-servername', 'localhost', '-showcerts'], { input: '', stdio: ['pipe', 'pipe', 'ignore'] });
+  const certificate = execFileSync('openssl', ['s_client', '-connect', '127.0.0.1:443', '-servername', 'napay.local', '-showcerts'], { input: '', stdio: ['pipe', 'pipe', 'ignore'] });
   const publicKey = execFileSync('openssl', ['x509', '-pubkey', '-noout'], { input: certificate });
   const der = execFileSync('openssl', ['pkey', '-pubin', '-outform', 'der'], { input: publicKey });
   const pin = crypto.createHash('sha256').update(der).digest('base64');
