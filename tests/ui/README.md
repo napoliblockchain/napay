@@ -7,10 +7,15 @@ Eseguibile solo da CLI; nessuna route di test viene aggiunta all'applicazione.
 
 Menu account in alto a destra: profilo con ID cifrato e logout POST;
 nessun profilo nella sidebar, nessuna sezione Developer/Debug/Gii.
-47 controlli layout, inclusi output encoding e menu per ruolo.
+56 controlli layout, inclusi output encoding e menu per ruolo.
 Il test HTTPS `tests/browser/local.cjs` verifica apertura dropdown e profilo
 su desktop/mobile e logout reale. Moduli Debug/Gii non registrati in web/console
 in nessun ambiente; configurazione e test HTTP verificano questa assenza.
+Il merchant vede Azienda sotto Profilo; admin usa Aziende nella sidebar.
+La suite browser su fixture copre anche questo dropdown (35 controlli).
+`NAPAY_CHROME_PATH` permette di usare Chrome locale invece del Chromium Playwright.
+Preservate le quattro voci associazione aggiunte in `8f1da057`, visibili solo
+all'amministratore: non sono sostituite dalla navigazione Azienda.
 
 ```sh
 php tests/ui/layout.php

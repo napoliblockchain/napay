@@ -112,3 +112,17 @@ mail, 109 HTTP, 30 record-level, 15 stato/log; regressioni 33 configurazione,
 21 dipendenze, 38 layout, 34 schema e 32 bootstrap + 2 Compose passate.
 I percorsi positivi di recupero seguono link estratti dai messaggi file;
 i casi negativi includono anche link costruiti/alterati dalla suite. Nessun SMTP.
+
+## Azienda del Merchant
+
+`merchants.php`, solo `napay_test_runtime`: 46 controlli record-level e scenario
+update, con rollback finale. Owner e P.IVA invariati nonostante POST costruite
+manualmente, sia admin sia merchant; pagina Azienda ricavata dall'identita,
+nessun ID client. La suite HTTP sale a 134 controlli, incluse pagine admin
+esistenti e flusso company GET/POST/CSRF/ruoli. Regressioni password/mail e
+attivazione passate. Dettagli e limiti in `docker/MERCHANT-COMPANY.md`.
+
+Collaudo finale 2026-11-11 dopo integrazione dell'altro agente: 134 HTTP,
+46 proprieta/P.IVA, 30 utenti record-level, 15 stato/log, 68 password/mail,
+92 registrazione/attivazione e 36 backoffice associazione. Riavvio con dati
+preservati e bootstrap no-op verificati. Menu UI: 56 renderer e 35 browser.

@@ -7,19 +7,25 @@ Contiene dati recuperati reali: resta accessibile solo dalla macchina locale.
 
 ## Avvio
 
+Avvio di tutto lo stack (wallet, backoffice, gateway) dall'orchestratore:
+
 ```sh
-NAPAY_IMPORT_DIR=/percorso/privato/dataset-v2 bash docker/local.sh up
+NAPAY_IMPORT_DIR=/percorso/privato/dataset-v2 bash ../start-localhost.sh   # primo avvio
+bash ../start-localhost.sh                                                 # avvii successivi
 bash docker/local.sh status
 ```
+
+`docker/local.sh up` avvia solo il sandbox: senza il gateway dell'orchestratore
+non e raggiungibile dal browser.
 
 Prerequisiti: Docker Compose con `!reset`/`!override`, curl, OpenSSL, flock, vendor
 Napay installato dal lock e dataset privato revisionato. Il primo avvio costruisce
 le immagini PHP gia previste dal progetto; non cambia versione PHP.
 
-- Browser: `https://localhost:18444`.
-- HTTP: `http://localhost:18121`, solo redirect HTTPS.
-- Porte diverse da gateway condiviso `18080`/`18443` e diagnostica `18120`.
-- Username: `browser-admin`.
+- Browser: `https://napay.local` (hosts: `127.0.0.1 napay.local`).
+- HTTP: `http://napay.local`, solo redirect HTTPS; `localhost` reindirizza qui.
+- Gateway `napay-gateway` dell'orchestratore su `127.0.0.1:80/443`; diagnostica `18120`.
+- Email di accesso: `browser-admin@example.invalid` (login solo con email, TIP-020).
 - Password casuale: `$HOME/.local/share/napay/browser-local/browser-password`.
 - Configurazione privata: stessa directory, `local.env` (0600).
 - CA pubblica locale: stessa directory, `caddy-root.crt`.
@@ -30,8 +36,8 @@ Nessuna password viene stampata nei log o salvata nel repository.
 
 ## HTTPS locale
 
-Caddy genera e rinnova certificati automaticamente; CA e chiavi persistono nei
-volumi della sandbox. Nessuna gestione manuale di certificati server.
+Caddy (`napay-gateway`) genera e rinnova certificati automaticamente; CA e chiavi
+persistono nei suoi volumi. `start-localhost.sh` esporta la CA in `caddy-root.crt`. Nessuna gestione manuale di certificati server.
 Nel browser occorre fidarsi **una sola volta** della CA locale esportata,
 nel proprio archivio di certificati: un container non puo installarla nel browser
 host. Non disabilitare verifiche TLS globalmente e non importare chiavi private.
@@ -41,13 +47,15 @@ Verifica TLS senza bypass:
 
 ```sh
 curl --cacert "$HOME/.local/share/napay/browser-local/caddy-root.crt" \
-  https://localhost:18444/site/login --output /dev/null --fail
+  https://napay.local/site/login --output /dev/null --fail
 ```
 
-Backend Apache senza porte pubblicate; rete browser interna, separata da DB.
+Backend Apache senza porte pubblicate; rete browser interna `napay_local_browser`,
+separata da DB. Oltre a `napay-gateway`, la usa ora anche la preview POS v2;
+nessun accesso diretto del POS alla rete MySQL.
 Web e DB senza rete con uscita Internet: chiamate wallet/pagamenti/API non funzionano
-volutamente. Solo Caddy dispone anche della rete bridge d'ingresso necessaria a
-pubblicare le porte loopback Docker. Apache dichiara HTTPS solo nell'overlay dedicato a questo gateway.
+volutamente. Solo il gateway dispone anche della rete bridge necessaria a
+pubblicare le porte loopback Docker. Apache dichiara HTTPS solo nell'overlay locale.
 `HTTPS_ONLY=true` protegge cookie sessione, CSRF e identita con Secure,
 HttpOnly e SameSite=Lax. Il compose diagnostico normale resta compatibile HTTP.
 Nessun access log Caddy abilitato; Apache non registra query bearer.
@@ -103,11 +111,14 @@ ma installazione e funzionamento offline PWA non sono certificati.
 
 ## Verifiche eseguite
 
+Aggiornamento di chiusura menu/Azienda del 2026-11-11; test su stack temporaneo
+e fixture anonime, senza modificare il database locale recuperato.
+
 - 43 controlli configurazione (cookie HTTPS, compatibilita HTTP e assenza Debug/Gii in ogni ambiente).
-- 25 controlli Compose sandbox (porte, reti, volume, mount e mail file).
-- 27 controlli Chrome HTTPS desktop/mobile, inclusi menu account, profilo, logout e link reali dalle mail file.
-- Regressioni HTTP: 113 runtime, 30 accessi record-level, 15 stato/log,
-  68 password/mail e 86 registrazione/attivazione.
-- 21 controlli dipendenze e 47 layout Yii.
+- 20 controlli Compose sandbox corrente (porte, reti, volume, mount e mail file).
+- 27 controlli Chrome HTTPS desktop/mobile eseguiti nel precedente collaudo, inclusi menu account, profilo, logout e link reali dalle mail file.
+- Regressioni HTTP: 134 runtime, 46 proprieta/IVA azienda, 30 accessi record-level, 15 stato/log,
+  68 password/mail, 92 registrazione/attivazione e 36 backoffice associazione.
+- 21 controlli dipendenze, 56 layout Yii e 35 browser UI su fixture anonime.
 
 Nessun SMTP reale, pagamento o chiamata wallet; nessuna modifica poawallet.

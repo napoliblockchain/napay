@@ -1,8 +1,11 @@
 # Napay Docker: PHP 8.3.36 e configurazione runtime
 
 Primo accesso browser con Caddy, copia DB isolata e mail su file:
-[sandbox web locale](LOCAL-BROWSER.md). Porte dedicate `18121`/`18444`,
-nessuna modifica al gateway condiviso o a poawallet.
+[sandbox web locale](LOCAL-BROWSER.md), servita su `https://napay.local` dal
+gateway dell'orchestratore (`napay-project/start-localhost.sh`).
+
+Gestione admin/merchant e P.IVA bloccata in modifica:
+[pagina Azienda e stato funzionale](MERCHANT-COMPANY.md).
 
 Le immagini runtime restano fissate a PHP `8.3.36`: `Dockerfile` usa
 `php:8.3.36-apache`; `Dockerfile_Image` ha lo stesso default `VARIANT`.
