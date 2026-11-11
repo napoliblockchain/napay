@@ -53,7 +53,7 @@ final class PayPal
      */
     public static function createOrder(int $paymentId, string $amount, string $description, string $returnUrl, string $cancelUrl): array
     {
-        $response = self::call('POST', '/v2/checkout/orders', 'napay-order-' . $paymentId, [
+        $response = self::call('POST', '/v2/checkout/orders', 'napay-order-' . $paymentId, json_encode([
             'intent' => 'CAPTURE',
             'purchase_units' => [[
                 'reference_id' => 'membership-fee',
@@ -65,7 +65,7 @@ final class PayPal
                 'return_url' => $returnUrl, 'cancel_url' => $cancelUrl,
                 'user_action' => 'PAY_NOW', 'shipping_preference' => 'NO_SHIPPING',
             ]]],
-        ]);
+        ], JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES));
         $id = $response['id'] ?? null;
         $approve = null;
         foreach ($response['links'] ?? [] as $link) {
@@ -84,7 +84,7 @@ final class PayPal
     public static function captureOrder(string $orderId, int $paymentId): array
     {
         if (!preg_match('/^[A-Z0-9]{8,36}$/D', $orderId)) throw new PayPalException('Invalid PayPal order id.');
-        $response = self::call('POST', '/v2/checkout/orders/' . $orderId . '/capture', 'napay-capture-' . $paymentId, null);
+        $response = self::call('POST', '/v2/checkout/orders/' . $orderId . '/capture', 'napay-capture-' . $paymentId, '');
         $capture = $response['purchase_units'][0]['payments']['captures'][0] ?? null;
         if (($response['status'] ?? null) !== 'COMPLETED' || !is_array($capture) || ($capture['status'] ?? null) !== 'COMPLETED') {
             throw new PayPalException('PayPal capture not completed.');
@@ -97,6 +97,44 @@ final class PayPal
         ];
     }
 
+    /** ID del webhook registrato su PayPal: senza, il webhook è disattivato (fail secure) */
+    public static function webhookId(): ?string
+    {
+        $id = trim((string) getenv('PAYPAL_WEBHOOK_ID'));
+        return preg_match('/^[A-Z0-9-]{8,64}$/D', $id) ? $id : null;
+    }
+
+    /**
+     * Verifica presso PayPal la firma di un webhook (verify-webhook-signature).
+     * L'evento è inoltrato byte per byte com'è arrivato: una ricodifica JSON invaliderebbe la firma.
+     * @throws PayPalException PayPal non raggiungibile
+     */
+    public static function verifyWebhook(array $transmission, string $rawEvent): bool
+    {
+        $webhookId = self::webhookId();
+        if ($webhookId === null) throw new PayPalException('PayPal webhook not configured.');
+        $fields = ['auth_algo' => $transmission['auth_algo'], 'cert_url' => $transmission['cert_url'],
+            'transmission_id' => $transmission['transmission_id'], 'transmission_sig' => $transmission['transmission_sig'],
+            'transmission_time' => $transmission['transmission_time'], 'webhook_id' => $webhookId];
+        $body = rtrim(json_encode($fields, JSON_THROW_ON_ERROR | JSON_UNESCAPED_SLASHES), '}') . ',"webhook_event":' . $rawEvent . '}';
+        $response = self::call('POST', '/v1/notifications/verify-webhook-signature', null, $body);
+        return ($response['verification_status'] ?? null) === 'SUCCESS';
+    }
+
+    /** Stato attuale di un ordine, letto da PayPal (mai dal contenuto del webhook) @throws PayPalException */
+    public static function getOrder(string $orderId): array
+    {
+        if (!preg_match('/^[A-Z0-9]{8,36}$/D', $orderId)) throw new PayPalException('Invalid PayPal order id.');
+        return self::call('GET', '/v2/checkout/orders/' . $orderId, null, null);
+    }
+
+    /** Stato attuale di una capture, letto da PayPal @throws PayPalException */
+    public static function getCapture(string $captureId): array
+    {
+        if (!preg_match('/^[A-Z0-9]{8,60}$/D', $captureId)) throw new PayPalException('Invalid PayPal capture id.');
+        return self::call('GET', '/v2/payments/captures/' . $captureId, null, null);
+    }
+
     public static function isApproveUrl(string $url): bool
     {
         $parts = parse_url($url);
@@ -105,7 +143,8 @@ final class PayPal
     }
 
     /** @throws PayPalException */
-    private static function call(string $method, string $path, string $requestId, ?array $body): array
+    /** $body: JSON già codificato ('' = corpo vuoto, null = nessun corpo, per GET) */
+    private static function call(string $method, string $path, ?string $requestId, ?string $body): array
     {
         try {
             $config = self::config();
@@ -113,12 +152,14 @@ final class PayPal
                 'allow_redirects' => false, 'http_errors' => false, 'verify' => true]);
             $options = ['headers' => [
                 'Authorization' => 'Bearer ' . self::token($client, $config),
-                'PayPal-Request-Id' => $requestId,
                 'Prefer' => 'return=representation',
                 'Accept' => 'application/json',
             ]];
-            $options[$body === null ? 'body' : 'json'] = $body ?? '';
-            if ($body === null) $options['headers']['Content-Type'] = 'application/json';
+            if ($requestId !== null) $options['headers']['PayPal-Request-Id'] = $requestId;
+            if ($body !== null) {
+                $options['body'] = $body;
+                $options['headers']['Content-Type'] = 'application/json';
+            }
             $response = $client->request($method, $path, $options);
             return self::decode($response, [200, 201]);
         } catch (PayPalException $error) {

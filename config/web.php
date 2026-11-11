@@ -72,6 +72,8 @@ $config = [
             'rules' => [
                 // link esterno per pagare la quota (come il vecchio loginquota): login, poi pagina Paga quota
                 'quota' => 'pay-fee/index',
+                // webhook PayPal (equivalente del vecchio IPN): tutti i metodi qui, la action accetta solo POST
+                'api/paypal/v1/webhook' => 'webhooks/paypal/receive',
                 // API server-to-server dei server POS (SIP-021): tutti i metodi qui, la action accetta solo POST (405)
                 'api/pos/v1/sessions' => 'posapi/sessions/create',
                 // Regola per le API v1
@@ -81,6 +83,7 @@ $config = [
     ],
     'modules' => [
         'posapi' => ['class' => \app\modules\posapi\Module::class],
+        'webhooks' => ['class' => \app\modules\webhooks\Module::class],
     ],
     'container' => [
         'definitions' => [

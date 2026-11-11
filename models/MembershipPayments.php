@@ -63,7 +63,8 @@ class MembershipPayments extends \yii\db\ActiveRecord
         return 'membership_payments';
     }
 
-    public const STATUS_LABELS = ['paid' => 'Pagata', 'pending' => 'In corso', 'expired' => 'Scaduta', 'invalid' => 'Non valida'];
+    // refunded/reversed: rimborso o storno segnalati da PayPal (il numero di ricevuta resta per lo storico)
+    public const STATUS_LABELS = ['paid' => 'Pagata', 'pending' => 'In corso', 'expired' => 'Scaduta', 'invalid' => 'Non valida', 'refunded' => 'Rimborsata', 'reversed' => 'Stornata'];
 
     /**
      * Salvataggio con numero ricevuta progressivo per anno, assegnato solo ai pagamenti pagati.

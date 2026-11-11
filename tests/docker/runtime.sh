@@ -40,6 +40,7 @@ PAYPAL_MODE=mock
 PAYPAL_MOCK_BASE=http://127.0.0.1:8099
 PAYPAL_CLIENT_ID=napay-test-client
 PAYPAL_CLIENT_SECRET=$(openssl rand -hex 24)
+PAYPAL_WEBHOOK_ID=WH-TEST-$(openssl rand -hex 8 | tr 'a-f' 'A-F')
 ENV
 unset pos_key pos_key_2
 unset password
@@ -81,6 +82,7 @@ compose exec -T web php /var/www/html/tests/application/association-write.php
 # TIP-020 5b: server PayPal finto solo per questa suite (PAYPAL_MODE=mock)
 compose exec -d -T web php -S 127.0.0.1:8099 /var/www/html/tests/application/paypal-mock.php
 compose exec -T web php /var/www/html/tests/application/pay-fee.php
+compose exec -T web php /var/www/html/tests/application/paypal-webhook.php
 compose exec -T web php /var/www/html/tests/application/audit.php
 compose exec -T web php /var/www/html/tests/application/pos-sessions.php
 compose logs --no-color web | docker run --rm -i --network none --entrypoint php php:8.3.36-cli -r '

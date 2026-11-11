@@ -11,6 +11,7 @@ use yii\helpers\Url;
 
 use app\components\Log;
 use app\components\association\MembershipFee;
+use app\components\association\PayPalPayments;
 use app\components\legacy\LegacyImporter;
 use app\components\payments\PayPal;
 use app\components\payments\PayPalException;
@@ -106,30 +107,18 @@ class PayFeeController extends Controller
             return $this->redirect(['index']);
         }
         try {
-            $capture = PayPal::captureOrder($payment->paypal_order_id, (int) $payment->id);
+            $result = PayPalPayments::captureAndComplete($payment);
         } catch (PayPalException $error) {
             Yii::error('PayPal capture failed for payment #' . $payment->id . ': ' . $error->getMessage(), __METHOD__);
             Yii::$app->session->setFlash('danger', Yii::t('app', 'Il pagamento non è stato completato. Nessun addebito confermato: riprova.'));
             return $this->redirect(['index']);
         }
-        // la capture deve corrispondere esattamente al pagamento registrato
-        if ($capture['currency'] !== 'EUR' || $capture['amount'] !== $payment->amount || $capture['custom_id'] !== (string) $payment->id
-            || !preg_match('/^[A-Z0-9]{8,60}$/D', $capture['id'])) {
-            $payment->status = 'invalid';
-            $payment->save(false);
-            Log::security("Capture PayPal non corrispondente per il pagamento quota #{$payment->id}");
-            Yii::$app->session->setFlash('danger', Yii::t('app', 'Pagamento non corrispondente: contatta l\'associazione.'));
-            return $this->redirect(['index']);
-        }
-        $payment->status = 'paid';
-        $payment->paypal_txn_id = $capture['id'];
-        $payment->registered_on = date('Y-m-d');
-        if ($payment->saveWithReceipt(true)) {
-            Log::save('pay-fee', 'paypal-capture', "Pagamento quota #{$payment->id} confermato da PayPal");
-            Yii::$app->session->setFlash('success', Yii::t('app', 'Pagamento completato. Grazie!'));
-        } else {
-            Yii::$app->session->setFlash('info', Yii::t('app', 'Pagamento già registrato.'));
-        }
+        $messages = [
+            'paid' => ['success', 'Pagamento completato. Grazie!'],
+            'already' => ['info', 'Pagamento già registrato.'],
+            'invalid' => ['danger', 'Pagamento non corrispondente: contatta l\'associazione.'],
+        ];
+        Yii::$app->session->setFlash($messages[$result][0], Yii::t('app', $messages[$result][1]));
         return $this->redirect(['index']);
     }
 

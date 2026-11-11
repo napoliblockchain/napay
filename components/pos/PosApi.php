@@ -2,7 +2,7 @@
 
 namespace app\components\pos;
 
-use Yii;
+use app\components\Throttle;
 use app\models\PosOperatorSessions;
 use app\models\Users;
 use yii\base\InvalidConfigException;
@@ -65,34 +65,17 @@ final class PosApi
     }
 
     /**
-     * Rate limit a finestra fissa (cache + mutex, come EmailRequestForm).
+     * Rate limit a finestra fissa (components/Throttle).
      * @return int secondi di attesa (0 = consentito); $count=false controlla senza conteggiare
      */
     public static function throttle(string $key, array $limit, bool $count = true): int
     {
-        [$max, $window] = $limit;
-        $mutex = Yii::$app->mutex;
-        if (!$mutex->acquire('pos-api-throttle', 2)) return 1;
-        try {
-            $cache = Yii::$app->cache;
-            $cacheKey = 'pos-api-' . hash('sha256', $key);
-            $now = time();
-            $state = $cache->get($cacheKey);
-            if (!is_array($state) || ($state['reset'] ?? 0) <= $now) $state = ['count' => 0, 'reset' => $now + $window];
-            if ($state['count'] >= $max) return max(1, $state['reset'] - $now);
-            if ($count) {
-                $state['count']++;
-                $cache->set($cacheKey, $state, $state['reset'] - $now);
-            }
-            return 0;
-        } finally {
-            $mutex->release('pos-api-throttle');
-        }
+        return Throttle::hit('pos-api|' . $key, $limit, $count);
     }
 
     public static function resetThrottle(string $key): void
     {
-        Yii::$app->cache->delete('pos-api-' . hash('sha256', $key));
+        Throttle::reset('pos-api|' . $key);
     }
 
     public static function accountKey(string $email): string

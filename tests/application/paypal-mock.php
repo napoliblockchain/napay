@@ -24,6 +24,33 @@ if ($method === 'POST' && $path === '/v1/oauth2/token') {
 }
 if (!bearer($auth, $dir)) reply(401, ['name' => 'AUTHENTICATION_FAILURE']);
 
+if ($method === 'POST' && $path === '/v1/notifications/verify-webhook-signature') {
+    if ($mode === 'fail-verify') reply(503, ['name' => 'SERVICE_UNAVAILABLE']);
+    $raw = file_get_contents('php://input');
+    $body = json_decode($raw, true);
+    file_put_contents("$dir/verify.log", $raw . "\n", FILE_APPEND);
+    $ok = is_array($body) && ($body['transmission_sig'] ?? null) === 'valid-signature'
+        && ($body['webhook_id'] ?? null) === getenv('PAYPAL_WEBHOOK_ID') && isset($body['webhook_event']['id']);
+    reply(200, ['verification_status' => $ok ? 'SUCCESS' : 'FAILURE']);
+}
+if ($method === 'GET' && preg_match('#^/v2/checkout/orders/([A-Z0-9]+)$#', $path, $m)) {
+    if ($mode === 'fail-get') reply(503, ['name' => 'SERVICE_UNAVAILABLE']);
+    $file = "$dir/order-{$m[1]}.json";
+    if (!is_file($file)) reply(404, ['name' => 'RESOURCE_NOT_FOUND']);
+    $order = json_decode(file_get_contents($file), true);
+    if (($order['captures'] ?? 0) < 1) reply(200, ['id' => $m[1], 'status' => 'APPROVED', 'purchase_units' => [$order['unit']]]);
+    $amount = $order['unit']['amount'];
+    if ($mode === 'capture-mismatch') $amount['value'] = '0.01';
+    reply(200, ['id' => $m[1], 'status' => 'COMPLETED', 'purchase_units' => [$order['unit'] + ['payments' => ['captures' => [[
+        'id' => 'CAP' . $m[1], 'status' => $order['capture_status'] ?? 'COMPLETED', 'amount' => $amount, 'custom_id' => $order['unit']['custom_id'] ?? null,
+    ]]]]]]);
+}
+if ($method === 'GET' && preg_match('#^/v2/payments/captures/CAP([A-Z0-9]+)$#', $path, $m)) {
+    $file = "$dir/order-{$m[1]}.json";
+    if (!is_file($file)) reply(404, ['name' => 'RESOURCE_NOT_FOUND']);
+    $order = json_decode(file_get_contents($file), true);
+    reply(200, ['id' => 'CAP' . $m[1], 'status' => $order['capture_status'] ?? 'COMPLETED', 'amount' => $order['unit']['amount']]);
+}
 if ($method === 'POST' && $path === '/v2/checkout/orders') {
     if ($mode === 'fail-create') reply(500, ['name' => 'INTERNAL_SERVER_ERROR']);
     $body = json_decode(file_get_contents('php://input'), true);
