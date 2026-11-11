@@ -9,6 +9,10 @@ project="napay-runtime-test-$(basename "$work" | tr '[:upper:].' '[:lower:]-')"
 umask 077
 openssl rand -hex 32 > "$work/root-password"
 password=$(openssl rand -hex 24)
+# SIP-021: chiavi client POS casuali per questa esecuzione; al web arrivano solo i digest
+pos_key=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+pos_key_2=$(openssl rand -base64 32 | tr '+/' '-_' | tr -d '=')
+pos_digests="$(printf %s "$pos_key" | sha256sum | cut -c1-64),$(printf %s "$pos_key_2" | sha256sum | cut -c1-64)"
 cat > "$work/test.env" <<ENV
 APP_ENV=prod
 APP_DEBUG=false
@@ -29,7 +33,11 @@ SECRET_HASH_KEY=fixture-only-not-original
 ADMIN_EMAIL=fixture@example.invalid
 WEBAPP_LINK=https://napay.example.invalid
 MAIL_TRANSPORT=file
+POS_API_CLIENT_KEYS_SHA256=$pos_digests
+NAPAY_TEST_POS_CLIENT_KEY=$pos_key
+NAPAY_TEST_POS_CLIENT_KEY_2=$pos_key_2
 ENV
+unset pos_key pos_key_2
 unset password
 cat > "$work/override.yml" <<YAML
 services:
@@ -66,6 +74,7 @@ compose exec -T web php /var/www/html/tests/application/password-reset.php
 compose exec -T web php /var/www/html/tests/application/activation.php
 compose exec -T web php /var/www/html/tests/application/association.php
 compose exec -T web php /var/www/html/tests/application/audit.php
+compose exec -T web php /var/www/html/tests/application/pos-sessions.php
 compose logs --no-color web | docker run --rm -i --network none --entrypoint php php:8.3.36-cli -r '
     $log=stream_get_contents(STDIN);
     if (str_contains($log,"token=") || str_contains($log,"sign=")) exit(1);

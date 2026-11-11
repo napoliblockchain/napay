@@ -70,10 +70,15 @@ $config = [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
             'rules' => [
+                // API server-to-server dei server POS (SIP-021): tutti i metodi qui, la action accetta solo POST (405)
+                'api/pos/v1/sessions' => 'posapi/sessions/create',
                 // Regola per le API v1
                 'api/v1/<controller:\w+>/<action:\w+>' => 'api/v1/<controller>/<action>',
             ],
         ],
+    ],
+    'modules' => [
+        'posapi' => ['class' => \app\modules\posapi\Module::class],
     ],
     'container' => [
         'definitions' => [
