@@ -20,6 +20,9 @@ class LoginForm extends Model
 
     private $_user = false;
 
+    /** Hash bcrypt di un valore casuale scartato (non un segreto), costo 13 come generatePasswordHash */
+    private const TIMING_HASH = '$2y$13$.xDUYZJ/DPSQLGY6zqxMMuXixiOJlQnXHxUcOuJRXBFazVoXlPxk6';
+
 
     /**
      * @return array the validation rules.
@@ -65,6 +68,10 @@ class LoginForm extends Model
 
             //echo "<pre>".print_r($user,true)."</pre>";exit;
 
+            if (!$user) {
+                // stesso costo di una verifica reale: i tempi non rivelano se l'email esiste
+                Yii::$app->getSecurity()->validatePassword((string) $this->password, self::TIMING_HASH);
+            }
             if (!$user || !$user->validatePassword($this->password)) {
                 $this->addError($attribute, Yii::t('app', 'Email o password errati.'));
             } else if (!$user->validateStatus()) {
