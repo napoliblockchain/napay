@@ -3,7 +3,10 @@
 set -euo pipefail
 umask 077
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd)
-state="${HOME}/.local/share/napay/browser-local"
+# cartella privata (0700) fuori dal repository: NAPAY_LOCAL_STATE, altrimenti la posizione storica in $HOME
+state="${NAPAY_LOCAL_STATE:-${HOME}/.local/share/napay/browser-local}"
+[[ $state == /* && $state != *$'\n'* ]] || { echo 'NAPAY_LOCAL_STATE must be an absolute path.' >&2; exit 1; }
+[[ $state != "$root" && $state != "$root/"* ]] || { echo 'NAPAY_LOCAL_STATE must stay outside the repository.' >&2; exit 1; }
 action=${1:-status}
 [[ $# -le 1 && $action =~ ^(up|status|stop|mail)$ ]] || { echo 'Usage: bash docker/local.sh {up|status|stop|mail}' >&2; exit 1; }
 [[ ! -L $state ]] || exit 1
