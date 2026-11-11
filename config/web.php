@@ -70,6 +70,8 @@ $config = [
             'enablePrettyUrl' => true,
             'showScriptName' => false,
             'rules' => [
+                // link esterno per pagare la quota (come il vecchio loginquota): login, poi pagina Paga quota
+                'quota' => 'pay-fee/index',
                 // API server-to-server dei server POS (SIP-021): tutti i metodi qui, la action accetta solo POST (405)
                 'api/pos/v1/sessions' => 'posapi/sessions/create',
                 // Regola per le API v1

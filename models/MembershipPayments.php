@@ -21,6 +21,7 @@ use Yii;
  * @property mixed $expires_on
  * @property mixed $btcpay_invoice_id
  * @property mixed $paypal_txn_id
+ * @property mixed $paypal_order_id
  * @property mixed $status
  */
 class MembershipPayments extends \yii\db\ActiveRecord
@@ -63,6 +64,39 @@ class MembershipPayments extends \yii\db\ActiveRecord
     }
 
     public const STATUS_LABELS = ['paid' => 'Pagata', 'pending' => 'In corso', 'expired' => 'Scaduta', 'invalid' => 'Non valida'];
+
+    /**
+     * Salvataggio con numero ricevuta progressivo per anno, assegnato solo ai pagamenti pagati.
+     * Lock per anno + transazione: due salvataggi concorrenti non ottengono lo stesso numero.
+     * $onlyIfPending: conferma di un pagamento online, che non deve essere già stato confermato.
+     */
+    public function saveWithReceipt(bool $onlyIfPending = false): bool
+    {
+        $db = static::getDb();
+        $year = (int) substr((string) $this->registered_on, 0, 4);
+        $lock = 'napay-receipt-' . $year;
+        if ($db->createCommand('SELECT GET_LOCK(:l, 10)', [':l' => $lock])->queryScalar() != 1) return false;
+        $transaction = $db->beginTransaction();
+        try {
+            if ($onlyIfPending && !$this->isNewRecord
+                && $db->createCommand('SELECT status FROM membership_payments WHERE id=:id FOR UPDATE', [':id' => $this->id])->queryScalar() !== 'pending') {
+                $transaction->rollBack();
+                return false;
+            }
+            if ($this->status === 'paid' && !$this->receipt_number) {
+                $this->year = $year;
+                $this->receipt_number = 1 + (int) static::find()->where(['year' => $year])->max('receipt_number');
+            }
+            $ok = $this->save(false);
+            $ok ? $transaction->commit() : $transaction->rollBack();
+            return $ok;
+        } catch (\Throwable $error) {
+            $transaction->rollBack();
+            throw $error;
+        } finally {
+            $db->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->execute();
+        }
+    }
 
     public function getUser()
     {

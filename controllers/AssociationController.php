@@ -325,7 +325,7 @@ class AssociationController extends Controller
         if ($payment->load($post)) {
             // numero ricevuta e anno assegnati dal server, mai dal form
             $saved = $payment->validate(['user_id', 'fee_id', 'payment_method_id', 'amount', 'registered_on', 'starts_on', 'expires_on', 'status', 'paypal_txn_id', 'btcpay_invoice_id'])
-                && $this->persistPayment($payment);
+                && $payment->saveWithReceipt();
             if ($saved) {
                 Yii::$app->session->setFlash('success', Yii::t('app', 'Pagamento salvato.'));
                 return $this->redirect(['member', 'id' => Crypt::encrypt($payment->user_id)]);
@@ -337,30 +337,6 @@ class AssociationController extends Controller
             'fees' => ArrayHelper::map(MembershipFees::find()->orderBy('id')->all(), 'id', 'description'),
             'methods' => ArrayHelper::map(PaymentMethods::find()->orderBy('description')->all(), 'id', 'description'),
         ]);
-    }
-
-    /** Salvataggio con numero ricevuta progressivo per anno (solo pagamenti pagati), sotto lock */
-    private function persistPayment(MembershipPayments $payment): bool
-    {
-        $db = Yii::$app->db;
-        $year = (int) substr($payment->registered_on, 0, 4);
-        $lock = 'napay-receipt-' . $year;
-        if ($db->createCommand('SELECT GET_LOCK(:l, 10)', [':l' => $lock])->queryScalar() != 1) return false;
-        $transaction = $db->beginTransaction();
-        try {
-            if ($payment->status === 'paid' && !$payment->receipt_number) {
-                $payment->year = $year;
-                $payment->receipt_number = 1 + (int) MembershipPayments::find()->where(['year' => $year])->max('receipt_number');
-            }
-            $ok = $payment->save(false);
-            $ok ? $transaction->commit() : $transaction->rollBack();
-            return $ok;
-        } catch (\Throwable $error) {
-            $transaction->rollBack();
-            throw $error;
-        } finally {
-            $db->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->execute();
-        }
     }
 
     private function saveMinute(AssemblyMinutes $minute, bool $fileRequired)

@@ -182,6 +182,13 @@ class SiteController extends Controller
 
         $model = new LoginForm();
         if ($model->load(Yii::$app->request->post()) && $model->login()) {
+            // torna alla pagina che ha chiesto il login (es. link esterno /quota): solo percorso locale, mai un altro host
+            $return = (string) Yii::$app->user->getReturnUrl(['site/index']);
+            $path = (string) parse_url($return, PHP_URL_PATH);
+            $query = parse_url($return, PHP_URL_QUERY);
+            if (str_starts_with($path, '/') && !str_starts_with($path, '//') && !str_contains($path, '\\')) {
+                return $this->redirect($path . ($query ? '?' . $query : ''));
+            }
             return $this->redirect(['site/index']);
         }
 
