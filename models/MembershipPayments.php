@@ -25,6 +25,38 @@ use Yii;
  */
 class MembershipPayments extends \yii\db\ActiveRecord
 {
+    public function rules()
+    {
+        return [
+            [['user_id', 'fee_id', 'payment_method_id', 'amount', 'registered_on', 'starts_on', 'expires_on', 'status'], 'required'],
+            [['user_id'], 'exist', 'targetClass' => Users::class, 'targetAttribute' => 'id'],
+            [['fee_id'], 'exist', 'targetClass' => MembershipFees::class, 'targetAttribute' => 'id'],
+            [['payment_method_id'], 'exist', 'targetClass' => PaymentMethods::class, 'targetAttribute' => 'id'],
+            [['amount'], 'number', 'min' => 0, 'max' => 99999999.99],
+            [['registered_on', 'starts_on', 'expires_on'], 'date', 'format' => 'php:Y-m-d'],
+            [['expires_on'], 'compare', 'compareAttribute' => 'starts_on', 'operator' => '>=', 'type' => 'string'],
+            [['status'], 'in', 'range' => array_keys(self::STATUS_LABELS)],
+            [['btcpay_invoice_id', 'paypal_txn_id'], 'filter', 'filter' => static fn($v) => is_string($v) && trim($v) !== '' ? trim($v) : null],
+            [['btcpay_invoice_id', 'paypal_txn_id'], 'string', 'max' => 60],
+        ];
+    }
+
+    public function attributeLabels()
+    {
+        return [
+            'user_id' => Yii::t('app', 'Socio'),
+            'fee_id' => Yii::t('app', 'Quota'),
+            'payment_method_id' => Yii::t('app', 'Metodo'),
+            'amount' => Yii::t('app', 'Importo'),
+            'registered_on' => Yii::t('app', 'Data'),
+            'starts_on' => Yii::t('app', 'Inizio'),
+            'expires_on' => Yii::t('app', 'Scadenza'),
+            'status' => Yii::t('app', 'Stato'),
+            'paypal_txn_id' => Yii::t('app', 'PayPal ID'),
+            'btcpay_invoice_id' => Yii::t('app', 'Transazione'),
+        ];
+    }
+
     public static function tableName()
     {
         return 'membership_payments';

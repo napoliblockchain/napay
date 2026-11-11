@@ -7,6 +7,7 @@ use app\components\Crypt;
 /* @var $payments app\models\MembershipPayments[] */
 /* @var $showMember bool */
 $f = Yii::$app->formatter;
+$writable = empty($this->params['associationReadOnly']);
 ?>
 <table class="table table-vcenter card-table">
     <thead>
@@ -35,7 +36,10 @@ $f = Yii::$app->formatter;
             <td><?= Html::encode($p->method->description ?? '') ?></td>
             <td><?= $this->render('_status', ['status' => $p->status, 'label' => $p->statusLabel()]) ?></td>
             <td><?= $f->asDate($p->expires_on, 'php:d/m/Y') ?></td>
-            <td><?= Html::a('<i class="fas fa-receipt"></i>', ['receipt', 'id' => Crypt::encrypt($p->id)], ['class' => 'btn btn-sm btn-outline-secondary', 'title' => Yii::t('app', 'Ricevuta')]) ?></td>
+            <td class="text-nowrap">
+                <?= Html::a('<i class="fas fa-receipt"></i>', ['receipt', 'id' => Crypt::encrypt($p->id)], ['class' => 'btn btn-sm btn-outline-secondary', 'title' => Yii::t('app', 'Ricevuta')]) ?>
+                <?php if ($writable): ?><?= Html::a('<i class="fas fa-pen"></i>', ['payment-update', 'id' => Crypt::encrypt($p->id)], ['class' => 'btn btn-sm btn-outline-secondary', 'title' => Yii::t('app', 'Modifica')]) ?><?php endif; ?>
+            </td>
         </tr>
     <?php endforeach; ?>
     <?php if (!$payments): ?>

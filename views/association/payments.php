@@ -21,7 +21,10 @@ $statuses = array_map(fn($label) => Yii::t('app', $label), MembershipPayments::S
 <div class="card">
     <div class="card-header">
         <h3 class="card-title"><?= Html::encode($this->title) ?></h3>
-        <div class="card-actions">
+        <div class="card-actions d-flex gap-2">
+            <?php if (empty($this->params['associationReadOnly'])): ?>
+                <?= Html::a('<i class="fas fa-plus me-1"></i>' . Yii::t('app', 'Registra pagamento'), ['payment-create'], ['class' => 'btn btn-primary']) ?>
+            <?php endif; ?>
             <?php $export = ActiveForm::begin(['id' => 'export-form', 'action' => ['export'], 'method' => 'post']); ?>
             <?= Html::hiddenInput('queryParams', $queryParams) ?>
             <?= Html::submitButton('<i class="fas fa-file-excel me-1"></i>' . Yii::t('app', 'Esporta'), ['class' => 'btn btn-success']) ?>

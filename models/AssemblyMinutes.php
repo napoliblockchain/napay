@@ -2,6 +2,8 @@
 
 namespace app\models;
 
+use Yii;
+
 /**
  * Verbali di assemblea, PDF nel database (TIP-020).
  * Scritture solo dall'import legacy finché è attivo (components/legacy/LegacyImporter).
@@ -16,6 +18,24 @@ namespace app\models;
  */
 class AssemblyMinutes extends \yii\db\ActiveRecord
 {
+    public function rules()
+    {
+        return [
+            [['description'], 'filter', 'filter' => static fn($v) => is_string($v) ? trim($v) : ''],
+            [['meeting_date', 'description'], 'required'],
+            [['meeting_date'], 'date', 'format' => 'php:Y-m-d'],
+            [['description'], 'string', 'max' => 500],
+        ];
+    }
+
+    public function attributeLabels()
+    {
+        return [
+            'meeting_date' => Yii::t('app', 'Data assemblea'),
+            'description' => Yii::t('app', 'Descrizione'),
+        ];
+    }
+
     public static function tableName()
     {
         return 'assembly_minutes';

@@ -11,6 +11,7 @@ $this->title = trim($member->last_name . ' ' . $member->first_name);
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Soci'), 'url' => ['members']];
 $this->params['breadcrumbs'][] = $this->title;
 $profile = $member->profile;
+$writable = empty($this->params['associationReadOnly']);
 ?>
 <?= $this->render('_readonly') ?>
 <div class="row row-cards">
@@ -18,7 +19,12 @@ $profile = $member->profile;
         <div class="card">
             <div class="card-header">
                 <h3 class="card-title"><?= Html::encode($this->title) ?></h3>
-                <div class="card-actions"><?= $this->render('_status', ['status' => $member->memberStatus(), 'label' => $member->memberStatusLabel()]) ?></div>
+                <div class="card-actions">
+                    <?= $this->render('_status', ['status' => $member->memberStatus(), 'label' => $member->memberStatusLabel()]) ?>
+                    <?php if ($writable): ?>
+                        <?= Html::a('<i class="fas fa-pen"></i>', ['member-update', 'id' => \app\components\Crypt::encrypt($member->id)], ['class' => 'btn btn-sm btn-outline-secondary ms-2', 'title' => Yii::t('app', 'Modifica profilo')]) ?>
+                    <?php endif; ?>
+                </div>
             </div>
             <?= DetailView::widget([
                 'model' => $member,
@@ -39,7 +45,12 @@ $profile = $member->profile;
     </div>
     <div class="col-lg-8">
         <div class="card">
-            <div class="card-header"><h3 class="card-title"><?= Yii::t('app', 'Quote associative') ?></h3></div>
+            <div class="card-header">
+                <h3 class="card-title"><?= Yii::t('app', 'Quote associative') ?></h3>
+                <?php if ($writable): ?>
+                    <div class="card-actions"><?= Html::a('<i class="fas fa-plus me-1"></i>' . Yii::t('app', 'Registra pagamento'), ['payment-create', 'user' => \app\components\Crypt::encrypt($member->id)], ['class' => 'btn btn-primary']) ?></div>
+                <?php endif; ?>
+            </div>
             <div class="table-responsive">
                 <?= $this->render('_payments-table', ['payments' => $payments, 'showMember' => false]) ?>
             </div>

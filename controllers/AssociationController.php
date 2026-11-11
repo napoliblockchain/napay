@@ -6,6 +6,8 @@ use Yii;
 use yii\web\Controller;
 use yii\web\NotFoundHttpException;
 use yii\web\BadRequestHttpException;
+use yii\web\ForbiddenHttpException;
+use yii\web\UploadedFile;
 use yii\web\Response;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
@@ -17,11 +19,13 @@ use app\components\User;
 use app\components\legacy\LegacyImporter;
 use app\models\AssemblyMinutes;
 use app\models\AssociationRoles;
+use app\models\MemberProfiles;
 use app\models\Members;
 use app\models\MembershipFees;
 use app\models\MembershipPayments;
 use app\models\PaymentMethods;
 use app\models\Settings;
+use app\models\Users;
 use app\models\search\MembersSearch;
 use app\models\search\MembershipPaymentsSearch;
 
@@ -43,6 +47,9 @@ class AssociationController extends Controller
                 'actions' => [
                     'members' => ['GET'], 'member' => ['GET'], 'payments' => ['GET'], 'receipt' => ['GET'],
                     'minutes' => ['GET'], 'minute-file' => ['GET'], 'tables' => ['GET'], 'export' => ['POST'],
+                    'payment-create' => ['GET', 'POST'], 'payment-update' => ['GET', 'POST'], 'payment-delete' => ['POST'],
+                    'member-update' => ['GET', 'POST'], 'table-edit' => ['GET', 'POST'], 'table-delete' => ['POST'],
+                    'minute-create' => ['GET', 'POST'], 'minute-update' => ['GET', 'POST'], 'minute-delete' => ['POST'],
                 ],
             ],
             'access' => [
@@ -192,6 +199,215 @@ class AssociationController extends Controller
             'fees' => MembershipFees::find()->orderBy('id')->all(),
             'methods' => PaymentMethods::find()->orderBy('id')->all(),
         ]);
+    }
+
+    // ---- scritture: solo amministratori, POST + CSRF, mai mentre l'import dal vecchio Napay è attivo ----
+
+    /** Tabelle gestibili: tipo => [classe, campi del form] */
+    private const TABLES = [
+        'role' => [AssociationRoles::class, ['description']],
+        'fee' => [MembershipFees::class, ['description', 'duration', 'amount']],
+        'method' => [PaymentMethods::class, ['description', 'min_level']],
+    ];
+
+    /** @throws ForbiddenHttpException finché i dati arrivano dall'import legacy */
+    public static function ensureWritable(): void
+    {
+        if (LegacyImporter::active()) {
+            throw new ForbiddenHttpException(Yii::t('app', 'Dati sincronizzati dal vecchio Napay: modifica disattivata.'));
+        }
+    }
+
+    public function actionPaymentCreate($user = null)
+    {
+        self::ensureWritable();
+        $payment = new MembershipPayments(['status' => 'paid', 'registered_on' => date('Y-m-d')]);
+        if ($user !== null) $payment->user_id = $this->decodeId($user) ?: null;
+        $fee = MembershipFees::find()->orderBy('id')->one();
+        if ($fee !== null) {
+            $year = (int) date('Y');
+            $payment->fee_id = $fee->id;
+            $payment->amount = $fee->amount;
+            $payment->starts_on = $year . '-01-01';
+            $payment->expires_on = ($year + max(1, (int) $fee->duration) - 1) . '-12-31';
+        }
+        return $this->savePayment($payment);
+    }
+
+    public function actionPaymentUpdate($id)
+    {
+        self::ensureWritable();
+        return $this->savePayment($this->findPayment($id));
+    }
+
+    public function actionPaymentDelete($id)
+    {
+        self::ensureWritable();
+        $payment = $this->findPayment($id);
+        $payment->delete();
+        Yii::$app->session->setFlash('success', Yii::t('app', 'Pagamento eliminato.'));
+        return $this->redirect(['member', 'id' => Crypt::encrypt($payment->user_id)]);
+    }
+
+    public function actionMemberUpdate($id)
+    {
+        self::ensureWritable();
+        $user = Users::findOne($this->decodeId($id));
+        if ($user === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        $profile = MemberProfiles::findOne(['user_id' => $user->id]) ?? new MemberProfiles(['user_id' => $user->id]);
+        // solo campi del profilo: user_id e collegamenti legacy non sono modificabili dal form
+        if ($profile->load(Yii::$app->request->post(), 'MemberProfiles') && $profile->save(true, ['association_role_id', 'is_corporate', 'denomination', 'vat', 'address', 'cap', 'city', 'country', 'user_id'])) {
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Profilo socio aggiornato.'));
+            return $this->redirect(['member', 'id' => Crypt::encrypt($user->id)]);
+        }
+        return $this->render('member-form', [
+            'user' => $user, 'profile' => $profile,
+            'roles' => ArrayHelper::map(AssociationRoles::find()->orderBy('id')->all(), 'id', 'description'),
+        ]);
+    }
+
+    public function actionTableEdit($type, $id = null)
+    {
+        self::ensureWritable();
+        [$class, $fields] = self::TABLES[$type] ?? throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        $model = $id === null ? new $class() : $class::findOne($this->decodeId($id));
+        if ($model === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        if ($model->load(Yii::$app->request->post()) && $model->save(true, $fields)) {
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Tabella aggiornata.'));
+            return $this->redirect(['tables']);
+        }
+        return $this->render('table-form', ['model' => $model, 'type' => $type, 'fields' => $fields]);
+    }
+
+    public function actionTableDelete($type, $id)
+    {
+        self::ensureWritable();
+        [$class] = self::TABLES[$type] ?? throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        $model = $class::findOne($this->decodeId($id));
+        if ($model === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        $used = match ($type) {
+            'role' => MemberProfiles::find()->where(['association_role_id' => $model->id])->exists(),
+            'fee' => MembershipPayments::find()->where(['fee_id' => $model->id])->exists(),
+            'method' => MembershipPayments::find()->where(['payment_method_id' => $model->id])->exists(),
+        };
+        if ($used) {
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'Voce in uso: non può essere eliminata.'));
+        } else {
+            $model->delete();
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Voce eliminata.'));
+        }
+        return $this->redirect(['tables']);
+    }
+
+    public function actionMinuteCreate()
+    {
+        self::ensureWritable();
+        return $this->saveMinute(new AssemblyMinutes(['meeting_date' => date('Y-m-d')]), true);
+    }
+
+    public function actionMinuteUpdate($id)
+    {
+        self::ensureWritable();
+        return $this->saveMinute($this->findMinute($id), false);
+    }
+
+    public function actionMinuteDelete($id)
+    {
+        self::ensureWritable();
+        $this->findMinute($id)->delete();
+        Yii::$app->session->setFlash('success', Yii::t('app', 'Verbale eliminato.'));
+        return $this->redirect(['minutes']);
+    }
+
+    private function savePayment(MembershipPayments $payment)
+    {
+        $post = Yii::$app->request->post();
+        if ($payment->load($post)) {
+            // numero ricevuta e anno assegnati dal server, mai dal form
+            $saved = $payment->validate(['user_id', 'fee_id', 'payment_method_id', 'amount', 'registered_on', 'starts_on', 'expires_on', 'status', 'paypal_txn_id', 'btcpay_invoice_id'])
+                && $this->persistPayment($payment);
+            if ($saved) {
+                Yii::$app->session->setFlash('success', Yii::t('app', 'Pagamento salvato.'));
+                return $this->redirect(['member', 'id' => Crypt::encrypt($payment->user_id)]);
+            }
+        }
+        return $this->render('payment-form', [
+            'payment' => $payment,
+            'users' => ArrayHelper::map(Users::find()->orderBy(['last_name' => SORT_ASC, 'first_name' => SORT_ASC])->all(), 'id', fn($u) => trim($u->last_name . ' ' . $u->first_name) . ' - ' . $u->email),
+            'fees' => ArrayHelper::map(MembershipFees::find()->orderBy('id')->all(), 'id', 'description'),
+            'methods' => ArrayHelper::map(PaymentMethods::find()->orderBy('description')->all(), 'id', 'description'),
+        ]);
+    }
+
+    /** Salvataggio con numero ricevuta progressivo per anno (solo pagamenti pagati), sotto lock */
+    private function persistPayment(MembershipPayments $payment): bool
+    {
+        $db = Yii::$app->db;
+        $year = (int) substr($payment->registered_on, 0, 4);
+        $lock = 'napay-receipt-' . $year;
+        if ($db->createCommand('SELECT GET_LOCK(:l, 10)', [':l' => $lock])->queryScalar() != 1) return false;
+        $transaction = $db->beginTransaction();
+        try {
+            if ($payment->status === 'paid' && !$payment->receipt_number) {
+                $payment->year = $year;
+                $payment->receipt_number = 1 + (int) MembershipPayments::find()->where(['year' => $year])->max('receipt_number');
+            }
+            $ok = $payment->save(false);
+            $ok ? $transaction->commit() : $transaction->rollBack();
+            return $ok;
+        } catch (\Throwable $error) {
+            $transaction->rollBack();
+            throw $error;
+        } finally {
+            $db->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->execute();
+        }
+    }
+
+    private function saveMinute(AssemblyMinutes $minute, bool $fileRequired)
+    {
+        $post = Yii::$app->request->post();
+        if ($minute->load($post)) {
+            $file = UploadedFile::getInstanceByName('minute_file');
+            $fileError = $this->checkPdf($file, $fileRequired);
+            if ($fileError !== null) $minute->addError('file_name', $fileError);
+            if (!$minute->hasErrors() && $minute->validate(['meeting_date', 'description'])) {
+                if ($file !== null) {
+                    $content = file_get_contents($file->tempName);
+                    // nome generato dal server, mai quello del client
+                    $minute->file_name = 'verbale-' . $minute->meeting_date . '.pdf';
+                    $minute->file_sha256 = hash('sha256', $content);
+                    $minute->file_content = $content;
+                }
+                $minute->save(false);
+                Yii::$app->session->setFlash('success', Yii::t('app', 'Verbale salvato.'));
+                return $this->redirect(['minutes']);
+            }
+        }
+        return $this->render('minute-form', ['minute' => $minute]);
+    }
+
+    /** PDF vero (firma %PDF- e tipo rilevato), massimo 20 MB */
+    private function checkPdf(?UploadedFile $file, bool $required): ?string
+    {
+        if ($file === null) return $required ? Yii::t('app', 'Carica il PDF del verbale.') : null;
+        if ($file->error !== UPLOAD_ERR_OK) {
+            return in_array($file->error, [UPLOAD_ERR_INI_SIZE, UPLOAD_ERR_FORM_SIZE], true) ? Yii::t('app', 'File troppo grande.') : Yii::t('app', 'Caricamento non riuscito.');
+        }
+        if ($file->size > 20 * 1024 * 1024) return Yii::t('app', 'File troppo grande.');
+        $head = (string) file_get_contents($file->tempName, false, null, 0, 5);
+        $mime = (new \finfo(FILEINFO_MIME_TYPE))->file($file->tempName);
+        if ($head !== '%PDF-' || $mime !== 'application/pdf') return Yii::t('app', 'Il file deve essere un PDF.');
+        return null;
+    }
+
+    private function findPayment($id): MembershipPayments
+    {
+        return MembershipPayments::findOne($this->decodeId($id)) ?? throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+    }
+
+    private function findMinute($id): AssemblyMinutes
+    {
+        return AssemblyMinutes::findOne($this->decodeId($id)) ?? throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
     }
 
     /** ID cifrato negli URL; valori manomessi -> 404, mai errore 500 */
