@@ -1,7 +1,7 @@
 <?php
 
 use yii\helpers\Html;
-use yii\bootstrap5\LinkPager;
+use app\components\web\LinkPager;
 use yii\bootstrap5\ActiveForm;
 use app\models\MembershipPayments;
 

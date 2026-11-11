@@ -7,7 +7,8 @@ class BackofficeAsset extends AppAsset
 {
     public $basePath = '@webroot/bundles/site';
     public $baseUrl = '@web/bundles/site';
-    public $css = ['css/yiipager.css', 'css/napay-tabler.css'];
+    // paginazione: stili Tabler del pager unico (components/web/LinkPager), non più yiipager.css
+    public $css = ['css/napay-tabler.css'];
     public $js = ['js/napay-layout.js'];
     public $depends = [
         'yii\web\YiiAsset',

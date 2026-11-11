@@ -126,6 +126,19 @@ try {
     check(request('/association/minute-file?id=tampered')['status'] === 404 && $noFile > 0, 'Missing PDF -> 404');
     $tables = request('/association/tables');
     check($tables['status'] === 200 && str_contains($tables['body'], 'Quota annuale') && str_contains($tables['body'], 'solo registrazione manuale'), 'Association tables');
+    // pager unico dell'applicazione (come in Aura): ogni griglia lo usa senza configurazione
+    check(Yii::createObject(yii\widgets\LinkPager::class, [['pagination' => new yii\data\Pagination()]]) instanceof app\components\web\LinkPager, 'Grid pager resolves to the application pager');
+    $app->request->setUrl('/association/members');
+    // rendering CLI: niente pubblicazione asset (il pager non ne dipende)
+    $app->set('assetManager', ['class' => yii\web\AssetManager::class, 'bundles' => false]);
+    $grid = yii\grid\GridView::widget(['dataProvider' => new yii\data\ArrayDataProvider(['allModels' => array_map(fn($i) => ['n' => $i], range(1, 25)),
+        'pagination' => ['pageSize' => 10, 'route' => 'association/members']]), 'columns' => ['n']]);
+    preg_match('#<ul[^>]*class="[^"]*pagination[^"]*"[^>]*>.*?</ul>#s', $grid, $match);
+    $pager = $match[0] ?? '';
+    check(str_contains($pager, 'pagination-sm') && str_contains($pager, 'justify-content-center') && str_contains($pager, '>Prima<') && str_contains($pager, '>Ultima<'), 'Pager: Tabler style, first/last labels');
+    check(substr_count($pager, '<li') > 0 && substr_count($pager, '<li') === substr_count($pager, 'class="page-link"'), 'Pager: every item (also disabled) is a page-link button');
+    $backoffice = request('/association/members');
+    check(!str_contains($backoffice['body'], 'yiipager.css'), 'Legacy Yii1 pager CSS no longer loaded in the backoffice');
 } finally {
     $db->createCommand()->delete('settings', ['code' => 'gdpr_titolare', 'description' => 'fixture'])->execute();
     foreach (['membership_payments', 'member_profiles', 'assembly_minutes', 'payment_methods', 'membership_fees', 'association_roles'] as $table) $db->createCommand()->delete($table)->execute();

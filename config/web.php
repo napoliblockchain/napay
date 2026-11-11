@@ -70,6 +70,12 @@ $config = [
             ],
         ],
     ],
+    'container' => [
+        'definitions' => [
+            // paginazione uguale in tutti gli elenchi (le griglie creano yii\widgets\LinkPager)
+            \yii\widgets\LinkPager::class => \app\components\web\LinkPager::class,
+        ],
+    ],
     'params' => $params,
 ];
 
