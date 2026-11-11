@@ -30,15 +30,15 @@ $this->title = 'Login';
 
                                 <?php $form = ActiveForm::begin(['id' => 'login-form']) ?>
 
-                                <?= $form->field($model, 'username', [
+                                <?= $form->field($model, 'email', [
                                     'options' => ['class' => 'form-group has-feedback shadow p-2'],
-                                    'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-user"></span></div></div>',
+                                    'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-envelope"></span></div></div>',
                                     'template' => '{label}{beginWrapper}{input}{error}{endWrapper}',
                                     'wrapperOptions' => ['class' => 'input-group input-group-sm mb-1'],
                                     'inputOptions' => ['autocomplete' => 'off'],
                                 ])
-                                    ->label($model->getAttributeLabel('username'))
-                                    ->textInput(['placeholder' => 'Inserisci il tuo nome utente']) ?>
+                                    ->label($model->getAttributeLabel('email'))
+                                    ->textInput(['type' => 'email', 'placeholder' => 'Inserisci la tua email']) ?>
 
                                 <?= $form->field($model, 'password', [
                                     'options' => ['class' => 'form-group has-feedback shadow p-2'],

@@ -66,7 +66,7 @@ case "$action" in
         "${compose[@]}" up -d --build --wait --wait-timeout 3600 --remove-orphans
         "${compose[@]}" run --rm -T --no-deps --entrypoint php bootstrap /app/docker/local/create-user.php < "$state/browser-password"
         # HTTPS e CA locale (caddy-root.crt) da napay-gateway: avvio completo con start-localhost.sh
-        printf 'URL: https://napay.local\nUser: browser-admin\nPassword file: %s/browser-password\n' "$state"
+        printf 'URL: https://napay.local\nEmail: browser-admin@example.invalid\nPassword file: %s/browser-password\n' "$state"
         ;;
     status) "${compose[@]}" ps ;;
     stop) "${compose[@]}" stop ;;

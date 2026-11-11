@@ -57,7 +57,7 @@ async function submit(page, selector) {
     page.setDefaultTimeout(15000);
     stage = 'login';
     check((await page.goto(`${origin}/site/login`)).status() === 200, 'Desktop login loads through Caddy');
-    await page.locator('[name="LoginForm[username]"]').fill('browser-admin');
+    await page.locator('[name="LoginForm[email]"]').fill('browser-admin@example.invalid');
     await page.locator('[name="LoginForm[password]"]').fill(fs.readFileSync(path.join(state, 'browser-password'), 'utf8').trim());
     await submit(page, '#login-form button[type=submit]');
     check(!new URL(page.url()).pathname.includes('/login'), 'Local administrator login succeeds');
@@ -103,7 +103,7 @@ async function submit(page, selector) {
     await page.goto(`${origin}/site/signup`);
     check(new URL(page.url()).pathname === '/site/signup', 'Anonymous browser reaches registration form');
     await page.locator('#is_merchant').selectOption('0');
-    for (const [field, value] of Object.entries({ username, email, first_name: 'Browser', last_name: 'Smoke', password, repeat_password: password })) {
+    for (const [field, value] of Object.entries({ email, first_name: 'Browser', last_name: 'Smoke', password, repeat_password: password })) {
       await page.locator(`[name="SignupForm[${field}]"]`).fill(value);
     }
     for (const field of ['consenso_statuto', 'consenso_privacy', 'consenso_condizioni']) {
@@ -130,7 +130,7 @@ async function submit(page, selector) {
     check(new URL(page.url()).pathname.includes('/login'), 'Password replacement succeeds');
     check((await page.goto(reset)).status() === 400, 'Consumed password link rejected');
     await page.goto(`${origin}/site/login`);
-    await page.locator('[name="LoginForm[username]"]').fill(username);
+    await page.locator('[name="LoginForm[email]"]').fill(email);
     await page.locator('[name="LoginForm[password]"]').fill(nextPassword);
     await submit(page, '#login-form button[type=submit]');
     check(!new URL(page.url()).pathname.includes('/login'), 'New password authenticates in browser');

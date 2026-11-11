@@ -48,7 +48,7 @@ function forgot($email, $host = null) {
 }
 function login($password) {
     $page = request('/site/login');
-    return request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['username' => 'runtime-other', 'password' => $password]]);
+    return request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['email' => 'other@example.invalid', 'password' => $password]]);
 }
 function mailFiles() {
     global $root;
@@ -160,7 +160,7 @@ try {
     $text = $app->mailer->compose(['html' => 'resetPasswordUser', 'text' => 'resetPasswordUser-text'], ['user' => fixture(), 'resetUrl' => 'https://napay.example.invalid/site/reset-password'])->getSymfonyEmail()->getTextBody();
     check(str_contains($text, 'https://napay.example.invalid/site/reset-password'), 'Plaintext email retains actionable trusted link');
     $jar = newJar(); $page = request('/site/login');
-    check(request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['username' => 'runtime-admin', 'password' => 'fixture-password-only']])['status'] === 302, 'Admin fixture authenticates for reset revocation');
+    check(request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['email' => 'admin@example.invalid', 'password' => 'fixture-password-only']])['status'] === 302, 'Admin fixture authenticates for reset revocation');
     $list = request('/users/index');
     $doc = new DOMDocument(); @$doc->loadHTML($list['body'], LIBXML_NONET);
     $link = (new DOMXPath($doc))->query('//tr[td[text()="runtime-user"]]//a[contains(@href,"/users/view")]/@href')->item(0)->nodeValue;

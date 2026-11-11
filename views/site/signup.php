@@ -41,16 +41,6 @@ SignupAsset::register($this);
                                     ]
                                 )->label(false); ?>
 
-                                <?= $form->field($model, 'username', [
-                                    'options' => ['class' => 'form-group has-feedback'],
-                                    'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-user"></span></div></div>',
-                                    'template' => '{beginWrapper}{input}{error}{endWrapper}',
-                                    'wrapperOptions' => ['class' => 'input-group mb-3'],
-                                    'inputOptions' => ['autocomplete' => 'off'],
-                                ])
-                                    ->label(false)
-                                    ->textInput(['placeholder' => $model->getAttributeLabel('username')]) ?>
-
                                 <?= $form->field($model, 'first_name', [
                                     'options' => ['class' => 'form-group has-feedback'],
                                     'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-user"></span></div></div>',

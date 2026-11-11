@@ -250,6 +250,20 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
     }
 
     /**
+     * Finds user by email (login identifier)
+     * Ambiguous email ownership must never select an arbitrary identity.
+     *
+     * @param string $email
+     * @return static|null
+     */
+    public static function findByEmail($email)
+    {
+        if (!is_string($email) || $email === '') return null;
+        $users = self::find()->where(['email' => $email])->limit(2)->all();
+        return count($users) === 1 ? $users[0] : null;
+    }
+
+    /**
      * Validates password
      *
      * @param string $password password to validate

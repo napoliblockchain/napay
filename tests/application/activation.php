@@ -36,7 +36,8 @@ function csrf($page) {
     if ($nodes->length !== 1) throw new RuntimeException('Activation CSRF unavailable.');
     return $nodes->item(0)->nodeValue;
 }
-function member() { return app\models\Users::findByUsername('activation-member'); }
+// signup stores the email as username (login by email, TIP-020); lookup by username survives the duplicate-email case
+function member() { return app\models\Users::findByUsername('activation@example.invalid'); }
 function pathFor($user, $signature = null) {
     return '/site/activate?' . http_build_query(['id' => app\components\Crypt::sqlEncrypt((string) $user->id), 'sign' => $signature ?? $user->getActivationSignature()], '', '&', PHP_QUERY_RFC3986);
 }
@@ -67,12 +68,12 @@ try {
     $beforeMail = glob($root . '/runtime/mail/*.eml') ?: [];
     $page = request('/site/signup', null, 'attacker.example.invalid');
     check($page['status'] === 200, 'Signup form renders');
-    $form = ['_csrf' => csrf($page), 'SignupForm' => ['username' => 'activation-member', 'email' => 'activation@example.invalid',
+    $form = ['_csrf' => csrf($page), 'SignupForm' => ['email' => 'activation@example.invalid',
         'first_name' => 'Activation <svg onload="window.pwned=true">', 'last_name' => 'Fixture',
         'password' => 'activation-fixture-password', 'repeat_password' => 'activation-fixture-password', 'is_merchant' => '0'],
         'UserConsensus' => ['consenso_statuto' => '1', 'consenso_privacy' => '1', 'consenso_condizioni' => '1', 'consenso_condizioni_pos' => '0', 'consenso_marketing' => '0']];
     foreach ([['password' => '', 'repeat_password' => ''], ['password' => str_repeat('x', 73), 'repeat_password' => str_repeat('x', 73)],
-        ['is_merchant' => '2'], ['first_name' => ['invalid']], ['username' => ['invalid']]] as $invalid) {
+        ['is_merchant' => '2'], ['first_name' => ['invalid']], ['email' => ['invalid']], ['email' => 'not-an-email']] as $invalid) {
         $badForm = $form;
         $badForm['SignupForm'] = array_replace($form['SignupForm'], $invalid);
         check(request('/site/signup', $badForm, 'attacker.example.invalid')['status'] === 200 && member() === null,
@@ -125,7 +126,25 @@ try {
     check(request($bad)['status'] === 400 && snapshot(member()) === $activeSnapshot, 'Wrong link cannot delete active account');
     check(app\models\UserConsensus::find()->where(['user_id' => $user->id])->count() == 1, 'Replays preserve dependent consent data');
     $login = request('/site/login');
-    check(request('/site/login', ['_csrf' => csrf($login), 'LoginForm' => ['username' => 'activation-member', 'password' => 'activation-fixture-password']])['status'] === 302, 'Activated member can log in');
+    check(request('/site/login', ['_csrf' => csrf($login), 'LoginForm' => ['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']])['status'] === 302, 'Activated member can log in');
+    // Login by email only (TIP-020): fresh sessions, the member stays logged out of these attempts.
+    $memberJar = $jar;
+    $attempt = static function (array $credentials) use (&$jar) {
+        $jar = tempnam('/tmp', 'napay-activation-');
+        $page = request('/site/login');
+        $status = request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => $credentials])['status'];
+        unlink($jar);
+        return $status;
+    };
+    check($attempt(['email' => 'ACTIVATION@Example.Invalid', 'password' => 'activation-fixture-password']) === 302, 'Email login is case-insensitive');
+    check($attempt(['email' => 'runtime-admin', 'password' => 'fixture-password-only']) === 200, 'Username no longer authenticates');
+    check($attempt(['username' => 'runtime-admin', 'password' => 'fixture-password-only']) === 200, 'Legacy username field is ignored');
+    check($attempt(['email' => 'activation@example.invalid', 'password' => 'wrong-password']) === 200, 'Wrong password rejected');
+    $twin = new app\models\Users(); $twin->setAttributes(member()->getAttributes(), false);
+    $twin->id = null; $twin->username = 'activation-twin'; $twin->save(false);
+    check($attempt(['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']) === 200, 'Ambiguous email never selects an arbitrary account');
+    $twin->delete();
+    $jar = $memberJar;
     foreach ([[-172801, 0, 'SELF'], [3600, 0, 'SELF'], [0, 2, 'SELF'], [0, 0, 'external']] as [$seconds, $status, $provider]) {
         $user = pending($seconds, $status, $provider); $before = snapshot($user);
         check(request(pathFor($user))['status'] === 400 && snapshot(member()) === $before, 'Expired/future/blocked/nonlocal activation is non-destructive');
@@ -192,9 +211,9 @@ try {
     $user = pending(); $disabledPath = pathFor($user);
     $oldJar = $jar; $jar = tempnam('/tmp', 'napay-activation-'); unlink($oldJar);
     $page = request('/site/login');
-    check(request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['username' => 'runtime-admin', 'password' => 'fixture-password-only']])['status'] === 302, 'Admin authenticates for pending disable');
+    check(request('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['email' => 'admin@example.invalid', 'password' => 'fixture-password-only']])['status'] === 302, 'Admin authenticates for pending disable');
     $list = request('/users/index'); $doc = new DOMDocument(); @$doc->loadHTML($list['body'], LIBXML_NONET);
-    $link = (new DOMXPath($doc))->query('//tr[td[text()="activation-member"]]//a[contains(@href,"/users/view")]/@href')->item(0)->nodeValue;
+    $link = (new DOMXPath($doc))->query('//tr[td[text()="activation@example.invalid"]]//a[contains(@href,"/users/view")]/@href')->item(0)->nodeValue;
     check(request(str_replace('/users/view', '/users/disable', $link), ['_csrf' => csrf($list)])['status'] === 302, 'Explicit disable revokes pending activation even when status already zero');
     $before = snapshot(member()); $app->cache->flush();
     check(!member()->canRequestActivation() && !$model->sendEmail() && snapshot(member()) === $before, 'Disabled pending account cannot recover activation');
@@ -204,12 +223,11 @@ try {
     $controller->action = new yii\base\Action('signup', $controller);
     $app->controller = $controller;
     $failureForm = $form;
-    $failureForm['SignupForm']['username'] = 'delivery-member';
     $failureForm['SignupForm']['email'] = 'delivery@example.invalid';
     $app->request->setBodyParams($failureForm);
     $app->mailer->fileTransportPath = '/dev/null/cannot-write';
     $response = $controller->actionSignup();
-    $deliveryUser = app\models\Users::findByUsername('delivery-member');
+    $deliveryUser = app\models\Users::findByUsername('delivery@example.invalid');
     check($response->statusCode === 302 && $deliveryUser !== null && (int) $deliveryUser->is_active === 0,
         'Registration survives local delivery failure as pending');
     check(!$app->db->getTransaction() && app\models\UserConsensus::find()->where(['user_id' => $deliveryUser->id])->count() == 1,

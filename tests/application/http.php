@@ -42,7 +42,7 @@ function profilePath($html, $username = null): string {
 function login($role, $password = 'fixture-password-only'): array {
     $page = request('/site/login');
     check($page['status'] === 200, 'Login page: ' . $role);
-    return request('/site/login', ['_csrf' => token($page['body']), 'LoginForm' => ['username' => 'runtime-' . $role, 'password' => $password]]);
+    return request('/site/login', ['_csrf' => token($page['body']), 'LoginForm' => ['email' => $role . '@example.invalid', 'password' => $password]]);
 }
 function listNames($html): array {
     $doc = new DOMDocument();
@@ -92,7 +92,7 @@ try {
     preg_match_all('~(?:src|href)="(/assets/[^"?]+)~', $page['body'], $matches);
     check(count($matches[1]) > 0, 'Composer assets published');
     foreach (array_unique($matches[1]) as $asset) check(request($asset)['status'] === 200, 'Published login asset loads');
-    check(request('/site/login', ['LoginForm' => ['username' => 'runtime-admin', 'password' => 'fixture-password-only']])['status'] === 400, 'Missing CSRF rejected');
+    check(request('/site/login', ['LoginForm' => ['email' => 'admin@example.invalid', 'password' => 'fixture-password-only']])['status'] === 400, 'Missing CSRF rejected');
     check(login('admin', 'wrong-password')['status'] === 200 && request('/')['status'] === 302, 'Invalid password cannot authenticate');
     check(login('disabled')['status'] === 200 && request('/')['status'] === 302, 'Disabled user cannot authenticate');
     check(login('blocked')['status'] === 200 && request('/')['status'] === 302, 'Blocked status 2 cannot authenticate');
