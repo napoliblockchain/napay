@@ -65,6 +65,7 @@ compose exec -T web php /var/www/html/tests/application/merchants.php
 compose exec -T web php /var/www/html/tests/application/password-reset.php
 compose exec -T web php /var/www/html/tests/application/activation.php
 compose exec -T web php /var/www/html/tests/application/association.php
+compose exec -T web php /var/www/html/tests/application/audit.php
 compose logs --no-color web | docker run --rm -i --network none --entrypoint php php:8.3.36-cli -r '
     $log=stream_get_contents(STDIN);
     if (str_contains($log,"token=") || str_contains($log,"sign=")) exit(1);

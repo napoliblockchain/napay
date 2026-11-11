@@ -19,6 +19,7 @@ class LogsSearch extends Logs
         return [
             [['id', 'user_id'], 'integer'], // tolto timestamp da qui per filter
             [['timestamp', 'remote_address', 'browser', 'controller', 'action', 'description'], 'safe'],
+            [['event_type'], 'in', 'range' => array_keys(Logs::eventTypes())],
 
             // ['timestamp', 'date', 'format' => 'php:d/m/Y H:i:s', 'message' => 'Il formato non è valido. Usare dd/mm/yyyy'],
 
@@ -64,6 +65,7 @@ class LogsSearch extends Logs
             'id' => $this->id,
             // 'timestamp' => $this->timestamp,
             'user_id' => $this->user_id,
+            'event_type' => $this->event_type,
         ]);
 
 

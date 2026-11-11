@@ -26,16 +26,29 @@ class Logs extends \yii\db\ActiveRecord
         return 'logs';
     }
 
+    /** Tipi di evento del registro (components/Log), con etichetta e badge Tabler */
+    public static function eventTypes(): array
+    {
+        return [
+            \app\components\Log::TYPE_SECURITY => ['label' => 'Sicurezza', 'badge' => 'bg-red-lt'],
+            \app\components\Log::TYPE_DATA => ['label' => 'Dati', 'badge' => 'bg-blue-lt'],
+            \app\components\Log::TYPE_EXPORT => ['label' => 'Esportazione', 'badge' => 'bg-purple-lt'],
+            \app\components\Log::TYPE_ACTIVITY => ['label' => 'Attività', 'badge' => 'bg-secondary-lt'],
+        ];
+    }
+
     /**
      * {@inheritdoc}
      */
     public function rules()
     {
         return [
-            [['timestamp', 'user_id', 'remote_address', 'browser', 'controller', 'action', 'description'], 'required'],
+            // utente facoltativo: azioni anonime senza id fittizio (components/Log)
+            [['timestamp', 'event_type', 'controller', 'action', 'description'], 'required'],
             [['timestamp', 'user_id'], 'integer'],
+            [['event_type'], 'in', 'range' => array_keys(self::eventTypes())],
             [['description'], 'string'],
-            [['remote_address'], 'string', 'max' => 20],
+            [['remote_address'], 'string', 'max' => 45],
             [['browser'], 'string', 'max' => 256],
             [['controller', 'action'], 'string', 'max' => 60],
             [['user_id'], 'exist', 'skipOnError' => true, 'targetClass' => Users::class, 'targetAttribute' => ['user_id' => 'id']],
@@ -50,6 +63,7 @@ class Logs extends \yii\db\ActiveRecord
         return [
             'id' => Yii::t('app', 'ID'),
             'timestamp' => Yii::t('app', 'Timestamp'),
+            'event_type' => Yii::t('app', 'Tipo'),
             'user_id' => Yii::t('app', 'User ID'),
             'remote_address' => Yii::t('app', 'Remote Address'),
             'browser' => Yii::t('app', 'Browser'),

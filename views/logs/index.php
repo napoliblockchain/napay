@@ -98,6 +98,15 @@ $this->params['breadcrumbs'][] = $this->title;
                                 //         return $data->user->username ?? null;
                                 //     },
                                 // ],
+                                [
+                                    'attribute' => 'event_type',
+                                    'format' => 'raw',
+                                    'filter' => array_map(fn($t) => Yii::t('app', $t['label']), \app\models\Logs::eventTypes()),
+                                    'value' => function ($data) {
+                                        $type = \app\models\Logs::eventTypes()[$data->event_type] ?? ['label' => $data->event_type, 'badge' => 'bg-secondary-lt'];
+                                        return Html::tag('span', Html::encode(Yii::t('app', $type['label'])), ['class' => 'badge ' . $type['badge']]);
+                                    },
+                                ],
                                 'controller',
                                 'action',
                                 'remote_address',

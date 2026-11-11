@@ -8,7 +8,8 @@ $config = [
     'name' => 'Napay',
     'language' => 'it-IT', // Specifies which language the application is targeted to
     'basePath' => dirname(__DIR__),
-    'bootstrap' => ['log'],
+    // registro attività automatico (components/audit, come in Aura)
+    'bootstrap' => ['log', \app\components\audit\AuditBootstrap::class],
     'aliases' => [
         '@bower' => '@vendor/bower-asset',
         '@npm'   => '@vendor/npm-asset',
@@ -24,6 +25,8 @@ $config = [
             // !!! insert a secret key in the following (if it is empty) - this is required by cookie validation
             'cookieValidationKey' => env_required('COOKIE_VALIDATION_KEY'),
             'csrfCookie' => ['httpOnly' => true, 'secure' => env_bool('HTTPS_ONLY', false), 'sameSite' => 'Lax'],
+            // IP reale del client (registro attività) solo dai proxy fidati, es. il gateway: TRUSTED_PROXIES=CIDR,CIDR
+            'trustedHosts' => array_fill_keys(array_values(array_filter(array_map('trim', explode(',', (string) env('TRUSTED_PROXIES', ''))))), ['X-Forwarded-For', 'X-Forwarded-Proto']),
         ],
         'cache' => [
             'class' => 'yii\caching\FileCache',
@@ -37,6 +40,8 @@ $config = [
             'cookieParams' => ['httpOnly' => true, 'secure' => env_bool('HTTPS_ONLY', false), 'sameSite' => 'Lax'],
         ],
         'errorHandler' => [
+            // registra CSRF non valido e 403 nel registro di sicurezza
+            'class' => \app\components\audit\ErrorHandler::class,
             'errorAction' => 'site/error',
         ],
         'mailer' => require __DIR__ . '/mailer.php',
@@ -74,6 +79,8 @@ $config = [
         'definitions' => [
             // paginazione uguale in tutti gli elenchi (le griglie creano yii\widgets\LinkPager)
             \yii\widgets\LinkPager::class => \app\components\web\LinkPager::class,
+            // accessi negati registrati in tutti i controller
+            \yii\filters\AccessControl::class => \app\components\audit\AuditedAccessControl::class,
         ],
     ],
     'params' => $params,

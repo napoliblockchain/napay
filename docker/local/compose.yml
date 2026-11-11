@@ -2,6 +2,9 @@ services:
   web:
     ports: !reset []
     # HTTPS terminato da napay-gateway (orchestratore napay-project): https://napay.local
+    # IP reale del client nel registro attività: X-Forwarded-For accettato solo dal gateway (reti private interne)
+    environment:
+      TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
     networks: !override
       database: {}
       napay_local_browser:
