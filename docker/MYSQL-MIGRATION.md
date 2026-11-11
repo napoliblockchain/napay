@@ -146,9 +146,17 @@ non trasferiti automaticamente: adattare DEFINER con privilegi minimi approvati.
 Event scheduler e esplicitamente OFF nel compose, anche dopo import degli eventi
 sorgenti (non abilitarlo senza censire eventi e possibili effetti economici).
 
-Non lanciare automaticamente tutte le migrazioni Yii: importare anche lo storico,
-poi confrontare migrazioni applicate e pendenti. Eseguire solo quelle approvate,
-dopo backup, quando dipendenze Yii sono installate e validate.
+Migrazioni Yii applicate dal job di bootstrap, mai a mano dal web:
+- primo avvio: import v2, poi `yii migrate`, con verifica che i dati originali
+  non cambino;
+- avvii successivi con migrazioni nuove (impronta del codice diversa): fase
+  `migrating`, solo `yii migrate`, mai reimport. Lo schema deve coincidere con
+  quello registrato, altrimenti il job si ferma (schema modificato a mano). Un
+  aggiornamento fallito (`upgrade-failed`) o interrotto (`migrating`) viene
+  ritentato all'avvio successivo; finché non riesce il web non parte.
+
+Le migrazioni nuove devono essere sicure su dati esistenti: solo aggiunte o
+trasformazioni verificate. Prima dei rilasci con migrazioni, fare un backup (sezione 6).
 
 ## 5. Cutover e rollback
 

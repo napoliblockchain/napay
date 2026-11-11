@@ -183,8 +183,23 @@ final class V2Bootstrap
             $state = self::state($db);
             if ($state) {
                 if (!hash_equals($state['dataset_sha256'], $manifest['sql_sha256']) || !hash_equals($state['manifest_sha256'], hash('sha256', $raw))) throw new RuntimeException('Existing database belongs to another dataset.');
+                $upgrade = ($state['phase'] === 'complete' && !hash_equals(self::version($root), $state['code_sha256'])) || in_array($state['phase'], ['migrating', 'upgrade-failed'], true);
+                if ($upgrade) {
+                    // New migrations on an already restored database: apply them, never reimport.
+                    // A schema changed by hand is refused; a failed or interrupted upgrade is retried (migrate skips applied steps).
+                    if ($state['phase'] === 'complete' && !hash_equals(self::schemaHash($db), (string) $state['schema_sha256'])) throw new RuntimeException('Schema changed outside migrations.');
+                    $db->exec("UPDATE _napay_bootstrap SET phase='migrating' WHERE id=1");
+                    try {
+                        self::process([PHP_BINARY, $root . '/yii', 'migrate', '--interactive=0'], null, $remaining());
+                        self::references($db);
+                    } catch (\Throwable $error) {
+                        try { $db->exec("UPDATE _napay_bootstrap SET phase='upgrade-failed' WHERE id=1"); } catch (\Throwable $ignored) { }
+                        throw $error;
+                    }
+                    $db->prepare("UPDATE _napay_bootstrap SET phase='complete',code_sha256=?,schema_sha256=? WHERE id=1")->execute([self::version($root), self::schemaHash($db)]);
+                }
                 self::ready($db, $root);
-                return 'already-complete';
+                return $upgrade ? 'upgraded' : 'already-complete';
             }
             if (self::tables($db) !== [] || self::rows($db, 'SELECT COUNT(*) AS total FROM information_schema.TABLES WHERE TABLE_SCHEMA=DATABASE()')[0]['total'] !== '0') throw new RuntimeException('Initial import requires an empty target database.');
             $db->exec('CREATE TABLE _napay_bootstrap (id TINYINT PRIMARY KEY, phase VARCHAR(16) NOT NULL, dataset_sha256 CHAR(64) NOT NULL, manifest_sha256 CHAR(64) NOT NULL, code_sha256 CHAR(64) NOT NULL, schema_sha256 CHAR(64) NULL) ENGINE=InnoDB');
