@@ -9,7 +9,7 @@ $items = [
             ['label' => Yii::t('app', 'Dashboard'), 'url' => ['site/index'], 'iconStyle' => 'fas', 'icon' => 'tachometer-alt'],
             ['label' => Yii::t('app', 'Aziende'), 'url' => ['merchants/index'], 'iconStyle' => 'fas', 'icon' => 'store', 'visible' => User::isAdministrator()], //administrator
             ['label' => Yii::t('app', 'Negozi'), 'url' => ['stores/index'], 'iconStyle' => 'fas', 'icon' => 'shopping-cart', 'visible' => User::isAdministrator() || User::isMerchant()],
-            ['label' => Yii::t('app', 'Pos'), 'url' => ['pos/index'], 'iconStyle' => 'fas', 'icon' =>'mobile-alt', 'visible' => User::isAdministrator() || User::isMerchant()],
+            ['label' => Yii::t('app', 'Terminali POS'), 'url' => ['pos-management/index'], 'iconStyle' => 'fas', 'icon' =>'mobile-alt', 'visible' => !Yii::$app->user->isGuest && \app\components\pos\management\Scope::current() !== null],
             ['label' => Yii::t('app', 'Transazioni'), 'url' => ['invoices/index'], 'iconStyle' => 'fas', 'icon' =>'file-invoice', 'visible' => User::isAdministrator() || User::isMerchant()],
             // associazione (TIP-020)
             ['label' => Yii::t('app', 'Paga quota'), 'url' => ['pay-fee/index'], 'iconStyle' => 'fas', 'icon' => 'hand-holding-heart'],

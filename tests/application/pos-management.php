@@ -151,6 +151,7 @@ check(login('merchant@example.invalid') === 302, 'Manager A logged in');
 $index = request('/pos-management/index');
 check($index['status'] === 200 && str_contains($index['body'], 'c4-op-a1@example.invalid') && !str_contains($index['body'], 'c4-op-b1@example.invalid')
     && !str_contains($index['body'], 'Cassa B') && !str_contains($index['body'], 'Cassa X'), 'Manager sees only own operators and terminals');
+check(str_contains($index['body'], 'href="/pos-management/index"') && !str_contains($index['body'], 'href="/pos/index"'), 'Qualified manager sidebar links to integrated POS backoffice');
 $form = request('/pos-management/terminal-create');
 $options = array_map(fn($n) => trim($n->textContent), nodes($form, '//select[@id="terminalform-store"]/option[@value!=""]'));
 sort($options);
@@ -223,6 +224,10 @@ fails(fn() => PosManagement::setOperatorEnabled($scopeA, $opConflict, true), Fai
 fails(fn() => PosManagement::createGrant($scopeA, $opConflict, $storeA2), Failure::NOT_ALLOWED, 'Member account never granted a store');
 $scopeAdmin = scopeOf($admin);
 check($scopeAdmin !== null && $scopeAdmin->isAdmin(), 'Admin scope covers all merchants');
+$db->createCommand()->update('users', ['is_active'=>0], ['id'=>$admin])->execute();
+try {
+    check(Scope::current() === null, 'Admin scope rechecks active status even with cached session identity');
+} finally { $db->createCommand()->update('users', ['is_active'=>1], ['id'=>$admin])->execute(); }
 fails(fn() => PosManagement::createTerminal($scopeAdmin, $storeX1, 'X'), Failure::NOT_ALLOWED, 'No terminal on unqualified merchant');
 fails(fn() => PosManagement::setOperatorEnabled($scopeAdmin, $opX, true), Failure::NOT_ALLOWED, 'No operator enabled on unqualified merchant');
 PosManagement::setTerminalEnabled($scopeAdmin, $terminalX->public_id, false);
@@ -297,6 +302,7 @@ check($active($opA1) === 0, 'RV2: re-enable never revives revoked sessions');
 check(login('admin@example.invalid') === 302, 'Admin logged in');
 $index = request('/pos-management/index');
 check($index['status'] === 200 && str_contains($index['body'], 'Cassa B') && str_contains($index['body'], 'C4 merchant B'), 'Admin sees all merchants');
+check(str_contains($index['body'], 'href="/pos-management/index"') && !str_contains($index['body'], 'href="/pos/index"'), 'Admin sidebar links to integrated POS backoffice');
 $logs = $db->createCommand('SELECT event_type, description FROM logs WHERE id>:i AND controller=:c', [':i' => $logStart, ':c' => 'pos-management'])->queryAll();
 $data = array_filter($logs, fn($l) => $l['event_type'] === 'data');
 check(count($data) >= 6, 'Writes audited as data events');

@@ -4,6 +4,7 @@ namespace app\components\pos\management;
 use Yii;
 use app\components\User;
 use app\components\identity\AccountEligibility;
+use app\models\Users;
 use yii\db\QueryInterface;
 
 /**
@@ -20,6 +21,9 @@ final class Scope
     {
         if (Yii::$app->user->isGuest) return null;
         $id = (int) Yii::$app->user->id;
+        // Session identity may predate a disable committed while a write waited on a lock.
+        $account = Users::findOne($id);
+        if ($account === null || !$account->validateStatus()) return null;
         if (User::isAdministrator()) return new self($id, null);
         if (!User::isMerchant()) return null;
         $merchant = AccountEligibility::merchantForManager($id);
