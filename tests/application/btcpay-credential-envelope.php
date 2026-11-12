@@ -133,4 +133,46 @@ catch (UnexpectedValueException $e) { check(!$leaks(exposed($e)), 'Rewrap error:
 try { Envelope::encrypt($secret, ['kind' => 'x'] + $context, 'k1', $kek1); throw new RuntimeException('FAIL: encrypt accepted'); }
 catch (InvalidArgumentException $e) { check(!$leaks(exposed($e)), 'Encrypt error: trace without plaintext or KEK'); }
 
+// --- review B1a-RV1: visita ricorsiva degli argomenti delle trace, anche parti binarie decodificate
+/** Stringhe raggiungibili negli argomenti dei frame; i valori oscurati (SensitiveParameterValue) sono saltati. */
+function traceStrings(Throwable $e): array {
+    $found = [];
+    $walk = function ($value) use (&$walk, &$found) {
+        if (is_string($value)) { $found[] = $value; return; }
+        if (is_array($value)) { foreach ($value as $key => $item) { if (is_string($key)) $found[] = $key; $walk($item); } return; }
+        if (is_object($value) && !$value instanceof SensitiveParameterValue) foreach (get_object_vars($value) as $item) $walk($item);
+    };
+    foreach ($e->getTrace() as $frame) $walk($frame['args'] ?? []);
+    return $found;
+}
+$binary = array_map(fn($field) => base64_decode($env[$field], true), ['ciphertext' => 'ciphertext', 'wrapped_dek' => 'wrapped_dek', 'secret_nonce' => 'secret_nonce', 'dek_nonce' => 'dek_nonce']);
+$secretValues = array_merge(array_values($binary), [$secret, $kek1, $kek2, $env['ciphertext'], $env['wrapped_dek']]);
+$hidden = function (Throwable $e) use ($secretValues): bool {
+    foreach (traceStrings($e) as $text) foreach ($secretValues as $value) if (str_contains($text, $value)) return false;
+    return true;
+};
+$cases = [
+    'decrypt with wrong KEK' => fn() => Envelope::decrypt($env, $context, ['k1' => $kek2]),
+    'decrypt with tampered ciphertext' => fn() => Envelope::decrypt($flip('ciphertext'), $context, $keyring),
+    'decrypt with unknown version' => fn() => Envelope::decrypt($env, $context, ['k9' => $kek1]),
+    'rewrap with wrong old KEK' => fn() => Envelope::rewrap($env, $context, ['k1' => $kek2], 'k2', $kek2),
+    'rewrap of tampered ciphertext' => fn() => Envelope::rewrap($flip('ciphertext'), $context, $keyring, 'k2', $kek2),
+];
+foreach ($cases as $label => $call) {
+    try { $call(); throw new RuntimeException('FAIL: accepted ' . $label); }
+    catch (InvalidArgumentException | UnexpectedValueException $e) {
+        // la closure del caso non ha argomenti: i frame ispezionati sono quelli del componente
+        check($hidden($e), "Recursive trace scan, binary parts hidden: $label");
+    }
+}
+
+// --- review B1a-RV2: limite codificato controllato prima della decodifica
+$huge = str_repeat('A', 8 * 1024 * 1024);
+memory_reset_peak_usage();
+$base = memory_get_usage();
+refused(fn() => Envelope::decrypt(['ciphertext' => $huge] + $env, $context, $keyring), 'invalid_envelope', 'Oversized encoded ciphertext refused');
+check(memory_get_peak_usage() - $base < 1024 * 1024, 'Oversized field refused without decoding it (peak memory growth under 1 MiB)');
+refused(fn() => Envelope::decrypt(['ciphertext' => str_repeat('A', 4 * intdiv(16400 + 2, 3) + 4)] + $env, $context, $keyring), 'invalid_envelope', 'Encoded length just over the limit refused');
+unset($huge);
+
 echo "PASS $checks B1a credential envelope checks\n";
