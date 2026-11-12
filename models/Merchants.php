@@ -26,6 +26,7 @@ use Yii;
 class Merchants extends \yii\db\ActiveRecord
 {
     public const SCENARIO_UPDATE = 'update';
+    public const SCENARIO_ACTIVATION = 'activation';
 
     public function scenarios()
     {
@@ -34,6 +35,7 @@ class Merchants extends \yii\db\ActiveRecord
             'description', 'email', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse',
             'addressCity', 'addressZip', 'addressProvince', 'addressCountry',
         ];
+        $scenarios[self::SCENARIO_ACTIVATION] = array_merge(['user_id', 'vatNumber'], $scenarios[self::SCENARIO_UPDATE]);
         return $scenarios;
     }
 
@@ -51,6 +53,9 @@ class Merchants extends \yii\db\ActiveRecord
     public function rules()
     {
         return [
+            [['description', 'email', 'vatNumber', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse', 'addressCity', 'addressZip', 'addressProvince', 'addressCountry'],
+                'filter', 'filter'=>static fn($v) => is_string($v) ? trim($v) : '', 'on'=>self::SCENARIO_ACTIVATION],
+            ['email', 'email', 'on'=>self::SCENARIO_ACTIVATION],
             [['user_id', 'description', 'email', 'vatNumber', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse', 'addressCity', 'addressZip', 'addressProvince', 'addressCountry'], 'required'],
             [['user_id'], 'integer'],
             [['description', 'email', 'addressCity'], 'string', 'max' => 256],

@@ -11,12 +11,12 @@ use yii\web\NotFoundHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
-use yii\helpers\ArrayHelper;
 
 use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
-use app\models\Privileges;
+use app\components\identity\AccountEligibility;
+use app\components\identity\MerchantActivation;
 use app\models\Users;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -38,14 +38,20 @@ class MerchantsController extends Controller
                 'actions' => [
                     'delete' => ['POST'],
                     'company' => ['GET', 'POST'],
+                    'create' => ['GET', 'POST'],
+                    'activate' => ['GET', 'POST'],
                 ],
             ],
             'access' => [
                 'class' => AccessControl::class,
                 'rules' => [
                     [
+                        'actions'=>['activate'], 'allow'=>true, 'roles'=>['@'],
+                        'matchCallback'=>static fn() => AccountEligibility::canActivateMerchant((int)Yii::$app->user->id)
+                            || AccountEligibility::merchantForManager((int)Yii::$app->user->id) !== null,
+                    ],
+                    [
                         'actions' => [
-                            'create',
                             'view',
                             'update',
                             'company',
@@ -113,45 +119,50 @@ class MerchantsController extends Controller
      */
     public function actionCreate()
     {
-        $model = new Merchants();
-
-        if ($model->load(Yii::$app->request->post())) { // && $model->save()) {
-            // echo '<pre>' . print_r($model->attributes, true) . '</pre>';
-
-            if ($model->load(Yii::$app->request->post()) && $model->save()) {
-
-                // cerco il privilegio Merchant
-                $privilege = Privileges::find()->byLevel(User::ROLE_MERCHANT)->one();
-
-                // cerco l'utene
-                $user = Users::findOne(['id' => $model->user_id]);
-
-                // assegno all'utente il nuovo ruolo di Merchant
-                $user->privilege_id = $privilege->id;
-                $user->save();
-
-                Yii::$app->session->setFlash('success', Yii::t('app', 'Esercente creato correttamente'));
-                // Log message
-                $message_log = Yii::t('app', 'User {user} has created a new {item}: {itemname}', [
-                    'user' => Yii::$app->user->identity->username,
-                    'item' => Yii::$app->controller->id,
-                    'itemname' => $model->description
-                ]);
-                Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-                // end log message
-                return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+        $model = new Merchants(['scenario'=>Merchants::SCENARIO_ACTIVATION]);
+        if ($model->load(Yii::$app->request->post())) {
+            $owner = $model->user_id;
+            if (!is_scalar($owner) || !preg_match('/^[1-9][0-9]{0,9}$/D', (string)$owner) || (float)$owner > 2147483647) {
+                throw new \yii\web\BadRequestHttpException('Invalid account.');
+            }
+            if (($id = $this->activateMerchant($model, (int)$owner)) !== null) {
+                return $this->redirect(['view', 'id'=>Crypt::encrypt($id)]);
             }
         }
-
-        $users_list = ArrayHelper::map(Users::find()
-            ->joinWith(['privilege'])
-            ->andWhere(['privileges.codice_ruolo' => 'ROLE_USER'])
-            ->all(), 'id', 'username');
+        $users_list = [];
+        foreach (Users::find()->joinWith(['privilege'])->andWhere(['privileges.level'=>User::ROLE_USER])->all() as $candidate) {
+            if (AccountEligibility::canActivateMerchant((int)$candidate->id)) $users_list[$candidate->id] = $candidate->username;
+        }
 
         return $this->render('create', [
             'model' => $model,
             'users_list' => $users_list
         ]);
+    }
+
+    public function actionActivate()
+    {
+        $owner = (int)Yii::$app->user->id;
+        if (AccountEligibility::merchantForManager($owner) !== null) return $this->redirect(['company']);
+        $model = new Merchants(['scenario'=>Merchants::SCENARIO_ACTIVATION, 'user_id'=>$owner]);
+        if ($model->load(Yii::$app->request->post()) && $this->activateMerchant($model, $owner) !== null) {
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Merchant attivato localmente. La configurazione dei pagamenti non è ancora completata.'));
+            return $this->redirect(['company']);
+        }
+        $model->user_id = $owner;
+        return $this->render('activate', ['model'=>$model, 'users_list'=>[]]);
+    }
+
+    private function activateMerchant(Merchants $model, int $owner): ?int
+    {
+        try {
+            return MerchantActivation::activate((int)Yii::$app->user->id, $owner, $model);
+        } catch (\DomainException $error) {
+            throw new ForbiddenHttpException('Merchant activation unavailable.');
+        } catch (\Throwable $error) {
+            Yii::warning('Local merchant activation failed.', __METHOD__);
+            throw new \yii\web\ServiceUnavailableHttpException('Merchant activation unavailable.');
+        }
     }
 
     /**
