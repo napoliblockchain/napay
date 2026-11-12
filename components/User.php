@@ -24,7 +24,8 @@ class User extends Component
      */
     public static function getMerchantId()
     {
-        return Yii::$app->user->identity->merchants[0]->id ?? 0;
+        if (Yii::$app->user->isGuest) return 0;
+        return identity\AccountEligibility::merchantForManager((int) Yii::$app->user->id) ?? 0;
     }
 
     /**

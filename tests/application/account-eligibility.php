@@ -7,6 +7,11 @@ require $root.'/vendor/autoload.php'; require $root.'/vendor/yiisoft/yii2/Yii.ph
 $app=new yii\console\Application(require $root.'/config/console.php'); $db=$app->db;
 if ($db->createCommand('SELECT DATABASE()')->queryScalar() !== 'napay_test_runtime') exit(1);
 use app\components\identity\AccountEligibility as Policy;
+$app->set('user', ['class'=>yii\web\User::class, 'identityClass'=>app\models\Users::class, 'enableSession'=>false]);
+function merchantForSession(?int $id): int {
+    Yii::$app->user->setIdentity($id === null ? null : app\models\Users::findOne($id));
+    return app\components\User::getMerchantId();
+}
 $checks=0;
 function policyCheck($ok,string $label):void {global $checks;if(!$ok)throw new RuntimeException($label);++$checks;echo 'PASS: '.$label."\n";}
 $ids=array_column($db->createCommand("SELECT id,username FROM users WHERE username LIKE 'runtime-%'")->queryAll(),'id','username');
@@ -20,12 +25,15 @@ policyCheck(Policy::kind($user)===Policy::MEMBER_PF&&!Policy::canActivateMerchan
 $db->createCommand()->insert('member_profiles',['user_id'=>(int)$ids['runtime-other'],'is_corporate'=>0])->execute();
 policyCheck(Policy::kind((int)$ids['runtime-other'])===Policy::CONFLICT,'PF owner of legacy merchant requires reconciliation');
 policyCheck(Policy::kind($owner)===Policy::CONFLICT,'Merchant row without PG evidence is not qualified');
+policyCheck(merchantForSession($owner)===0,'Shared helper denies merchant without PG evidence');
 $db->createCommand()->insert('member_profiles',['user_id'=>$owner,'is_corporate'=>1,'denomination'=>'Fixture PG'])->execute();
 policyCheck(Policy::kind($owner)===Policy::MEMBER_PG&&Policy::qualifiedMerchant($merchant),'PG merchant positively classified');
 policyCheck(Policy::merchantForManager($owner)===$merchant,'Only dedicated manager gets its one merchant');
+policyCheck(merchantForSession($owner)===$merchant,'Shared helper returns the unique qualified merchant');
 policyCheck(!Policy::isOperatorAccount($owner)&&!Policy::canActivateMerchant($owner),'Manager is not operator and cannot create second merchant');
 $db->createCommand()->update('users',['is_active'=>0],['id'=>$owner])->execute();
 policyCheck(Policy::merchantForManager($owner)===null,'Inactive manager cannot operate');
+policyCheck(app\components\User::getMerchantId()===0,'Cached session identity cannot bypass manager disable');
 $db->createCommand()->update('users',['is_active'=>1],['id'=>$owner])->execute();
 $db->createCommand()->insert('member_profiles',['user_id'=>$pg,'is_corporate'=>1,'denomination'=>'New PG'])->execute();
 policyCheck(!Policy::canActivateMerchant($pg),'Inactive PG cannot self-activate');
@@ -49,13 +57,18 @@ policyCheck(Policy::kind($operator)===Policy::CONFLICT&&!Policy::isOperatorAccou
 $copy=$db->createCommand('SELECT * FROM merchants WHERE id=:id',[':id'=>$merchant])->queryOne();unset($copy['id']);$copy['description']='Duplicate fixture merchant';
 $db->createCommand()->insert('merchants',$copy)->execute();$duplicateMerchant=(int)$db->lastInsertID;
 policyCheck(Policy::kind($owner)===Policy::CONFLICT&&Policy::merchantForManager($owner)===null&&!Policy::qualifiedMerchant($merchant),'Multiple merchants rejected, never first selected');
+policyCheck(merchantForSession($owner)===0,'Shared helper never selects the first of multiple merchants');
 $db->createCommand()->delete('merchants',['id'=>$duplicateMerchant])->execute();
 require_once __DIR__.'/email-legacy-fixture.php';
 napayTestLegacyEmailCollision(app\models\Users::findOne($owner), function () use ($owner) {
     policyCheck(Policy::kind($owner)===Policy::CONFLICT&&Policy::merchantForManager($owner)===null,'Normalized ambiguous email rejected');
+    policyCheck(app\components\User::getMerchantId()===0,'Shared helper rejects email conflict despite cached identity');
 });
 policyCheck(Policy::merchantForManager($owner)===$merchant,'Conflict removal restores consistent classification without writes by policy');
 policyCheck(Policy::kind((int)$ids['runtime-admin'])===Policy::PLATFORM_ADMIN,'Admin without membership remains separate, not operator');
+policyCheck(merchantForSession((int)$ids['runtime-admin'])===0,'Admin has no implicit merchant selection');
+policyCheck(merchantForSession($operator)===0&&merchantForSession($user)===0,'Operator and PF have no implicit merchant selection');
+policyCheck(merchantForSession(null)===0&&merchantForSession(2147483647)===0,'Guest and missing identity have no merchant selection');
 $before=[];foreach(['users','merchants','member_profiles','pos_operators'] as $t)$before[$t]=$db->createCommand('SELECT COUNT(*) FROM '.$t)->queryScalar();
 Policy::kind($owner);Policy::merchantForManager($owner);Policy::qualifiedMerchant($merchant);Policy::canActivateMerchant($pg);Policy::isOperatorAccount($operator);
 $after=[];foreach(array_keys($before) as $t)$after[$t]=$db->createCommand('SELECT COUNT(*) FROM '.$t)->queryScalar();
