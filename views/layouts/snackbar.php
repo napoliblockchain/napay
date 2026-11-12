@@ -1,7 +1,7 @@
 <!-- POPUP NUOVA VERSIONE SW -->
 <div class="modal fade " id="snackbar" tabindex="-1" role="dialog" aria-labelledby="waitingModalLabel" aria-hidden="true">
     <div class="modal-dialog modal-dialog-centered" role="document">
-        <div class="modal-content bg-secondary border-0">
+        <div class="modal-content border-0 text-body">
             <div class="modal-header h2 text-center">Aggiornamento Versione</div>
             <div class="modal-body text-left">
                 <p class="lead">È disponibile una nuova versione di questa applicazione.</p>
