@@ -140,13 +140,12 @@ try {
     check(!$request->sendEmail() && fixture()->activationCode === $previous, 'Delivery failure rolls back only matching reset hash');
     $app->mailer->fileTransportPath = '@runtime/mail';
     $app->cache->flush();
-    $duplicate = new app\models\Users();
-    $duplicate->setAttributes(fixture()->getAttributes(), false);
-    $duplicate->id = null; $duplicate->username = 'runtime-duplicate'; $duplicate->save(false);
-    $count = count(mailFiles());
-    $request = new app\models\forms\PasswordResetRequestForm(['email' => 'other@example.invalid']);
-    check(!$request->sendEmail() && count(mailFiles()) === $count, 'Duplicate email cannot select an arbitrary account');
-    $duplicate->delete();
+    require_once __DIR__ . '/email-legacy-fixture.php';
+    napayTestLegacyEmailCollision(fixture(), function () {
+        $count = count(mailFiles());
+        $request = new app\models\forms\PasswordResetRequestForm(['email' => 'other@example.invalid']);
+        check(!$request->sendEmail() && count(mailFiles()) === $count, 'Duplicate email cannot select an arbitrary account');
+    });
     $app->cache->flush();
     for ($i = 0; $i < 6; ++$i) check(forgot('absent-' . $i . '@example.invalid')['status'] === 302, 'Throttled/unknown requests retain generic redirect');
     check((int) $app->cache->get('reset-ip-' . hash('sha256', '127.0.0.1')) === 5, 'Per-IP burst capped at five requests');

@@ -4,6 +4,7 @@ namespace app\models;
 
 use Yii;
 use yii\helpers\ArrayHelper;
+use app\components\identity\EmailIdentity;
 
 /**
  * This is the model class for table "users".
@@ -258,8 +259,8 @@ class Users extends \yii\db\ActiveRecord implements \yii\web\IdentityInterface
      */
     public static function findByEmail($email)
     {
-        if (!is_string($email) || $email === '') return null;
-        $users = self::find()->where(['email' => $email])->limit(2)->all();
+        if (!is_string($email) || EmailIdentity::normalize($email) === '') return null;
+        $users = self::find()->where(EmailIdentity::condition($email))->limit(2)->all();
         return count($users) === 1 ? $users[0] : null;
     }
 

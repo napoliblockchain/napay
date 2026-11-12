@@ -5,6 +5,8 @@ use Yii;
 use yii\base\Model;
 use app\models\Users;
 use app\components\Log;
+use app\components\identity\EmailIdentity;
+use yii\db\IntegrityException;
 
 
 /**
@@ -36,13 +38,16 @@ class SignupForm extends Model
     public function rules()
     {
         return [
-            [['first_name', 'last_name', 'email'], 'filter', 'filter' => static fn($value) => is_string($value) ? trim($value) : ''],
+            [['first_name', 'last_name'], 'filter', 'filter' => static fn($value) => is_string($value) ? trim($value) : ''],
+            ['email', 'filter', 'filter' => [EmailIdentity::class, 'normalize']],
             [['first_name', 'last_name'], 'string', 'max' => 256],
             ['email', 'string', 'max' => 60],
             ['email', 'email'],
-            ['email', 'unique', 'targetClass' => '\app\models\Users',
-                'message' => Yii::t('app', 'La mail inserita è già stata utilizzata.')
-            ],
+            ['email', function ($attribute) {
+                if (Users::find()->where(EmailIdentity::condition($this->email))->exists()) {
+                    $this->addError($attribute, Yii::t('app', 'La mail inserita è già stata utilizzata.'));
+                }
+            }],
             [['first_name', 'last_name', 'email', 'password', 'repeat_password', 'is_merchant'], 'required'],
             ['password', 'string', 'min' => Yii::$app->params['user.passwordMinLength'], 'max' => 72],
             ['repeat_password', 'string', 'max' => 72],
@@ -123,12 +128,20 @@ class SignupForm extends Model
                 'is_active' => (null === $test_privilege) ? 1 : 0,
             ]);
 
-            if ($user->save()) {
+            try {
+                $saved = $user->save();
+            } catch (IntegrityException $error) {
+                if ((int) ($error->errorInfo[1] ?? 0) !== 1062) throw $error;
+                $this->addError('email', Yii::t('app', 'La mail inserita è già stata utilizzata.'));
+                return false;
+            }
+
+            if ($saved) {
                 Log::save(Yii::$app->controller->id, (Yii::$app->action->id ?? 'index'), Yii::t('app', 'User {user} signed up.', ['user' => $this->email]));
                 
                 return $user;
             } else {
-                $message = 'Unable to save ' . self::PROVIDER_SOURCE . ' for new account '. $this->email .':</br></br>'.print_r($user->getErrors(), true);
+                $message = Yii::t('app', 'Registrazione non completata. Riprova oppure richiedi il recupero dal login.');
                 Yii::$app->getSession()->setFlash('error', $message);
                 Log::save(Yii::$app->controller->id, (Yii::$app->action->id ?? 'index'), $message);
             }

@@ -50,10 +50,10 @@ $copy=$db->createCommand('SELECT * FROM merchants WHERE id=:id',[':id'=>$merchan
 $db->createCommand()->insert('merchants',$copy)->execute();$duplicateMerchant=(int)$db->lastInsertID;
 policyCheck(Policy::kind($owner)===Policy::CONFLICT&&Policy::merchantForManager($owner)===null&&!Policy::qualifiedMerchant($merchant),'Multiple merchants rejected, never first selected');
 $db->createCommand()->delete('merchants',['id'=>$duplicateMerchant])->execute();
-$duplicate=$db->createCommand('SELECT * FROM users WHERE id=:id',[':id'=>$owner])->queryOne();unset($duplicate['id']);$duplicate['username']='policy-duplicate';$duplicate['email']=' '.strtoupper($duplicate['email']).' ';
-$db->createCommand()->insert('users',$duplicate)->execute();$duplicateUser=(int)$db->lastInsertID;
-policyCheck(Policy::kind($owner)===Policy::CONFLICT&&Policy::merchantForManager($owner)===null,'Normalized ambiguous email rejected');
-$db->createCommand()->delete('users',['id'=>$duplicateUser])->execute();
+require_once __DIR__.'/email-legacy-fixture.php';
+napayTestLegacyEmailCollision(app\models\Users::findOne($owner), function () use ($owner) {
+    policyCheck(Policy::kind($owner)===Policy::CONFLICT&&Policy::merchantForManager($owner)===null,'Normalized ambiguous email rejected');
+});
 policyCheck(Policy::merchantForManager($owner)===$merchant,'Conflict removal restores consistent classification without writes by policy');
 policyCheck(Policy::kind((int)$ids['runtime-admin'])===Policy::PLATFORM_ADMIN,'Admin without membership remains separate, not operator');
 $before=[];foreach(['users','merchants','member_profiles','pos_operators'] as $t)$before[$t]=$db->createCommand('SELECT COUNT(*) FROM '.$t)->queryScalar();

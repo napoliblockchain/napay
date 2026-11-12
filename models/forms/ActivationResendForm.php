@@ -12,9 +12,8 @@ class ActivationResendForm extends EmailRequestForm
         if (!$this->validate()) return false;
         try {
             if (!$this->acceptRequest('activation')) return false;
-            $users = Users::find()->where(['email' => $this->email])->limit(2)->all();
-            if (count($users) !== 1 || !$users[0]->canRequestActivation()) return false;
-            $user = $users[0];
+            $user = Users::findByEmail($this->email);
+            if ($user === null || !$user->canRequestActivation()) return false;
             $old = ['authKey' => $user->authKey, 'accessToken' => $user->accessToken, 'activationCode' => $user->activationCode];
             $user->authKey = (string) time() . sprintf('%06d', random_int(0, 999999));
             $user->accessToken = Yii::$app->security->generateRandomString(60);

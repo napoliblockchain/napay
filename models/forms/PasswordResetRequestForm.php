@@ -13,9 +13,8 @@ class PasswordResetRequestForm extends EmailRequestForm
         try {
             if (!$this->acceptRequest()) return false;
             // Ambiguous email ownership must never select an arbitrary identity.
-            $users = Users::find()->active()->andWhere(['email' => $this->email])->limit(2)->all();
-            if (count($users) !== 1) return false;
-            $user = $users[0];
+            $user = Users::findByEmail($this->email);
+            if ($user === null || !$user->validateStatus()) return false;
             $previous = $user->activationCode;
             $token = $user->generatePasswordResetToken();
             $url = sendMail::applicationUrl('site/reset-password', ['token' => $token]);

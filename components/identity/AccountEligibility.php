@@ -8,7 +8,6 @@ use app\models\Merchants;
 use app\models\PosOperators;
 use app\models\Privileges;
 use app\models\Users;
-use yii\db\Expression;
 use yii\db\Query;
 
 /** SIP-023 R1: positive identity evidence only, no cache, writes or role promotion. */
@@ -71,9 +70,9 @@ final class AccountEligibility
     private static function classify(array $account): string
     {
         $id = (int)$account['id'];
-        $email = strtolower(trim((string)$account['email']));
+        $email = EmailIdentity::normalize($account['email']);
         if ($email === '' || (int)(new Query())->from(Users::tableName())
-            ->where(['=',new Expression('LOWER(TRIM([[email]]))'),$email])->count() !== 1) return self::CONFLICT;
+            ->where(EmailIdentity::condition($email))->count() !== 1) return self::CONFLICT;
         $member = MemberProfiles::find()->select(['is_corporate','denomination'])->where(['user_id'=>$id])->asArray()->one();
         $operator = PosOperators::find()->where(['user_id'=>$id])->exists();
         $payments = MembershipPayments::find()->where(['user_id'=>$id])->exists();

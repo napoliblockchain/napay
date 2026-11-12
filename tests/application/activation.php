@@ -140,10 +140,10 @@ try {
     check($attempt(['email' => 'runtime-admin', 'password' => 'fixture-password-only']) === 200, 'Username no longer authenticates');
     check($attempt(['username' => 'runtime-admin', 'password' => 'fixture-password-only']) === 200, 'Legacy username field is ignored');
     check($attempt(['email' => 'activation@example.invalid', 'password' => 'wrong-password']) === 200, 'Wrong password rejected');
-    $twin = new app\models\Users(); $twin->setAttributes(member()->getAttributes(), false);
-    $twin->id = null; $twin->username = 'activation-twin'; $twin->save(false);
-    check($attempt(['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']) === 200, 'Ambiguous email never selects an arbitrary account');
-    $twin->delete();
+    require_once __DIR__ . '/email-legacy-fixture.php';
+    napayTestLegacyEmailCollision(member(), function () use ($attempt) {
+        check($attempt(['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']) === 200, 'Ambiguous email never selects an arbitrary account');
+    });
     $jar = $memberJar;
     foreach ([[-172801, 0, 'SELF'], [3600, 0, 'SELF'], [0, 2, 'SELF'], [0, 0, 'external']] as [$seconds, $status, $provider]) {
         $user = pending($seconds, $status, $provider); $before = snapshot($user);
@@ -200,11 +200,11 @@ try {
     $model = new app\models\forms\ActivationResendForm(['email' => 'activation@example.invalid']);
     check(!$model->sendEmail() && snapshot(member()) === $before, 'Failed recovery delivery restores matching previous pending credentials');
     $app->mailer->fileTransportPath = '@runtime/mail';
-    $duplicate = new app\models\Users(); $duplicate->setAttributes($user->getAttributes(), false);
-    $duplicate->id = null; $duplicate->username = 'activation-duplicate'; $duplicate->save(false);
-    $app->cache->flush();
-    check(!$model->sendEmail() && snapshot(member()) === $before, 'Duplicate recovery email cannot select arbitrary account');
-    $duplicate->delete();
+    require_once __DIR__ . '/email-legacy-fixture.php';
+    napayTestLegacyEmailCollision($user, function () use ($app, $model, $before) {
+        $app->cache->flush();
+        check(!$model->sendEmail() && snapshot(member()) === $before, 'Duplicate recovery email cannot select arbitrary account');
+    });
     $app->cache->flush();
     for ($i = 0; $i < 6; ++$i) check(resend('absent-activation-' . $i . '@example.invalid')['status'] === 302, 'Rate-limited recovery keeps generic response');
     check((int) $app->cache->get('activation-ip-' . hash('sha256', '127.0.0.1')) === 5, 'Recovery IP limit caps five requests');

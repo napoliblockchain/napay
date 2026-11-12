@@ -69,18 +69,17 @@ $invalid = [
     'disabled account' => ['email' => 'disabled@example.invalid', 'password' => 'fixture-password-only'],
     'blocked account' => ['email' => 'blocked@example.invalid', 'password' => 'fixture-password-only'],
 ];
-$twin = $db->createCommand("SELECT * FROM users WHERE username='runtime-other'")->queryOne();
-unset($twin['id']); $twin['username'] = 'pos-ambiguous-twin';
-$db->createCommand()->insert('users', $twin)->execute();
 $invalid['ambiguous email'] = ['email' => 'other@example.invalid', 'password' => 'fixture-password-only'];
 $bodies = [];
+require_once __DIR__ . '/email-legacy-fixture.php';
+napayTestLegacyEmailCollision(app\models\Users::findByUsername('runtime-other'), function () use ($invalid, $key, &$bodies) {
 foreach ($invalid as $case => $payload) {
     fresh();
     $r = api($payload, $key, op());
     check($r['status'] === 401 && code($r) === 'invalid_credentials', "Generic 401 invalid_credentials: $case");
     $bodies[] = $r['body'];
 }
-$db->createCommand()->delete('users', ['username' => 'pos-ambiguous-twin'])->execute();
+});
 check(count(array_unique($bodies)) === 1, 'Identical error body for all credential failures');
 
 // servizio assente o non valido
