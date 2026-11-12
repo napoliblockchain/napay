@@ -23,7 +23,9 @@ localCheck(array_keys($services['mysql']['networks']) === ['database']);
 // proxy di uscita: unico con internet, web raggiunge solo lui (rete interna), nessuna porta pubblicata
 $egress = $services['egress'];
 $egressNetworks = array_keys($egress['networks']); sort($egressNetworks);
-localCheck($egressNetworks === ['egress', 'internet'] && $config['networks']['egress']['internal'] === true && empty($config['networks']['internet']['internal']));
+localCheck($egressNetworks === ['btcpay_regtest_client', 'egress', 'internet'] && $config['networks']['egress']['internal'] === true && empty($config['networks']['internet']['internal']));
+localCheck($config['networks']['btcpay_regtest_client']['external'] === true
+    && $config['networks']['btcpay_regtest_client']['name'] === 'btcpay_regtest_client');
 localCheck(empty($egress['ports']) && $egress['read_only'] === true && $egress['cap_drop'] === ['ALL']);
 localCheck($services['web']['environment']['PAYMENT_PROXY'] === 'http://egress:3128');
 localCheck($config['volumes']['mysql_data']['external'] === true

@@ -37,7 +37,8 @@ services:
       - ALL
     security_opt:
       - no-new-privileges:true
-    networks: [egress, internet]
+    # The BTCPay backend is on a different network and cannot reach Squid.
+    networks: [egress, internet, btcpay_regtest_client]
     healthcheck:
       test: ["CMD", "nc", "-z", "127.0.0.1", "3128"]
       interval: 10s
@@ -52,6 +53,9 @@ networks:
   # interna, creata da start-localhost.sh: solo web e napay-gateway, nessuna uscita Internet
   napay_local_browser:
     name: napay_local_browser
+    external: true
+  btcpay_regtest_client:
+    name: btcpay_regtest_client
     external: true
 volumes:
   local_runtime:
