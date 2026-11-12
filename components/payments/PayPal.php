@@ -148,8 +148,10 @@ final class PayPal
     {
         try {
             $config = self::config();
+            $proxy = Egress::proxy();
+            if ($proxy === false) throw new PayPalException('Invalid PAYMENT_PROXY.');
             $client = new Client(['base_uri' => $config['base'], 'timeout' => 15, 'connect_timeout' => 5,
-                'allow_redirects' => false, 'http_errors' => false, 'verify' => true]);
+                'allow_redirects' => false, 'http_errors' => false, 'verify' => true, 'proxy' => $proxy ?? '']);
             $options = ['headers' => [
                 'Authorization' => 'Bearer ' . self::token($client, $config),
                 'Prefer' => 'return=representation',

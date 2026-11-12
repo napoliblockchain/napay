@@ -10,16 +10,22 @@ function localCheck(bool $condition): void {
 }
 $services = $config['services'];
 $names = array_keys($services); sort($names);
-localCheck($names === ['bootstrap', 'mysql', 'web']);
+localCheck($names === ['bootstrap', 'egress', 'mysql', 'web']);
 localCheck(empty($services['web']['ports']) && empty($services['mysql']['ports']));
 localCheck($config['networks']['database']['internal'] === true);
 // browser network: internal, created outside Compose (start-localhost.sh / local.sh), shared only with napay-gateway
 localCheck($config['networks']['napay_local_browser']['external'] === true
     && $config['networks']['napay_local_browser']['name'] === 'napay_local_browser');
 $webNetworks = array_keys($services['web']['networks']); sort($webNetworks);
-localCheck($webNetworks === ['database', 'napay_local_browser']);
+localCheck($webNetworks === ['database', 'egress', 'napay_local_browser']);
 localCheck($services['web']['networks']['napay_local_browser']['aliases'] === ['napay-local-web']);
 localCheck(array_keys($services['mysql']['networks']) === ['database']);
+// proxy di uscita: unico con internet, web raggiunge solo lui (rete interna), nessuna porta pubblicata
+$egress = $services['egress'];
+$egressNetworks = array_keys($egress['networks']); sort($egressNetworks);
+localCheck($egressNetworks === ['egress', 'internet'] && $config['networks']['egress']['internal'] === true && empty($config['networks']['internet']['internal']));
+localCheck(empty($egress['ports']) && $egress['read_only'] === true && $egress['cap_drop'] === ['ALL']);
+localCheck($services['web']['environment']['PAYMENT_PROXY'] === 'http://egress:3128');
 localCheck($config['volumes']['mysql_data']['external'] === true
     && $config['volumes']['mysql_data']['name'] === 'napay_browser_local_mysql_data');
 foreach (['web', 'bootstrap'] as $service) {

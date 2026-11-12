@@ -128,8 +128,10 @@ final class BTCPay
 
     private static function client(array $config): Invoice
     {
+        $proxy = Egress::proxy();
+        if ($proxy === false) throw new PaymentGatewayException('Invalid PAYMENT_PROXY.');
         $http = new CurlClient();
-        $http->setCurlOptions([
+        $http->setCurlOptions(($proxy !== null ? [CURLOPT_PROXY => $proxy, CURLOPT_PROXYTYPE => CURLPROXY_HTTP] : []) + [
             CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 15, CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
             CURLOPT_PROTOCOLS => $config['scheme'] === 'https' ? CURLPROTO_HTTPS : CURLPROTO_HTTP,

@@ -167,6 +167,16 @@ try {
     check(!BTCPay::enabled(), 'Short webhook secret refused');
     putenv("BTCPAY_WEBHOOK_SECRET=$secret");
 
+    // proxy di uscita: valore non valido = nessuna connessione
+    putenv('PAYMENT_PROXY=http://evil host:3128');
+    $blocked = false;
+    try { BTCPay::getInvoice('ABCDEFGH12345678'); } catch (app\components\payments\PaymentGatewayException $e) { $blocked = str_contains($e->getMessage(), 'PAYMENT_PROXY'); }
+    check($blocked && app\components\payments\Egress::proxy() === false, 'Invalid PAYMENT_PROXY blocks gateway calls');
+    putenv('PAYMENT_PROXY=http://egress:3128');
+    check(app\components\payments\Egress::proxy() === 'http://egress:3128', 'Valid PAYMENT_PROXY accepted');
+    putenv('PAYMENT_PROXY');
+    check(app\components\payments\Egress::proxy() === null, 'No PAYMENT_PROXY: direct connection');
+
     // nessun segreto nei registri
     $all = json_encode($db->createCommand('SELECT description FROM logs')->queryAll());
     foreach (glob($root . '/runtime/logs/*.log') ?: [] as $file) $all .= file_get_contents($file);

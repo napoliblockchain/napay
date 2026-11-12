@@ -5,8 +5,11 @@ services:
     # IP reale del client nel registro attività: X-Forwarded-For accettato solo dal gateway (reti private interne)
     environment:
       TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # uscita solo verso i gateway di pagamento, tramite il proxy con allowlist (servizio egress)
+      PAYMENT_PROXY: "http://egress:3128"
     networks: !override
       database: {}
+      egress: {}
       napay_local_browser:
         aliases: [napay-local-web]
     volumes:
@@ -21,7 +24,31 @@ services:
         install -d -o 33 -g 33 -m 0700 /var/www/html/runtime
         install -d -o 33 -g 33 -m 0755 /var/www/html/web/assets
         exec sh /var/www/html/docker/web-entrypoint.sh apache2-foreground
+  # proxy di uscita (TIP-020): unico container con internet, solo HTTPS verso PayPal e BTCPay (docker/egress/squid.conf)
+  egress:
+    build:
+      context: ./docker/egress
+    image: napay/egress:dev
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks: [egress, internet]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "3128"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
 networks:
+  # web <-> proxy, senza uscita
+  egress:
+    internal: true
+  # solo il proxy
+  internet: {}
   # interna, creata da start-localhost.sh: solo web e napay-gateway, nessuna uscita Internet
   napay_local_browser:
     name: napay_local_browser
