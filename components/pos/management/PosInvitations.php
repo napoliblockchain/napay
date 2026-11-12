@@ -25,6 +25,8 @@ final class PosInvitations
 {
     public const TTL = 72 * 3600;
     public const EMAIL_MAX = 60;
+    /** bcrypt usa al massimo 72 byte: oltre, password diverse coinciderebbero */
+    public const PASSWORD_MAX_BYTES = 72;
     /** [massimo, secondi]: inviti e avvisi per merchant, per indirizzo; accettazioni per IP */
     public const LIMIT_MERCHANT = [20, 3600];
     public const LIMIT_EMAIL = [3, 86400];
@@ -104,6 +106,11 @@ final class PosInvitations
     {
         if (Throttle::hit('pos-invite-accept-ip:' . (string) $ip, self::LIMIT_ACCEPT_IP) > 0) throw new ManagementException(ManagementException::RATE_LIMITED);
         if (!self::validToken($token)) throw new ManagementException(ManagementException::INVALID);
+        // confine del servizio: stessi limiti del form, anche per chiamate dirette
+        if (strlen($password) < (int) Yii::$app->params['user.passwordMinLength'] || strlen($password) > self::PASSWORD_MAX_BYTES
+            || mb_strlen($password) < (int) Yii::$app->params['user.passwordMinLength']
+            || !preg_match('/\S/u', $firstName) || !preg_match('/\S/u', $lastName)
+            || mb_strlen($firstName) > 256 || mb_strlen($lastName) > 256) throw new ManagementException(ManagementException::INVALID);
         $digest = hash('sha256', $token);
         $hint = PosOperatorInvitations::find()->select('merchant_id')->where(['token_sha256' => $digest])->scalar();
         if ($hint === false) throw new ManagementException(ManagementException::INVALID);
@@ -192,13 +199,18 @@ final class PosInvitations
         return $invitation;
     }
 
+    /**
+     * Invio dopo il commit. Tutta la preparazione sta nel try: un errore di configurazione diventa
+     * "invio non riuscito", identico per indirizzi nuovi e già registrati. Esito registrato solo se
+     * il token consegnato è ancora quello dell'invito (un reinvio nel frattempo non viene alterato).
+     */
     private static function deliver(int $invitationId, string $email, string $token, bool $known): void
     {
-        $views = $known
-            ? ['html' => 'posOperatorInvitationNotice', 'text' => 'posOperatorInvitationNotice-text']
-            : ['html' => 'posOperatorInvitation', 'text' => 'posOperatorInvitation-text'];
-        $params = $known ? [] : ['link' => sendMail::applicationUrl('pos-invitation/accept', ['token' => $token]), 'hours' => self::TTL / 3600];
         try {
+            $views = $known
+                ? ['html' => 'posOperatorInvitationNotice', 'text' => 'posOperatorInvitationNotice-text']
+                : ['html' => 'posOperatorInvitation', 'text' => 'posOperatorInvitation-text'];
+            $params = $known ? [] : ['link' => sendMail::applicationUrl('pos-invitation/accept', ['token' => $token]), 'hours' => self::TTL / 3600];
             $sent = Yii::$app->mailer->compose($views, $params)
                 ->setFrom([Yii::$app->params['adminEmail'] => Yii::$app->name])
                 ->setTo($email)
@@ -208,7 +220,7 @@ final class PosInvitations
             $sent = false;
         }
         $columns = $sent ? ['sent_at' => time()] : ['send_failures' => new \yii\db\Expression('[[send_failures]] + 1')];
-        PosOperatorInvitations::updateAll($columns + ['updated_at' => time()], ['id' => $invitationId]);
+        PosOperatorInvitations::updateAll($columns + ['updated_at' => time()], ['id' => $invitationId, 'token_sha256' => hash('sha256', $token)]);
         if (!$sent) Yii::warning('POS invitation mail delivery failed.', __METHOD__);
     }
 
