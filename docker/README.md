@@ -169,7 +169,7 @@ NAPAY_TEST_DATASET=/percorso/dataset-v2 NAPAY_TEST_VENDOR=/percorso/vendor-test 
 
 Suite locale: 32 controlli PHP e 2 Compose, su dati v2 in DB temporanei.
 Vendor Yii isolato e writer CLI fittizio: non e uno smoke test HTTP del sito.
-Dettagli: `napay-project/tips/TIP-019/bootstrap-automatico.md`.
+Dettagli: `napay-project/sip/SIP-019/bootstrap-automatico.md`.
 
 ## Dipendenze Runtime Dal Lock
 

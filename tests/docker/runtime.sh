@@ -83,11 +83,11 @@ compose exec -T web php /var/www/html/tests/application/password-reset.php
 compose exec -T web php /var/www/html/tests/application/activation.php
 compose exec -T web php /var/www/html/tests/application/association.php
 compose exec -T web php /var/www/html/tests/application/association-write.php
-# TIP-020 5b: server PayPal finto solo per questa suite (PAYPAL_MODE=mock)
+# SIP-020 5b: server PayPal finto solo per questa suite (PAYPAL_MODE=mock)
 compose exec -d -T web php -S 127.0.0.1:8099 /var/www/html/tests/application/paypal-mock.php
 compose exec -T web php /var/www/html/tests/application/pay-fee.php
 compose exec -T web php /var/www/html/tests/application/paypal-webhook.php
-# TIP-020 5c: BTCPay finto solo per questa suite (BTCPAY_URL su 127.0.0.1)
+# SIP-020 5c: BTCPay finto solo per questa suite (BTCPAY_URL su 127.0.0.1)
 compose exec -d -T web php -S 127.0.0.1:8098 /var/www/html/tests/application/btcpay-mock.php
 compose exec -T web php /var/www/html/tests/application/pay-btc.php
 compose exec -T web php /var/www/html/tests/application/service-worker.php

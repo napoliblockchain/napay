@@ -25,7 +25,7 @@ le immagini PHP gia previste dal progetto; non cambia versione PHP.
 - Browser: `https://napay.local` (hosts: `127.0.0.1 napay.local`).
 - HTTP: `http://napay.local`, solo redirect HTTPS; `localhost` reindirizza qui.
 - Gateway `napay-gateway` dell'orchestratore su `127.0.0.1:80/443`; diagnostica `18120`.
-- Email di accesso: `browser-admin@example.invalid` (login solo con email, TIP-020).
+- Email di accesso: `browser-admin@example.invalid` (login solo con email, SIP-020).
 - Password casuale: `$HOME/.local/share/napay/browser-local/browser-password`.
 - Configurazione privata: stessa directory, `local.env` (0600).
 - CA pubblica locale: stessa directory, `caddy-root.crt`.

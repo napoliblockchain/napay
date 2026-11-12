@@ -2,7 +2,7 @@
 
 Prova eseguita il 2026-10-23 sul backup fisico locale del 2026-10-22:
 recupero su MySQL 8.0.46, import logico su MySQL 8.4.13, confronto dati e
-persistenza OK. Dettagli in `napay-project/tips/TIP-019-napay-mysql-persistenza-migrazione.md`.
+persistenza OK. Dettagli in `napay-project/sip/SIP-019-napay-mysql-persistenza-migrazione.md`.
 Sorgente confermata come perimetro dall'utente: SOLO `napay_v2` (11 tabelle).
 Lo schema `napay` legacy resta escluso: nessuna conversione o fusione prevista.
 Il nome `napay` usato come destinazione nel test non indica import del legacy.
@@ -24,7 +24,7 @@ diverso prima dell'avvio applicativo. Il repository ora include guard della
 migration storica e due migration additive (activationCode/auth); validate
 su fixture e sulla copia del backup tramite job automatico. Non modificano o
 precompilano account social. Analisi e contratto bootstrap in
-`napay-project/tips/TIP-019/`. I comandi seguenti servono alla prova locale e
+`napay-project/sip/SIP-019/`. I comandi seguenti servono alla prova locale e
 al runbook di recupero, non sono passaggi manuali dell'onboarding automatico.
 
 Destinazione proposta: MySQL 8.4 LTS. Prima dell'import verificare versione e

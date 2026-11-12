@@ -24,7 +24,7 @@ services:
         install -d -o 33 -g 33 -m 0700 /var/www/html/runtime
         install -d -o 33 -g 33 -m 0755 /var/www/html/web/assets
         exec sh /var/www/html/docker/web-entrypoint.sh apache2-foreground
-  # proxy di uscita (TIP-020): unico container con internet, solo HTTPS verso PayPal e BTCPay (docker/egress/squid.conf)
+  # proxy di uscita (SIP-020): unico container con internet, solo HTTPS verso PayPal e BTCPay (docker/egress/squid.conf)
   egress:
     build:
       context: ./docker/egress
