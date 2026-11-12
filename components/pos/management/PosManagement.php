@@ -21,8 +21,9 @@ use yii\db\Transaction;
  *
  * Concorrenza (C4-RV1/RV2): transazioni READ COMMITTED, impostate solo su questa transazione,
  * così scope e gate letti dopo il lock vedono lo stato committato e non uno snapshot precedente.
- * Ordine dei lock, comune agli altri writer POS: merchant -> profilo operatore -> negozio ->
- * grant/terminale -> sessioni. Gli ID letti prima del lock sono solo indizi, riletti sotto lock.
+ * Ordine dei lock, comune al login POS (PosApi::createSession): merchant -> profilo operatore ->
+ * utente (solo per le concessioni) -> negozio -> grant/terminale -> sessioni.
+ * Gli ID letti prima del lock sono solo indizi, riletti sotto lock.
  */
 final class PosManagement
 {
@@ -71,7 +72,10 @@ final class PosManagement
     {
         return self::write(function (Connection $db) use ($scope, $userId, $enabled) {
             $operator = self::lockOperator($db, $scope, $userId);
-            if ($enabled) self::requireOperator((int) $operator->merchant_id, $userId);
+            if ($enabled) {
+                self::lockUser($db, $userId);
+                self::requireOperator((int) $operator->merchant_id, $userId);
+            }
             $operator->is_enabled = $enabled ? 1 : 0;
             if (!$operator->save(false, ['is_enabled', 'updated_at'])) throw new ManagementException(ManagementException::FAILED);
             $revoked = 0;
@@ -93,6 +97,7 @@ final class PosManagement
         self::write(function (Connection $db) use ($scope, $userId, $storeId) {
             $operator = self::lockOperator($db, $scope, $userId);
             $merchantId = (int) $operator->merchant_id;
+            self::lockUser($db, $userId);
             // negozio di un altro merchant: come inesistente
             self::lockStore($db, $storeId, $merchantId);
             self::requireOperator($merchantId, $userId);
@@ -107,6 +112,7 @@ final class PosManagement
         self::write(function (Connection $db) use ($scope, $userId, $storeId, $enabled) {
             $operator = self::lockOperator($db, $scope, $userId);
             $merchantId = (int) $operator->merchant_id;
+            if ($enabled) self::lockUser($db, $userId);
             $grant = PosStoreOperators::findBySql('SELECT * FROM {{%pos_store_operators}} WHERE user_id=:u AND store_id=:s AND merchant_id=:m FOR UPDATE',
                 [':u' => $userId, ':s' => $storeId, ':m' => $merchantId])->one();
             if ($grant === null) throw new ManagementException(ManagementException::NOT_FOUND);
@@ -188,6 +194,12 @@ final class PosManagement
             [':u' => $userId, ':m' => (int) $merchant])->one();
         if ($operator === null) throw new ManagementException(ManagementException::NOT_FOUND);
         return $operator;
+    }
+
+    private static function lockUser(Connection $db, int $userId): void
+    {
+        if ($db->createCommand('SELECT id FROM {{%users}} WHERE id=:id FOR UPDATE', [':id' => $userId])->queryScalar() === false)
+            throw new ManagementException(ManagementException::NOT_FOUND);
     }
 
     private static function requireQualified(int $merchantId): void
