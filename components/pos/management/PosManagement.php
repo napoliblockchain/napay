@@ -128,7 +128,8 @@ final class PosManagement
         return is_string($value) && preg_match(self::UUID, $value) === 1;
     }
 
-    private static function write(callable $work)
+    /** @internal anche per PosInvitations: transazione READ COMMITTED con errori ridotti a codici sicuri. */
+    public static function write(callable $work)
     {
         $db = Yii::$app->db;
         $transaction = $db->beginTransaction(Transaction::READ_COMMITTED);
@@ -150,8 +151,8 @@ final class PosManagement
         }
     }
 
-    /** Lock del merchant e scope dell'attore ricalcolato dentro la transazione. */
-    private static function lockMerchant(Connection $db, Scope $scope, int $merchantId): void
+    /** @internal Lock del merchant e scope dell'attore ricalcolato dentro la transazione. */
+    public static function lockMerchant(Connection $db, Scope $scope, int $merchantId): void
     {
         if ($db->createCommand('SELECT id FROM {{%merchants}} WHERE id=:id FOR UPDATE', [':id' => $merchantId])->queryScalar() === false)
             throw new ManagementException(ManagementException::NOT_FOUND);
@@ -202,7 +203,8 @@ final class PosManagement
             throw new ManagementException(ManagementException::NOT_FOUND);
     }
 
-    private static function requireQualified(int $merchantId): void
+    /** @internal */
+    public static function requireQualified(int $merchantId): void
     {
         if (!AccountEligibility::qualifiedMerchant($merchantId)) throw new ManagementException(ManagementException::NOT_ALLOWED);
     }

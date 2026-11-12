@@ -9,6 +9,7 @@ final class ManagementException extends \RuntimeException
     public const CONFLICT = 'conflict';
     public const INVALID = 'invalid';
     public const FAILED = 'failed';
+    public const RATE_LIMITED = 'rate_limited';
 
     public function userMessage(): string
     {
@@ -16,6 +17,7 @@ final class ManagementException extends \RuntimeException
             self::NOT_ALLOWED => \Yii::t('app', 'Operazione non consentita: merchant o account non idonei.'),
             self::CONFLICT => \Yii::t('app', 'Elemento già presente.'),
             self::INVALID => \Yii::t('app', 'Dati non validi.'),
+            self::RATE_LIMITED => \Yii::t('app', 'Troppe richieste: riprova più tardi.'),
             default => \Yii::t('app', 'Operazione non riuscita. Riprova.'),
         };
     }
