@@ -76,8 +76,9 @@ $config = [
                 'api/paypal/v1/webhook' => 'webhooks/paypal/receive',
                 // webhook BTCPay Greenfield per i pagamenti quota in Bitcoin
                 'api/btcpay/v1/webhook' => 'webhooks/btcpay/receive',
-                // API server-to-server dei server POS (SIP-021): tutti i metodi qui, la action accetta solo POST (405)
+                // API server-to-server POS: sessioni POST/DELETE, catalogo GET; altri metodi 405.
                 'api/pos/v1/sessions' => 'posapi/sessions/create',
+                'api/pos/v1/terminals' => 'posapi/terminals/index',
                 // Regola per le API v1
                 'api/v1/<controller:\w+>/<action:\w+>' => 'api/v1/<controller>/<action>',
             ],
