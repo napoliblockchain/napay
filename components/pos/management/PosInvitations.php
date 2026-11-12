@@ -45,6 +45,8 @@ final class PosInvitations
         // validazione anche qui, non solo nel form: nessuna scrittura con un indirizzo non valido
         $email = self::normalizeEmail($email);
         if ($email === null) throw new ManagementException(ManagementException::INVALID);
+        // scope prima dei contatori: una richiesta non autorizzata non consuma i limiti di un altro merchant
+        self::requireScope($scope, $merchantId);
         self::throttle($merchantId, $email);
         [$id, $token, $known] = PosManagement::write(function (Connection $db) use ($scope, $merchantId, $email) {
             PosManagement::lockMerchant($db, $scope, $merchantId);
@@ -62,6 +64,7 @@ final class PosInvitations
     {
         $hint = PosOperatorInvitations::find()->select(['merchant_id', 'email'])->where(['id' => $invitationId])->asArray()->one();
         if ($hint === null) throw new ManagementException(ManagementException::NOT_FOUND);
+        self::requireScope($scope, (int) $hint['merchant_id']);
         self::throttle((int) $hint['merchant_id'], $hint['email']);
         [$email, $token, $known] = PosManagement::write(function (Connection $db) use ($scope, $invitationId, $hint) {
             $invitation = self::lockInvitation($db, $scope, $invitationId, (int) $hint['merchant_id']);
@@ -162,6 +165,16 @@ final class PosInvitations
         if ((int) $row['expires_at'] <= $now) return Yii::t('app', 'Scaduto');
         if ($row['sent_at'] === null && (int) $row['send_failures'] > 0) return Yii::t('app', 'Invio non riuscito');
         return Yii::t('app', 'In attesa');
+    }
+
+    /** Controllo preliminare (senza lock) prima dei contatori; il ricontrollo autorevole resta sotto lock. */
+    private static function requireScope(Scope $scope, int $merchantId): void
+    {
+        $fresh = Scope::current();
+        if ($fresh === null || $fresh->actorId !== $scope->actorId || !$fresh->covers($merchantId)
+            || !\app\models\Merchants::find()->where(['id' => $merchantId])->exists()) {
+            throw new ManagementException(ManagementException::NOT_FOUND);
+        }
     }
 
     private static function throttle(int $merchantId, string $email): void
