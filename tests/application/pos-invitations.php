@@ -247,6 +247,22 @@ check($fail['sent_at'] === null && (int) $fail['send_failures'] === 1
     'Mail configuration error after commit becomes a recorded delivery failure');
 check(scalar("SELECT sent_at FROM pos_operator_invitations WHERE email='admin@example.invalid'") !== null, 'Registered address unaffected by the link error (notice has no link)');
 
+// --- review D: i tentativi fuori scope non consumano i limiti del merchant destinatario (E proprietario, D estraneo)
+$scopeE = scopeOf($managerE);
+PosInvitations::invite($scopeE, $merchantE, 'c4d-quota@example.invalid'); mailTo('c4d-quota@example.invalid');
+$quotaId = (int) scalar("SELECT id FROM pos_operator_invitations WHERE email='c4d-quota@example.invalid' AND revoked_at IS NULL");
+$scopeD = scopeOf($managerD);
+for ($n = 0; $n < 5; ++$n) {
+    fails(fn() => PosInvitations::resend($scopeD, $quotaId), Failure::NOT_FOUND, 'Foreign resend refused before counting (' . ($n + 1) . ')');
+    fails(fn() => PosInvitations::invite($scopeD, $merchantE, 'c4d-quota2@example.invalid'), Failure::NOT_FOUND, 'Foreign invite refused before counting (' . ($n + 1) . ')');
+}
+$scopeE = scopeOf($managerE);
+PosInvitations::resend($scopeE, $quotaId); mailTo('c4d-quota@example.invalid');
+PosInvitations::resend($scopeE, $quotaId); mailTo('c4d-quota@example.invalid');
+foreach ([1, 2, 3] as $n) { PosInvitations::invite($scopeE, $merchantE, 'c4d-quota2@example.invalid'); mailTo('c4d-quota2@example.invalid'); }
+check(true, 'Owner quotas intact after foreign attempts (2 resends and 3 invitations still allowed)');
+fails(fn() => PosInvitations::invite($scopeE, $merchantE, 'c4d-quota2@example.invalid'), Failure::RATE_LIMITED, 'Owner limit still enforced afterwards');
+
 // --- limiti (anche sugli avvisi)
 $scopeE = scopeOf($managerE);
 foreach ([1, 2, 3] as $n) PosInvitations::invite($scopeE, $merchantE, 'c4d-rl@example.invalid');
