@@ -20,8 +20,7 @@ tests/_support/_generated
 #vagrant folder
 /.vagrant
 
-# add service worker file
-web/sw.js
+# web/sw.js è versionato (generato da docker/sw/build.sh, verificato dai test)
 
 # altri ignore
 .env

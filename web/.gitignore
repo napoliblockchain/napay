@@ -1,2 +1,1 @@
-# ignore service worker file
-sw.js
+# web/sw.js è versionato: generato da docker/sw/build.sh (Workbox 7), verificato da tests/application/service-worker.php

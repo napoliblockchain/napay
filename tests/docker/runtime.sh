@@ -90,6 +90,7 @@ compose exec -T web php /var/www/html/tests/application/paypal-webhook.php
 # TIP-020 5c: BTCPay finto solo per questa suite (BTCPAY_URL su 127.0.0.1)
 compose exec -d -T web php -S 127.0.0.1:8098 /var/www/html/tests/application/btcpay-mock.php
 compose exec -T web php /var/www/html/tests/application/pay-btc.php
+compose exec -T web php /var/www/html/tests/application/service-worker.php
 compose exec -T web php /var/www/html/tests/application/audit.php
 compose exec -T web php /var/www/html/tests/application/pos-sessions.php
 compose logs --no-color web | docker run --rm -i --network none --entrypoint php php:8.3.36-cli -r '

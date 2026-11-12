@@ -1,0 +1,3 @@
+node_modules/
+# lockfile della build del service worker: versionato (build riproducibile)
+!package-lock.json
