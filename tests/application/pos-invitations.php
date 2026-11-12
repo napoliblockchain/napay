@@ -208,6 +208,45 @@ check(!str_contains(request('/pos-management/index')['body'], 'c4d-signed@exampl
 fails(fn() => PosInvitations::invite(scopeOf($admin), $merchantX, 'c4d-x@example.invalid'), Failure::NOT_ALLOWED, 'No invitation for an unqualified merchant');
 check(scopeOf($uid) === null, 'Invited operator has no management scope');
 
+// --- review D: password oltre 72 byte, nomi non testuali, generazioni superate, errore mail
+$scopeD = scopeOf($managerD);
+PosInvitations::invite($scopeD, $merchantD, 'c4d-bytes@example.invalid'); $bytes = tokenIn(mailTo('c4d-bytes@example.invalid'));
+$users = (int) scalar('SELECT COUNT(*) FROM users');
+$long = str_repeat("\u{00E9}", 37); // 37 caratteri, 74 byte
+$r = acceptPost($bytes, ['password' => $long, 'repeat_password' => $long] + $valid);
+check($r['status'] === 200 && str_contains($r['body'], '72 bytes') && (int) scalar('SELECT COUNT(*) FROM users') === $users, 'Multibyte password over 72 bytes refused by the form');
+fails(fn() => PosInvitations::accept($bytes, 'A', 'B', str_repeat('a', 73), null), Failure::INVALID, 'Service refuses passwords over 72 bytes');
+foreach (['first_name', 'last_name'] as $field) {
+    $r = acceptPost($bytes, [$field => ['x', 'y']] + $valid);
+    check($r['status'] === 200 && (int) scalar('SELECT COUNT(*) FROM users') === $users
+        && scalar("SELECT consumed_at FROM pos_operator_invitations WHERE email='c4d-bytes@example.invalid' AND revoked_at IS NULL") === null,
+        "Array in $field: form re-rendered, no account, invitation not consumed");
+}
+$edge = str_repeat("\u{00E9}", 36); // esattamente 72 byte
+$edgeUser = PosInvitations::accept($bytes, 'Limite', 'Byte', $edge, null);
+check(password_verify($edge, (string) scalar('SELECT password FROM users WHERE id=:u', [':u' => $edgeUser])), 'Password of exactly 72 bytes accepted');
+PosInvitations::invite($scopeD, $merchantD, 'c4d-gen@example.invalid'); $gen1 = tokenIn(mailTo('c4d-gen@example.invalid'));
+$genId = (int) scalar("SELECT id FROM pos_operator_invitations WHERE email='c4d-gen@example.invalid' AND revoked_at IS NULL");
+PosInvitations::resend($scopeD, $genId); $gen2 = tokenIn(mailTo('c4d-gen@example.invalid'));
+$db->createCommand()->update('pos_operator_invitations', ['sent_at' => null, 'send_failures' => 0], ['id' => $genId])->execute();
+$deliver = new ReflectionMethod(PosInvitations::class, 'deliver');
+$deliver->invoke(null, $genId, 'c4d-gen@example.invalid', $gen1, false); mailTo('c4d-gen@example.invalid');
+$state = $db->createCommand('SELECT sent_at, send_failures, token_sha256 FROM pos_operator_invitations WHERE id=:i', [':i' => $genId])->queryOne();
+check($state['sent_at'] === null && (int) $state['send_failures'] === 0 && $state['token_sha256'] === hash('sha256', $gen2), 'Late outcome of an old generation does not touch the current one');
+$deliver->invoke(null, $genId, 'c4d-gen@example.invalid', $gen2, false); mailTo('c4d-gen@example.invalid');
+check(scalar('SELECT sent_at FROM pos_operator_invitations WHERE id=:i', [':i' => $genId]) !== null, 'Outcome of the current generation recorded');
+$link = Yii::$app->params['webapp_link'];
+Yii::$app->params['webapp_link'] = 'http://not-https.invalid';
+try {
+    PosInvitations::invite($scopeD, $merchantD, 'c4d-mailfail@example.invalid');
+    PosInvitations::invite($scopeD, $merchantD, 'admin@example.invalid');
+} finally { Yii::$app->params['webapp_link'] = $link; }
+$fail = $db->createCommand("SELECT sent_at, send_failures FROM pos_operator_invitations WHERE email='c4d-mailfail@example.invalid'")->queryOne();
+check($fail['sent_at'] === null && (int) $fail['send_failures'] === 1
+    && PosInvitations::status(['consumed_at' => null, 'revoked_at' => null, 'expires_at' => time() + 60] + $fail, time()) === 'Invio non riuscito',
+    'Mail configuration error after commit becomes a recorded delivery failure');
+check(scalar("SELECT sent_at FROM pos_operator_invitations WHERE email='admin@example.invalid'") !== null, 'Registered address unaffected by the link error (notice has no link)');
+
 // --- limiti (anche sugli avvisi)
 $scopeE = scopeOf($managerE);
 foreach ([1, 2, 3] as $n) PosInvitations::invite($scopeE, $merchantE, 'c4d-rl@example.invalid');
