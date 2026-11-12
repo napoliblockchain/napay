@@ -94,7 +94,7 @@ final class CredentialEnvelope
         }
     }
 
-    private static function unwrap(array $parts, array $context, #[\SensitiveParameter] array $keyring): string
+    private static function unwrap(#[\SensitiveParameter] array $parts, array $context, #[\SensitiveParameter] array $keyring): string
     {
         $version = $parts['kek_version'];
         // nessun ripiego su un'altra chiave: versione assente = errore
@@ -164,7 +164,9 @@ final class CredentialEnvelope
         ];
         foreach ($limits as $field => [$min, $max]) {
             $value = $envelope[$field];
-            $binary = is_string($value) ? base64_decode($value, true) : false;
+            // tipo e lunghezza codificata prima della decodifica: nessuna copia di input enormi
+            if (!is_string($value) || strlen($value) > 4 * intdiv($max + 2, 3)) throw new \InvalidArgumentException('invalid_envelope');
+            $binary = base64_decode($value, true);
             if ($binary === false || base64_encode($binary) !== $value || strlen($binary) < $min || strlen($binary) > $max) {
                 throw new \InvalidArgumentException('invalid_envelope');
             }
@@ -173,7 +175,7 @@ final class CredentialEnvelope
         return $parts;
     }
 
-    private static function envelope(string $kekVersion, string $secretNonce, string $ciphertext, string $dekNonce, string $wrapped): array
+    private static function envelope(string $kekVersion, #[\SensitiveParameter] string $secretNonce, #[\SensitiveParameter] string $ciphertext, #[\SensitiveParameter] string $dekNonce, #[\SensitiveParameter] string $wrapped): array
     {
         return [
             'version' => self::FORMAT,
