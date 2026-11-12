@@ -3,9 +3,12 @@
 namespace app\components\pos;
 
 use app\components\Throttle;
+use app\components\identity\AccountEligibility;
+use app\models\PosOperators;
 use app\models\PosOperatorSessions;
 use app\models\Users;
 use yii\base\InvalidConfigException;
+use yii\db\Transaction;
 
 /**
  * API server-to-server per i POS (SIP-021): autenticazione del servizio, rate limit, sessioni operatore.
@@ -85,10 +88,29 @@ final class PosApi
 
     /**
      * Nuova sessione: restituisce il token in chiaro una sola volta, nel DB resta il digest.
-     * @return array{0: string, 1: PosOperatorSessions}
+     * @return array{0: string, 1: PosOperatorSessions}|null Null for an ineligible identity.
      * @throws InvalidConfigException
      */
-    public static function createSession(Users $user, string $clientPrefix, ?string $ip): array
+    public static function createSession(Users $user, string $clientPrefix, ?string $ip): ?array
+    {
+        $db = Users::getDb();
+        if ($db->getTransaction() !== null) throw new InvalidConfigException('POS session requires its own transaction.');
+        // Same lock order as C4 disable: merchant, operator profile, user, session.
+        return $db->transaction(static function () use ($db, $user, $clientPrefix, $ip) {
+            $merchant = PosOperators::find()->select('merchant_id')->where(['user_id' => $user->id])->scalar();
+            if ($merchant === false) return null;
+            if ($db->createCommand('SELECT id FROM {{%merchants}} WHERE id=:id FOR UPDATE', [':id' => $merchant])->queryScalar() === false) return null;
+            $profile = PosOperators::findBySql('SELECT * FROM {{%pos_operators}} WHERE user_id=:id FOR UPDATE', [':id' => $user->id])->one();
+            if ($profile === null || (int) $profile->merchant_id !== (int) $merchant || (int) $profile->is_enabled !== 1) return null;
+            $current = Users::findBySql('SELECT * FROM {{%users}} WHERE id=:id FOR UPDATE', [':id' => $user->id])->one();
+            if ($current === null || !hash_equals(self::fingerprint($user), self::fingerprint($current))
+                || !AccountEligibility::isOperatorAccount((int) $current->id)
+                || !AccountEligibility::qualifiedMerchant((int) $merchant)) return null;
+            return self::insertSession($current, $clientPrefix, $ip);
+        }, Transaction::READ_COMMITTED);
+    }
+
+    private static function insertSession(Users $user, string $clientPrefix, ?string $ip): array
     {
         $token = self::TOKEN_PREFIX . rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
         $now = time();
@@ -102,6 +124,7 @@ final class PosApi
             'created_ip' => $ip,
         ]);
         if (!$session->save(false)) throw new \RuntimeException('POS session not saved.');
+        $session->populateRelation('user', $user);
         return [$token, $session];
     }
 
@@ -116,6 +139,9 @@ final class PosApi
             || !hash_equals($session->client_key_prefix, $clientPrefix)) return null;
         $user = $session->user;
         if ($user === null || !$user->validateStatus() || !hash_equals($session->credential_fingerprint, self::fingerprint($user))) return null;
+        $profile = PosOperators::find()->select(['merchant_id', 'is_enabled'])->where(['user_id' => $user->id])->asArray()->one();
+        if ($profile === null || (int) $profile['is_enabled'] !== 1 || !AccountEligibility::isOperatorAccount((int) $user->id)
+            || !AccountEligibility::qualifiedMerchant((int) $profile['merchant_id'])) return null;
         return $session;
     }
 

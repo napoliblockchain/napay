@@ -26,15 +26,18 @@ client/sessione separati dal login/logout, errori fissi e assenza segreti.
 
 Il cursor cifra posizione e limit tramite primitive Yii2; non e grant e non
 congela il catalogo. Schema mancante o nome incoerente non diventano una lista
-vuota. Catalogo vuoto legittimo senza profilo o grant abilitati.
+vuota. Con LOGIN-R1-D3 il catalogo vuoto e legittimo per un operatore abilitato
+senza grant; profilo assente/disabilitato e identita R1 incoerente danno 401.
 
 ## POS
 
 `pos/v2/tests/catalog-client.php`: parser/vista/controller con trasporto
 simulato, encoding, lista vuota, token assente dall'HTML, errore senza riuso di
 cache e invalidazione della custodia locale su invalid_token. Browser sandbox
-verifica catalogo realmente vuoto sulla fixture admin, senza popolare il DB.
-Le prove HTTP/DB popolate avvengono esclusivamente nella suite isolata.
+aveva verificato il precedente catalogo vuoto sulla fixture admin; questa prova
+non certifica il nuovo flusso R1, che rifiuta admin/gestori al login POS.
+Le prove HTTP/DB popolate avvengono esclusivamente nella suite isolata;
+nessun operatore creato implicitamente nella sandbox per aggirare il requisito.
 
 ## Handoff
 

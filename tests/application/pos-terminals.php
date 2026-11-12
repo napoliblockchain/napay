@@ -89,6 +89,25 @@ function tcLogin(string $email, string $client): string {
     $secrets[] = $response['json']['access_token'];
     return $response['json']['access_token'];
 }
+function tcDeniedLogin(string $email, string $client): void {
+    global $db;
+    tcFresh();
+    $before = $db->createCommand('SELECT COUNT(*) FROM pos_operator_sessions')->queryScalar();
+    $response = tcHttp('sessions', $client, null, 'POST', json_encode(['email'=>$email,'password'=>'fixture-password-only']));
+    tcCheck($response['status'] === 401 && $response['json'] === ['error'=>['code'=>'invalid_credentials','message'=>'Invalid credentials.']]
+        && tcHeaders($response), 'Ineligible account cannot log into POS: ' . $email);
+    tcCheck($db->createCommand('SELECT COUNT(*) FROM pos_operator_sessions')->queryScalar() === $before, 'Denied POS login persists no session');
+}
+function tcLegacyToken(int $userId): string {
+    global $db, $key, $secrets;
+    $token = 'napos_' . rtrim(strtr(base64_encode(random_bytes(32)), '+/', '-_'), '=');
+    $password = $db->createCommand('SELECT password FROM users WHERE id=:id', [':id'=>$userId])->queryScalar();
+    $db->createCommand()->insert('pos_operator_sessions', ['user_id'=>$userId,'token_sha256'=>hash('sha256',$token),
+        'client_key_prefix'=>substr(hash('sha256',$key),0,16),'credential_fingerprint'=>hash('sha256','pos-session|'.$password),
+        'created_at'=>time(),'expires_at'=>time()+3600])->execute();
+    $secrets[] = $token;
+    return $token;
+}
 function tcRow(string $token): array {
     global $db;
     return $db->createCommand('SELECT * FROM pos_operator_sessions WHERE token_sha256=:d', [':d'=>hash('sha256', $token)])->queryOne();
@@ -100,6 +119,17 @@ $companies = array_column($db->createCommand("SELECT description,id FROM merchan
 tcCheck(count($users) === 4 && count($companies) === 2, 'Reviewed runtime identities and merchant fixtures available');
 $u = (int)$users['runtime-user']; $otherUser = (int)$users['runtime-other'];
 $a = (int)$companies['Runtime company merchant']; $b = (int)$companies['Runtime company other'];
+$ownerA = (int)$users['runtime-merchant'];
+$db->createCommand()->insert('member_profiles', ['user_id'=>$ownerA,'is_corporate'=>1,'denomination'=>'C2 merchant A PG'])->execute();
+// B's former owner becomes a dedicated operator, never both manager and operator.
+$ownerB = $db->createCommand('SELECT * FROM users WHERE id=:id', [':id'=>$ownerA])->queryOne();
+unset($ownerB['id'], $ownerB['email_normalized']);
+$ownerB['username'] = 'c2-owner-b';
+$ownerB['email'] = 'c2-owner-b@example.invalid';
+$db->createCommand()->insert('users', $ownerB)->execute();
+$ownerBId = (int)$db->lastInsertID;
+$db->createCommand()->insert('member_profiles', ['user_id'=>$ownerBId,'is_corporate'=>1,'denomination'=>'C2 merchant B PG'])->execute();
+$db->createCommand()->update('merchants', ['user_id'=>$ownerBId], ['id'=>$b])->execute();
 $now = time(); $enabled = ['is_enabled'=>1,'created_at'=>$now,'updated_at'=>$now];
 foreach ([[$u,$a],[$otherUser,$b]] as [$user,$merchant]) $db->createCommand()->insert('pos_operators', ['user_id'=>$user,'merchant_id'=>$merchant]+$enabled)->execute();
 $storeBase = ['email'=>'c2@example.invalid','phone'=>'','mobile'=>'','addressStreet'=>'','addressNumberHouse'=>'','addressCity'=>'','addressZip'=>'','addressProvince'=>'','addressCountry'=>''];
@@ -131,23 +161,30 @@ $token = tcLogin('user@example.invalid', $key);
 $second = tcLogin('user@example.invalid', $key);
 $otherClient = tcLogin('user@example.invalid', $rotated);
 $other = tcLogin('other@example.invalid', $key);
-$admin = tcLogin('admin@example.invalid', $key);
-$merchantToken = tcLogin('merchant@example.invalid', $key);
+tcDeniedLogin('admin@example.invalid', $key);
+tcDeniedLogin('merchant@example.invalid', $key);
+$admin = tcLegacyToken((int)$users['runtime-admin']);
+$merchantToken = tcLegacyToken($ownerA);
 tcFresh();
 $lastUsed = tcRow($token)['last_used_at'];
 $page = tcPage(tcGet($token), 'Default catalog');
 tcCheck($page === ['items'=>$public($expected),'next_cursor'=>null], 'Two granted stores only, internal ID order, foreign/ungranted/disabled excluded before pagination');
 tcCheck(tcRow($token)['last_used_at'] === $lastUsed, 'GET does not write session last_used_at');
 tcCheck(tcPage(tcGet($other), 'Other merchant catalog')['items'] === $public([$foreign]), 'Other merchant sees only own terminal');
-foreach ([$admin,$merchantToken] as $roleToken) tcCheck(tcPage(tcGet($roleToken), 'Privileged role without profile') === ['items'=>[],'next_cursor'=>null], 'No admin or merchant role bypass');
+foreach ([$admin,$merchantToken] as $roleToken) tcError(tcGet($roleToken), 401, 'invalid_token', 'Legacy privileged bearer cannot bypass R1');
 $db->createCommand()->insert('pos_operators', ['user_id'=>$users['runtime-admin'],'merchant_id'=>$a]+$enabled)->execute();
-tcCheck(tcPage(tcGet($admin), 'Admin with profile, no grant')['items'] === [], 'Enabled admin profile without explicit grants stays empty');
+tcError(tcGet($admin), 401, 'invalid_token', 'Enabled profile cannot qualify legacy admin bearer');
 foreach ([['pos_operators',['user_id'=>$u]],['pos_store_operators',['user_id'=>$u,'store_id'=>$stores[0]]],['pos_terminals',['id'=>$expected[0]['internal_id']]]] as [$table,$where]) {
     try {
         $db->createCommand()->update($table, ['is_enabled'=>0], $where)->execute();
-        $actual = tcPage(tcGet($token), 'Disabled scope flag');
-        $wanted = $table === 'pos_operators' ? [] : ($table === 'pos_store_operators' ? [$expected[1]] : [$expected[1],$expected[2]]);
-        tcCheck($actual['items'] === $public($wanted), 'Disabled ' . $table . ' removes precisely its authorized rows');
+        if ($table === 'pos_operators') {
+            tcError(tcGet($token), 401, 'invalid_token', 'Disabled profile invalidates existing bearer');
+            tcDeniedLogin('user@example.invalid', $key);
+        } else {
+            $actual = tcPage(tcGet($token), 'Disabled scope flag');
+            $wanted = $table === 'pos_store_operators' ? [$expected[1]] : [$expected[1],$expected[2]];
+            tcCheck($actual['items'] === $public($wanted), 'Disabled ' . $table . ' removes precisely its authorized rows');
+        }
     } finally { $db->createCommand()->update($table, ['is_enabled'=>1], $where)->execute(); }
 }
 // D2: even explicit enabled grants cannot turn privileged accounts into POS operators.
@@ -159,7 +196,11 @@ foreach ([['runtime-admin',$admin,app\components\User::ROLE_ADMIN],['runtime-mer
     $rolePrivileges[$username] = (int)$identity['privilege_id'];
     if ($username === 'runtime-merchant') $db->createCommand()->insert('pos_operators', ['user_id'=>$roleUser,'merchant_id'=>$a]+$enabled)->execute();
     $db->createCommand()->insert('pos_store_operators', ['user_id'=>$roleUser,'merchant_id'=>$a,'store_id'=>$stores[0]]+$enabled)->execute();
-    tcCheck(tcPage(tcGet($roleToken), 'D2 privileged account with enabled profile and grant') === ['items'=>[],'next_cursor'=>null], 'D2 explicit POS grant does not authorize privileged role: ' . $username);
+    tcError(tcGet($roleToken), 401, 'invalid_token', 'D2 explicit POS grant does not authorize privileged role: ' . $username);
+    tcDeniedLogin($username === 'runtime-admin' ? 'admin@example.invalid' : 'merchant@example.invalid', $key);
+    // Do not leave the manager with a conflicting operator identity for later checks.
+    $db->createCommand()->delete('pos_store_operators', ['user_id'=>$roleUser])->execute();
+    $db->createCommand()->delete('pos_operators', ['user_id'=>$roleUser])->execute();
 }
 $baseIdentity = $db->createCommand('SELECT u.privilege_id,u.is_active,p.level FROM users u JOIN privileges p ON p.id=u.privilege_id WHERE u.id=:id', [':id'=>$u])->queryOne();
 tcCheck($baseIdentity && (int)$baseIdentity['is_active'] === 1 && (int)$baseIdentity['level'] === app\components\User::ROLE_USER, 'D2 normal operator starts as active base account');
@@ -168,12 +209,35 @@ tcFresh();
 foreach ($rolePrivileges as $username=>$privilege) {
     try {
         $db->createCommand()->update('users', ['privilege_id'=>$privilege], ['id'=>$u])->execute();
-        tcCheck(tcPage(tcGet($token), 'D2 role changed after login') === ['items'=>[],'next_cursor'=>null], 'D2 existing bearer loses catalog after role change: ' . $username);
+        tcError(tcGet($token), 401, 'invalid_token', 'D2 existing bearer invalid after role change: ' . $username);
     } finally {
         $db->createCommand()->update('users', ['privilege_id'=>$basePrivilege], ['id'=>$u])->execute();
     }
     tcCheck(tcPage(tcGet($token), 'D2 base role restored without new login') === ['items'=>$public($expected),'next_cursor'=>null], 'D2 same bearer regains exact catalog after base role restored: ' . $username);
 }
+
+try {
+    $db->createCommand()->update('pos_store_operators', ['is_enabled'=>0], ['user_id'=>$u])->execute();
+    $noGrants = tcLogin('user@example.invalid', $key);
+    tcCheck(tcPage(tcGet($noGrants), 'Operator without enabled grants') === ['items'=>[],'next_cursor'=>null], 'Enabled operator can log in without enabled store grants');
+} finally {
+    $db->createCommand()->update('pos_store_operators', ['is_enabled'=>1], ['user_id'=>$u])->execute();
+}
+try {
+    $db->createCommand()->insert('member_profiles', ['user_id'=>$u,'is_corporate'=>0])->execute();
+    tcError(tcGet($token), 401, 'invalid_token', 'Membership conflict invalidates existing operator bearer');
+    tcDeniedLogin('user@example.invalid', $key);
+} finally {
+    $db->createCommand()->delete('member_profiles', ['user_id'=>$u])->execute();
+}
+try {
+    $db->createCommand()->update('member_profiles', ['denomination'=>null], ['user_id'=>$ownerA])->execute();
+    tcError(tcGet($token), 401, 'invalid_token', 'Unqualified merchant invalidates existing operator bearer');
+    tcDeniedLogin('user@example.invalid', $key);
+} finally {
+    $db->createCommand()->update('member_profiles', ['denomination'=>'C2 merchant A PG'], ['user_id'=>$ownerA])->execute();
+}
+tcFresh();
 
 $first = tcPage(tcGet($token, 'limit=1'), 'First keyset page');
 tcCheck($first['items'] === $public([$expected[0]]) && is_string($first['next_cursor']), 'Scope applied before limit; cursor emitted');
@@ -193,7 +257,7 @@ try {
     $db->createCommand()->update('pos_store_operators', ['is_enabled'=>0], ['user_id'=>$u,'store_id'=>$stores[1]])->execute();
     tcCheck(tcPage(tcGet($token, $query), 'Grant revoked between pages')['items'] === $public([$expected[2]]), 'Cursor does not preserve revoked grants or skip remaining authorized rows');
     $db->createCommand()->update('pos_operators', ['is_enabled'=>0], ['user_id'=>$u])->execute();
-    tcCheck(tcPage(tcGet($token, $query), 'Profile revoked between pages') === ['items'=>[],'next_cursor'=>null], 'Cursor never bypasses disabled profile');
+    tcError(tcGet($token, $query), 401, 'invalid_token', 'Cursor never bypasses disabled profile');
 } finally {
     $db->createCommand()->update('pos_store_operators', ['is_enabled'=>1], ['user_id'=>$u,'store_id'=>$stores[1]])->execute();
     $db->createCommand()->update('pos_operators', ['is_enabled'=>1], ['user_id'=>$u])->execute();

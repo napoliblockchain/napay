@@ -35,6 +35,16 @@ function code($r) { return $r['json']['error']['code'] ?? null; }
 function fresh() { global $app; $app->cache->flush(); }
 // operator IP per chiamata: il limite per IP (10/min) non interferisce con gli altri casi
 function op() { static $n = 0; $n++; return ['X-POS-Operator-IP: 198.51.100.' . (1 + $n % 250)]; }
+require_once __DIR__ . '/pos-session-fixture.php';
+$operatorFixture = napayTestPosSessionFixture();
+$secondOperator = new app\models\Users();
+$secondOperator->setAttributes(app\models\Users::findOne($operatorFixture['user_id'])->getAttributes(null, ['id', 'email_normalized']), false);
+$secondOperator->username = 'runtime-pos-second';
+$secondOperator->email = 'pos-second@example.invalid';
+if (!$secondOperator->save(false)) throw new RuntimeException('Second operator fixture unavailable.');
+$secondProfile = new app\models\PosOperators(['user_id'=>(int) $secondOperator->id,
+    'merchant_id'=>$operatorFixture['merchant_id'], 'is_enabled'=>1]);
+if (!$secondProfile->save()) throw new RuntimeException('Second operator profile unavailable.');
 $good = ['email' => 'user@example.invalid', 'password' => 'fixture-password-only'];
 $secrets = [$key, $rotated, 'fixture-password-only', 'wrong-password-value'];
 
@@ -121,7 +131,7 @@ fresh();
 for ($i = 0; $i < 5; $i++) api(['email' => 'user@example.invalid', 'password' => 'wrong-password-value'], $key, op());
 $locked = api($good, $key, op());
 check($locked['status'] === 429 && code($locked) === 'rate_limited' && preg_match('/^retry-after: ([1-9]\d*)/mi', $locked['headers'], $m) && (int) $m[1] <= 900, 'Account: 5 failures in 15 minutes lock even the right password, Retry-After');
-check(api(['email' => 'admin@example.invalid', 'password' => 'fixture-password-only'], $key, op())['status'] === 201, 'Lock limited to that account');
+check(api(['email' => 'pos-second@example.invalid', 'password' => 'fixture-password-only'], $key, op())['status'] === 201, 'Lock limited to that account');
 fresh();
 $sameIp = ['X-POS-Operator-IP: 203.0.113.77'];
 for ($i = 0; $i < 10; $i++) api(['email' => "ip$i@example.invalid", 'password' => 'x'], $key, $sameIp);

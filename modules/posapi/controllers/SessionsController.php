@@ -85,21 +85,22 @@ class SessionsController extends Controller
 
         $form = new LoginForm(['email' => $email, 'password' => $password]);
         $user = $form->validate() ? $form->getUser() : null;
-        if ($user === null) {
+        $created = $user === null ? null : PosApi::createSession($user, $client, $ip);
+        if ($created === null) {
             PosApi::throttle($account, PosApi::LIMIT_ACCOUNT_FAILURES);
             Log::security('Login POS fallito per ' . Log::quote($email) . " (client $client)");
             return $this->error(401, 'invalid_credentials');
         }
         PosApi::resetThrottle($account);
 
-        [$token, $session] = PosApi::createSession($user, $client, $ip);
+        [$token, $session] = $created;
         Log::save('posapi', 'sessions', "Sessione POS #{$session->id} creata per utente #{$user->id} (client $client)");
         Yii::$app->response->statusCode = 201;
         return [
             'access_token' => $token,
             'token_type' => 'Bearer',
             'expires_at' => gmdate('Y-m-d\TH:i:s\Z', (int) $session->expires_at),
-            'operator' => ['display_name' => trim($user->first_name . ' ' . $user->last_name)],
+            'operator' => ['display_name' => trim($session->user->first_name . ' ' . $session->user->last_name)],
         ];
     }
 
