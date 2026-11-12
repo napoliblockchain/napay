@@ -3,6 +3,7 @@
 use yii\helpers\Html;
 use app\components\Crypt;
 use app\components\web\LinkPager;
+use app\components\pos\management\PosInvitations;
 
 /* @var $this yii\web\View */
 /* @var $admin bool */
@@ -10,6 +11,9 @@ use app\components\web\LinkPager;
 /* @var $store string|null filtro attivo (ID cifrato) */
 /* @var $terminals yii\data\ActiveDataProvider */
 /* @var $operators yii\data\ActiveDataProvider */
+/* @var $invitations yii\data\ActiveDataProvider */
+/* @var $invitationForm app\models\forms\pos\InvitationForm */
+/* @var $merchants array ID merchant cifrato => nome (solo admin) */
 
 $this->title = Yii::t('app', 'Terminali POS');
 $this->params['breadcrumbs'][] = $this->title;
@@ -85,4 +89,56 @@ $this->params['breadcrumbs'][] = $this->title;
         </table>
     </div>
     <div class="card-footer d-flex"><div class="ms-auto"><?= LinkPager::widget(['pagination' => $operators->pagination]) ?></div></div>
+</div>
+
+<div class="card mt-3">
+    <div class="card-header">
+        <h3 class="card-title"><?= Html::encode(Yii::t('app', 'Inviti operatore')) ?></h3>
+    </div>
+    <div class="card-body border-bottom">
+        <?= Html::beginForm(['invitation-create'], 'post', ['class' => 'row g-2 align-items-end']) ?>
+        <?php if ($admin): ?>
+            <div class="col-md-4">
+                <?= Html::activeLabel($invitationForm, 'merchant', ['class' => 'form-label']) ?>
+                <?= Html::activeDropDownList($invitationForm, 'merchant', $merchants, ['class' => 'form-select', 'prompt' => Yii::t('app', 'Seleziona il merchant')]) ?>
+            </div>
+        <?php endif; ?>
+        <div class="col-md-5">
+            <?= Html::activeLabel($invitationForm, 'email', ['class' => 'form-label']) ?>
+            <?= Html::activeInput('email', $invitationForm, 'email', ['class' => 'form-control', 'maxlength' => PosInvitations::EMAIL_MAX, 'autocomplete' => 'off']) ?>
+        </div>
+        <div class="col-md-3"><?= Html::submitButton(Html::encode(Yii::t('app', 'Invia invito')), ['class' => 'btn btn-primary']) ?></div>
+        <?= Html::endForm() ?>
+        <div class="form-hint mt-2"><?= Html::encode(Yii::t('app', 'Serve un indirizzo non ancora usato su Napay: chi è già socio usa un\'altra email. Il profilo operatore nasce disabilitato e senza negozi.')) ?></div>
+    </div>
+    <div class="table-responsive">
+        <table class="table table-vcenter card-table">
+            <thead><tr>
+                <?php if ($admin): ?><th><?= Html::encode(Yii::t('app', 'Merchant')) ?></th><?php endif; ?>
+                <th><?= Html::encode(Yii::t('app', 'Email')) ?></th>
+                <th><?= Html::encode(Yii::t('app', 'Stato')) ?></th>
+                <th><?= Html::encode(Yii::t('app', 'Scadenza')) ?></th>
+                <th class="w-1"></th>
+            </tr></thead>
+            <tbody>
+            <?php $now = time(); foreach ($invitations->getModels() as $i): ?>
+                <?php $id = Crypt::encrypt($i['id']); $open = $i['consumed_at'] === null && $i['revoked_at'] === null; ?>
+                <tr>
+                    <?php if ($admin): ?><td><?= Html::encode($i['merchant']) ?></td><?php endif; ?>
+                    <td><?= Html::encode($i['email']) ?></td>
+                    <td><?= Html::encode(PosInvitations::status($i, $now)) ?></td>
+                    <td><?= Html::encode(Yii::$app->formatter->asDatetime((int) $i['expires_at'], 'php:d/m/Y H:i')) ?></td>
+                    <td class="text-nowrap">
+                        <?php if ($open): ?>
+                            <?= $this->render('_post', ['action' => ['invitation-resend', 'id' => $id], 'label' => Yii::t('app', 'Reinvia'), 'class' => 'btn-outline-secondary']) ?>
+                            <?= $this->render('_post', ['action' => ['invitation-revoke', 'id' => $id], 'label' => Yii::t('app', 'Annulla'), 'class' => 'btn-outline-danger']) ?>
+                        <?php endif; ?>
+                    </td>
+                </tr>
+            <?php endforeach; ?>
+            <?php if (!$invitations->getCount()): ?><tr><td colspan="<?= $admin ? 5 : 4 ?>" class="text-secondary"><?= Html::encode(Yii::t('app', 'Nessun invito.')) ?></td></tr><?php endif; ?>
+            </tbody>
+        </table>
+    </div>
+    <div class="card-footer d-flex"><div class="ms-auto"><?= LinkPager::widget(['pagination' => $invitations->pagination]) ?></div></div>
 </div>

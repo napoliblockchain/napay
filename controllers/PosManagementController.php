@@ -15,15 +15,18 @@ use app\components\Crypt;
 use app\components\Log;
 use app\components\identity\AccountEligibility;
 use app\components\pos\management\ManagementException;
+use app\components\pos\management\PosInvitations;
 use app\components\pos\management\PosManagement;
 use app\components\pos\management\Scope;
 use app\models\Merchants;
+use app\models\PosOperatorInvitations;
 use app\models\PosOperators;
 use app\models\PosStoreOperators;
 use app\models\PosTerminals;
 use app\models\Stores;
 use app\models\Users;
 use app\models\forms\pos\GrantForm;
+use app\models\forms\pos\InvitationForm;
 use app\models\forms\pos\TerminalForm;
 
 /**
@@ -46,6 +49,7 @@ class PosManagementController extends Controller
                     'terminal-enable' => ['POST'], 'terminal-disable' => ['POST'],
                     'operator-enable' => ['POST'], 'operator-disable' => ['POST'],
                     'grant-create' => ['POST'], 'grant-enable' => ['POST'], 'grant-disable' => ['POST'],
+                    'invitation-create' => ['POST'], 'invitation-resend' => ['POST'], 'invitation-revoke' => ['POST'],
                 ],
             ],
             'access' => [
@@ -90,7 +94,17 @@ class PosManagementController extends Controller
             ->orderBy(['m.description' => SORT_ASC, 'u.last_name' => SORT_ASC, 'u.first_name' => SORT_ASC, 'o.user_id' => SORT_ASC]);
         $this->scope->apply($operators, 'o.merchant_id');
 
+        $invitations = (new Query())
+            ->select(['i.id', 'i.email', 'i.expires_at', 'i.sent_at', 'i.send_failures', 'i.consumed_at', 'i.revoked_at', 'merchant' => 'm.description'])
+            ->from(['i' => PosOperatorInvitations::tableName()])
+            ->innerJoin(['m' => Merchants::tableName()], 'm.id=i.merchant_id')
+            ->orderBy(['i.created_at' => SORT_DESC, 'i.id' => SORT_DESC]);
+        $this->scope->apply($invitations, 'i.merchant_id');
+
         return $this->render('index', [
+            'invitations' => new ActiveDataProvider(['query' => $invitations, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'ipage']]),
+            'invitationForm' => new InvitationForm(),
+            'merchants' => $this->scope->isAdmin() ? $this->merchantOptions() : [],
             'admin' => $this->scope->isAdmin(),
             'stores' => $this->storeOptions(),
             'store' => $storeId === null ? null : $store,
@@ -214,6 +228,42 @@ class PosManagementController extends Controller
         $storeId = $this->decodeId($store);
         return $this->write(fn() => PosManagement::setGrantEnabled($this->scope, $userId, $storeId, $enabled),
             $enabled ? Yii::t('app', 'Negozio abilitato.') : Yii::t('app', 'Negozio disabilitato.'), ['operator', 'id' => $id]);
+    }
+
+    public function actionInvitationCreate()
+    {
+        $form = new InvitationForm();
+        if (!$form->load(Yii::$app->request->post()) || !$form->validate()) {
+            Yii::$app->session->setFlash('danger', $form->getFirstError('email') ?? Yii::t('app', 'Dati non validi.'));
+            return $this->redirect(['index']);
+        }
+        // gestore: sempre il proprio merchant; admin: selettore cifrato, risolto e ricontrollato sotto lock
+        $merchantId = $this->scope->isAdmin() ? $this->decodeId($form->merchant) : (int) $this->scope->merchantId;
+        // stesso messaggio qualunque sia lo stato dell'indirizzo: nessuna enumerazione degli account
+        return $this->write(fn() => PosInvitations::invite($this->scope, $merchantId, $form->email),
+            Yii::t('app', 'Invito registrato. Se l\'indirizzo può essere usato, riceverà le istruzioni via email.'), ['index']);
+    }
+
+    public function actionInvitationResend(string $id)
+    {
+        $invitationId = $this->decodeId($id);
+        return $this->write(fn() => PosInvitations::resend($this->scope, $invitationId), Yii::t('app', 'Invito reinviato con un nuovo link.'), ['index']);
+    }
+
+    public function actionInvitationRevoke(string $id)
+    {
+        $invitationId = $this->decodeId($id);
+        return $this->write(fn() => PosInvitations::revoke($this->scope, $invitationId), Yii::t('app', 'Invito annullato.'), ['index']);
+    }
+
+    /** Merchant in scope per l'admin: chiave = ID cifrato (solo selettore). */
+    private function merchantOptions(): array
+    {
+        $options = [];
+        foreach (Merchants::find()->select(['id', 'description'])->orderBy(['description' => SORT_ASC, 'id' => SORT_ASC])->asArray()->all() as $row) {
+            $options[Crypt::encrypt($row['id'])] = $row['description'];
+        }
+        return $options;
     }
 
     /** Esito della scrittura: record fuori scope = 404, altri esiti come messaggio generico. */
