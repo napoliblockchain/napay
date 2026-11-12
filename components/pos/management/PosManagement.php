@@ -11,12 +11,18 @@ use app\models\PosStoreOperators;
 use app\models\PosTerminals;
 use yii\db\Connection;
 use yii\db\IntegrityException;
+use yii\db\Transaction;
 
 /**
  * C4: scritture su terminali, profili operatore esistenti e grant.
  * Ogni scrittura: lock del merchant, scope ricalcolato, lock del record, gate di concessione, audit.
  * Concessioni (creare/abilitare) solo con merchant qualificato e account operatore coerente;
  * riduzioni (disabilitare) sempre possibili. Nessun delete, trasferimento o grant implicito.
+ *
+ * Concorrenza (C4-RV1/RV2): transazioni READ COMMITTED, impostate solo su questa transazione,
+ * così scope e gate letti dopo il lock vedono lo stato committato e non uno snapshot precedente.
+ * Ordine dei lock, comune agli altri writer POS: merchant -> profilo operatore -> negozio ->
+ * grant/terminale -> sessioni. Gli ID letti prima del lock sono solo indizi, riletti sotto lock.
  */
 final class PosManagement
 {
@@ -57,7 +63,10 @@ final class PosManagement
         });
     }
 
-    /** D3: la disabilitazione revoca nella stessa transazione le sessioni POS attive. Restituisce le sessioni revocate. */
+    /**
+     * D3: la disabilitazione revoca nella stessa transazione tutte le sessioni non revocate,
+     * lette con lock (lettura corrente) e con il profilo bloccato fino al commit. Restituisce il numero di revoche.
+     */
     public static function setOperatorEnabled(Scope $scope, int $userId, bool $enabled): int
     {
         return self::write(function (Connection $db) use ($scope, $userId, $enabled) {
@@ -67,8 +76,8 @@ final class PosManagement
             if (!$operator->save(false, ['is_enabled', 'updated_at'])) throw new ManagementException(ManagementException::FAILED);
             $revoked = 0;
             if (!$enabled) {
-                $sessions = PosOperatorSessions::find()->where(['user_id' => $userId, 'revoked_at' => null])
-                    ->andWhere(['>', 'expires_at', time()])->all();
+                $sessions = PosOperatorSessions::findBySql('SELECT * FROM {{%pos_operator_sessions}} WHERE user_id=:u AND revoked_at IS NULL FOR UPDATE',
+                    [':u' => $userId])->all();
                 foreach ($sessions as $session) {
                     PosApi::revoke($session, 'operator_disabled');
                     ++$revoked;
@@ -116,7 +125,7 @@ final class PosManagement
     private static function write(callable $work)
     {
         $db = Yii::$app->db;
-        $transaction = $db->beginTransaction();
+        $transaction = $db->beginTransaction(Transaction::READ_COMMITTED);
         try {
             $result = $work($db);
             $transaction->commit();
