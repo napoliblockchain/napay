@@ -16,6 +16,23 @@ $app->user->enableSession = false;
 $db = $app->db;
 if ($db->createCommand('SELECT DATABASE()')->queryScalar() !== 'napay_test_runtime') exit(1);
 
+/** C4-RV1/RV2: scrittura che attende il lock del merchant tenuto da un'altra connessione. */
+if (($argv[1] ?? '') === '--race-op') {
+    try {
+        $app->user->setIdentity(app\models\Users::findOne((int) $argv[2]));
+        $scope = Scope::current();
+        if ($scope === null) exit(4);
+        fwrite(STDOUT, "ready\n");
+        match ($argv[3]) {
+            'terminal-disable' => PosManagement::setTerminalEnabled($scope, $argv[4], false),
+            'operator-enable' => PosManagement::setOperatorEnabled($scope, (int) $argv[4], true),
+            'operator-disable' => PosManagement::setOperatorEnabled($scope, (int) $argv[4], false),
+        };
+        exit(0);
+    } catch (Failure $e) { exit(['not_found' => 11, 'not_allowed' => 12, 'conflict' => 10][$e->getMessage()] ?? 3); }
+    catch (Throwable $e) { exit(2); }
+}
+
 /** Processo figlio della gara: stesso grant creato in parallelo. */
 if (($argv[1] ?? '') === '--race-grant') {
     try {
@@ -236,6 +253,45 @@ $codes = [];
 foreach ($children as [$process, $pipes]) { fclose($pipes[1]); $codes[] = proc_close($process); }
 sort($codes);
 check($codes === [0, 10] && (int) scalar('SELECT COUNT(*) FROM pos_store_operators WHERE user_id=:u AND store_id=:s', [':u' => $opA1, ':s' => $storeA2]) === 1, 'Concurrent identical grants create one row');
+
+// --- C4-RV1/RV2: cambi committati mentre la scrittura attende il lock del merchant (dopo il suo primo snapshot)
+function whileMerchantLocked(int $merchantId, array $args, callable $change): int {
+    global $db;
+    $transaction = $db->beginTransaction();
+    $db->createCommand('SELECT id FROM merchants WHERE id=:m FOR UPDATE', [':m' => $merchantId])->queryScalar();
+    $process = proc_open(array_merge([PHP_BINARY, __FILE__, '--race-op'], array_map('strval', $args)), [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'a']], $pipes);
+    if (!is_resource($process)) { $transaction->rollBack(); throw new RuntimeException('Race fixture unavailable.'); }
+    stream_set_timeout($pipes[1], 20);
+    if (fgets($pipes[1]) !== "ready\n") { $transaction->rollBack(); throw new RuntimeException('Race fixture did not initialize.'); }
+    // il figlio apre la transazione, legge l'indizio e resta in attesa del lock
+    usleep(1500000);
+    $change();
+    $transaction->commit();
+    fclose($pipes[0]); fclose($pipes[1]);
+    return proc_close($process);
+}
+$scopeA = scopeOf($managerA);
+$pgC = $user('c4-pg-c', 30); $pg($pgC, 'Fixture PG C');
+$code = whileMerchantLocked($merchantA, [$managerA, 'terminal-disable', $uuid],
+    fn() => $db->createCommand()->update('merchants', ['user_id' => $pgC], ['id' => $merchantA])->execute());
+check($code === 11 && (int) scalar('SELECT is_enabled FROM pos_terminals WHERE public_id=:p', [':p' => $uuid]) === 1, 'RV1: owner change committed during lock wait denies old manager');
+$db->createCommand()->update('merchants', ['user_id' => $managerA], ['id' => $merchantA])->execute();
+PosManagement::setOperatorEnabled($scopeA, $opA1, false);
+$code = whileMerchantLocked($merchantA, [$managerA, 'operator-enable', $opA1],
+    fn() => $db->createCommand()->update('users', ['is_active' => 0], ['id' => $opA1])->execute());
+check($code === 12 && (int) scalar('SELECT is_enabled FROM pos_operators WHERE user_id=:u', [':u' => $opA1]) === 0, 'RV1: requirement revoked during lock wait blocks the grant');
+$db->createCommand()->update('users', ['is_active' => 1], ['id' => $opA1])->execute();
+$scopeA = scopeOf($managerA);
+PosManagement::setOperatorEnabled($scopeA, $opA1, true);
+$late = bin2hex(random_bytes(32));
+$code = whileMerchantLocked($merchantA, [$managerA, 'operator-disable', $opA1], function () use ($db, $opA1, $late) {
+    $db->createCommand()->insert('pos_operator_sessions', ['user_id' => $opA1, 'token_sha256' => $late, 'client_key_prefix' => bin2hex(random_bytes(8)),
+        'credential_fingerprint' => bin2hex(random_bytes(32)), 'created_at' => time(), 'expires_at' => time() + 3600])->execute();
+});
+check($code === 0 && scalar('SELECT revoked_reason FROM pos_operator_sessions WHERE token_sha256=:t', [':t' => $late]) === 'operator_disabled'
+    && $active($opA1) === 0, 'RV2: session committed after snapshot is revoked by disable');
+PosManagement::setOperatorEnabled($scopeA, $opA1, true);
+check($active($opA1) === 0, 'RV2: re-enable never revives revoked sessions');
 
 // --- admin e registro
 check(login('admin@example.invalid') === 302, 'Admin logged in');
