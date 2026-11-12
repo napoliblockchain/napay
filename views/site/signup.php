@@ -2,7 +2,7 @@
 
 /** @var yii\web\View $this */
 /** @var yii\bootstrap5\ActiveForm $form */
-/** @var app\models\SignupForm $model */
+/** @var app\models\forms\SignupForm $model */
 /** @var app\models\UserConsensus $consensus */
 
 use yii\bootstrap5\ActiveForm;
@@ -14,7 +14,7 @@ use app\assets\SignupAsset;
 $this->title = 'Registrazione';
 // $this->params['breadcrumbs'][] = $this->title;
 
-$isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
+$memberTypes = ['pf' => Yii::t('app', 'Socio persona fisica'), 'pg' => Yii::t('app', 'Socio persona giuridica')];
 SignupAsset::register($this);
 ?>
 
@@ -33,13 +33,18 @@ SignupAsset::register($this);
 
                                 <?php $form = ActiveForm::begin(['id' => 'signup-form']) ?>
 
-                                <?= $form->field($model, 'is_merchant')->dropDownList(
-                                    $isMerchant,
+                                <?= $form->field($model, 'member_type')->dropDownList(
+                                    $memberTypes,
                                     [
                                         'prompt' => Yii::t('app', 'Seleziona il tipo di iscrizione'),
-                                        'id' => 'is_merchant',
+                                        'id' => 'member_type',
                                     ]
                                 )->label(false); ?>
+
+                                <div id="signup-pg-fields">
+                                    <?= $form->field($model, 'denomination')->textInput(['maxlength' => 250]) ?>
+                                    <p class="form-hint"><?= Html::encode(Yii::t('app', 'La persona giuridica si iscrive come socio. Il profilo merchant si attiva separatamente dopo la registrazione.')) ?></p>
+                                </div>
 
                                 <?= $form->field($model, 'first_name', [
                                     'options' => ['class' => 'form-group has-feedback'],
@@ -103,10 +108,6 @@ SignupAsset::register($this);
                                 <!-- TERMINI -->
                                 <div class="input-group">
                                     <?= $form->field($consensus, 'consenso_condizioni')->checkbox()->label('<i>&nbsp;Accetto le <a href="' . Url::to(['site/term-of-use']) . '" target="_blank">Condizioni di utilizzo</a> del software.</i>') ?>
-                                </div>
-
-                                <div class="input-group" id="termini_pos" style="display: none;">
-                                    <?= $form->field($consensus, 'consenso_condizioni_pos')->checkbox()->label('<i>&nbsp;Accetto i <a href="' . Url::to(['site/term-of-use-pos']) . '" target="_blank">Termini e le Condizioni di utilizzo</a> del POS.</i>') ?>
                                 </div>
 
                                 <!-- TERMINI -->

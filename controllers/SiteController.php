@@ -240,13 +240,26 @@ class SiteController extends Controller
         if (isset($post['SignupForm']) && isset($post['UserConsensus'])) {
             if ($model->load(Yii::$app->request->post()) && $consensus->load(Yii::$app->request->post())) {
 
+                $invalidConsent = false;
+                foreach (['consenso_statuto', 'consenso_privacy', 'consenso_condizioni', 'consenso_marketing'] as $attribute) {
+                    $value = $consensus->$attribute;
+                    if ($attribute === 'consenso_marketing' && $value === null) $value = 0;
+                    if (!in_array($value, [0, 1, '0', '1'], true)) {
+                        $invalidConsent = true;
+                        $consensus->addError($attribute, Yii::t('app', 'Scelta non valida.'));
+                        $value = 0;
+                    }
+                    $consensus->$attribute = $value;
+                }
+
                 $connection = \Yii::$app->db;
                 $transaction = $connection->beginTransaction();
                 try {
                     if ($user = $model->signup()){
                         // echo "<pre>" . print_r($user->attributes, true) . "</pre>";exit;
                         $consensus->user_id = $user->id;
-                        if ($consensus->save()){
+                        $consensus->consenso_condizioni_pos = 0;
+                        if (!$invalidConsent && $consensus->save()){
                             // A delivered link must refer to committed user/consent rows.
                             $transaction->commit();
                             // invio la mail agli admins
@@ -266,11 +279,11 @@ class SiteController extends Controller
                             return $this->redirect(['site/index']);
                         } else {
                             $transaction->rollback();
-                            Yii::$app->session->setFlash('warning', $consensus->getErrors());
+                            Yii::$app->session->setFlash('warning', Yii::t('app', 'Registrazione non completata. Controlla i dati e i consensi richiesti.'));
                         }
                     } else {
                         $transaction->rollback();
-                        Yii::$app->session->setFlash('warning', $consensus->getErrors());
+                        Yii::$app->session->setFlash('warning', Yii::t('app', 'Registrazione non completata. Controlla i dati e i consensi richiesti.'));
                     }
                 } catch (\Throwable $e) {
                     if ($transaction->isActive) $transaction->rollback();

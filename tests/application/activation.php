@@ -70,10 +70,10 @@ try {
     check($page['status'] === 200, 'Signup form renders');
     $form = ['_csrf' => csrf($page), 'SignupForm' => ['email' => 'activation@example.invalid',
         'first_name' => 'Activation <svg onload="window.pwned=true">', 'last_name' => 'Fixture',
-        'password' => 'activation-fixture-password', 'repeat_password' => 'activation-fixture-password', 'is_merchant' => '0'],
+        'password' => 'activation-fixture-password', 'repeat_password' => 'activation-fixture-password', 'member_type' => 'pf'],
         'UserConsensus' => ['consenso_statuto' => '1', 'consenso_privacy' => '1', 'consenso_condizioni' => '1', 'consenso_condizioni_pos' => '0', 'consenso_marketing' => '0']];
     foreach ([['password' => '', 'repeat_password' => ''], ['password' => str_repeat('x', 73), 'repeat_password' => str_repeat('x', 73)],
-        ['is_merchant' => '2'], ['first_name' => ['invalid']], ['email' => ['invalid']], ['email' => 'not-an-email']] as $invalid) {
+        ['member_type' => 'merchant'], ['first_name' => ['invalid']], ['email' => ['invalid']], ['email' => 'not-an-email']] as $invalid) {
         $badForm = $form;
         $badForm['SignupForm'] = array_replace($form['SignupForm'], $invalid);
         check(request('/site/signup', $badForm, 'attacker.example.invalid')['status'] === 200 && member() === null,

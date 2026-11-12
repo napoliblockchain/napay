@@ -34,7 +34,7 @@ $copy = function (string $email) use ($db, $source, &$created): int {
     return (int) $db->lastInsertID;
 };
 $fields = ['email'=>'new-r2@example.invalid', 'first_name'=>'R2', 'last_name'=>'Fixture',
-    'password'=>'r2-fixture-password', 'repeat_password'=>'r2-fixture-password', 'is_merchant'=>0];
+    'password'=>'r2-fixture-password', 'repeat_password'=>'r2-fixture-password', 'member_type'=>'pf'];
 try {
     emailCheck(EmailIdentity::normalize('  USER@Example.Invalid  ') === 'user@example.invalid', 'Email normalization matches lowercase and SQL space trimming');
     emailCheck(EmailIdentity::normalize([]) === '' && Users::findByEmail([]) === null, 'Non-string email cannot select account');

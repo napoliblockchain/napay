@@ -4,6 +4,9 @@ namespace app\models\forms;
 use Yii;
 use yii\base\Model;
 use app\models\Users;
+use app\models\MemberProfiles;
+use app\models\Privileges;
+use app\components\User;
 use app\components\Log;
 use app\components\identity\EmailIdentity;
 use yii\db\IntegrityException;
@@ -14,17 +17,14 @@ use yii\db\IntegrityException;
  */
 class SignupForm extends Model
 {
-    const PRIVILEGE_ADMINISTRATOR_ID = 1; // privilege_id -> webmaster
-    const PRIVILEGE_USER_ID = 2; // USER
-    const PRIVILEGE_MERCHANT_ID = 3; // MERCHANT
-
     const PROVIDER_SOURCE = 'SELF';
 
     public $password;
     public $first_name;
     public $last_name;
     public $email;
-    public $is_merchant;
+    public $member_type;
+    public $denomination;
 
     // holds the password confirmation word
     public $repeat_password;
@@ -48,7 +48,14 @@ class SignupForm extends Model
                     $this->addError($attribute, Yii::t('app', 'La mail inserita è già stata utilizzata.'));
                 }
             }],
-            [['first_name', 'last_name', 'email', 'password', 'repeat_password', 'is_merchant'], 'required'],
+            [['first_name', 'last_name', 'email', 'password', 'repeat_password', 'member_type'], 'required'],
+            ['member_type', 'in', 'range' => ['pf', 'pg'], 'strict' => true],
+            ['denomination', 'filter', 'filter' => static fn($value) => is_string($value) ? trim($value) : ''],
+            ['denomination', 'string', 'max' => 250],
+            ['denomination', 'required', 'when' => fn($model) => $model->member_type === 'pg',
+                'whenClient' => "function () { return document.getElementById('member_type').value === 'pg'; }"],
+            ['denomination', 'match', 'pattern' => '/\S/u', 'when' => fn($model) => $model->member_type === 'pg',
+                'whenClient' => "function () { return document.getElementById('member_type').value === 'pg'; }"],
             ['password', 'string', 'min' => Yii::$app->params['user.passwordMinLength'], 'max' => 72],
             ['repeat_password', 'string', 'max' => 72],
             ['password', function ($attribute) {
@@ -56,8 +63,6 @@ class SignupForm extends Model
             }],
 
             ['repeat_password', 'compare', 'compareAttribute'=>'password'],
-
-            ['is_merchant', 'in', 'range' => [0, 1, '0', '1'], 'strict' => true],
 
         ];
     }
@@ -76,76 +81,62 @@ class SignupForm extends Model
             'email' => Yii::t('app', 'Email'),
             'password' => Yii::t('app', 'Password'),
             'repeat_password' => Yii::t('app', 'Conferma password'),
+            'member_type' => Yii::t('app', 'Tipo di socio'),
+            'denomination' => Yii::t('app', 'Ragione sociale della persona giuridica'),
         ];
     }
 
     /**
-     * Signs up the user.
-     * If scenario is set to "rna" (registration needs activation), this means
-     * that user need to activate his account using email confirmation method.
+     * Creates a pending PF/PG member and profile, never a merchant or administrator.
      *
-     * @return User|null The saved model or null if saving fails.
+     * @return Users|false The saved member or false on validation/persistence failure.
      */
     public function signup()
     {
-        // echo "<pre>".print_r($_POST,true)."</pre>";
-		// exit;
+        if (!$this->validate()) return false;
+        try {
+            // The controller also includes consent in its outer transaction.
+            return Yii::$app->db->transaction(function () {
+                $base = Privileges::find()->select('id')->where(['level' => User::ROLE_USER])->limit(2)->column();
+                if (count($base) !== 1) throw new \RuntimeException('Base membership privilege is not unambiguous.');
+                // nonce per effettuare l'attivazione utente tramite link in email
+                $microtime = explode(' ', microtime());
+                $nonce = $microtime[1] . str_pad(substr($microtime[0], 2, 6), 6, '0');
 
-        // echo "<pre>".print_r($this->attributes,true)."</pre>";
-		// exit;
+                $user = new Users([
+                    // accesso con email: lo username coincide con l'email (TIP-020)
+                    'username' => $this->email,
+                    'email' => $this->email,
+                    'password' => \Yii::$app->getSecurity()->generatePasswordHash($this->password),
+                    'first_name' => $this->first_name,
+                    'last_name' => $this->last_name,
+                    'oauth_provider' => self::PROVIDER_SOURCE,
+                    'oauth_uid' => \Yii::$app->security->generateRandomString(),
+                    'authKey' => $nonce,
+                    'accessToken' => \Yii::$app->security->generateRandomString(),
+                    'picture' => '/bundles/site/images/anonymous.png',
+                    'privilege_id' => $base[0],
+                    'is_merchant' => 0,
+                    'is_active' => Users::STATUS_INSERTED,
+                ]);
 
-
-        if ($this->validate()) {
-            $privilegio = self::PRIVILEGE_USER_ID;
-
-            if ($this->is_merchant == 1){
-                $privilegio = self::PRIVILEGE_MERCHANT_ID;
-            }
-
-            $test_privilege = Users::findOne(1);
-            if (null === $test_privilege) {
-                $privilegio = self::PRIVILEGE_ADMINISTRATOR_ID;
-            }
-
-            // nonce per effettuare l'attivazione utente tramite link in email
-            $microtime = explode(' ', microtime());
-            $nonce = $microtime[1] . str_pad(substr($microtime[0], 2, 6), 6, '0');
-
-            $user = new Users([
-                // accesso con email: lo username coincide con l'email (TIP-020)
-                'username' => $this->email,
-                'email' => $this->email,
-                'password' => \Yii::$app->getSecurity()->generatePasswordHash($this->password),
-                'first_name' => $this->first_name,
-                'last_name' => $this->last_name,
-                'oauth_provider' => self::PROVIDER_SOURCE,
-                'oauth_uid' => \Yii::$app->security->generateRandomString(),
-                'authKey' => $nonce, //\Yii::$app->security->generateRandomString(),
-                'accessToken' => \Yii::$app->security->generateRandomString(),
-                'picture' => '/bundles/site/images/anonymous.png',
-                'privilege_id' => $privilegio,
-                'is_merchant' => $this->is_merchant,
-                'is_active' => (null === $test_privilege) ? 1 : 0,
-            ]);
-
-            try {
-                $saved = $user->save();
-            } catch (IntegrityException $error) {
-                if ((int) ($error->errorInfo[1] ?? 0) !== 1062) throw $error;
-                $this->addError('email', Yii::t('app', 'La mail inserita è già stata utilizzata.'));
-                return false;
-            }
-
-            if ($saved) {
-                Log::save(Yii::$app->controller->id, (Yii::$app->action->id ?? 'index'), Yii::t('app', 'User {user} signed up.', ['user' => $this->email]));
-                
+                if (!$user->save()) throw new \RuntimeException('Member account could not be saved.');
+                $profile = new MemberProfiles([
+                    'user_id' => $user->id,
+                    'is_corporate' => $this->member_type === 'pg' ? 1 : 0,
+                    'denomination' => $this->member_type === 'pg' ? $this->denomination : null,
+                ]);
+                if (!$profile->save()) throw new \RuntimeException('Member profile could not be saved.');
+                Log::event(sprintf('Iscrizione socio %s creata (utente %d)', strtoupper($this->member_type), $user->id), Log::TYPE_DATA);
                 return $user;
+            });
+        } catch (\Throwable $error) {
+            if ($error instanceof IntegrityException && (int) ($error->errorInfo[1] ?? 0) === 1062) {
+                $this->addError('email', Yii::t('app', 'La mail inserita è già stata utilizzata.'));
             } else {
-                $message = Yii::t('app', 'Registrazione non completata. Riprova oppure richiedi il recupero dal login.');
-                Yii::$app->getSession()->setFlash('error', $message);
-                Log::save(Yii::$app->controller->id, (Yii::$app->action->id ?? 'index'), $message);
+                $this->addError('member_type', Yii::t('app', 'Registrazione non completata. Riprova oppure richiedi il recupero dal login.'));
+                Yii::warning('Member registration failed: ' . get_class($error), __METHOD__);
             }
-
         }
         return false;
     }

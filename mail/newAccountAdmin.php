@@ -2,10 +2,13 @@
 
 use yii\helpers\Html;
 use app\components\sendMail;
+use app\models\MemberProfiles;
 
 $URL = sendMail::applicationUrl('site/login');
 
-$isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
+$corporate = MemberProfiles::find()->select('is_corporate')->where(['user_id' => $user->id])->scalar();
+$memberTypes = [0 => 'Socio persona fisica', 1 => 'Socio persona giuridica'];
+$memberType = $corporate === false ? 'Account' : ($memberTypes[(int) $corporate] ?? 'Account');
 ?>
 
 <style>
@@ -87,7 +90,7 @@ $isMerchant = ['Socio Ordinario', 'Socio Commerciante'];
             <li><b>Nome</b>: <?= Html::encode($user->first_name) ?></li>
             <li><b>Cognome</b>: <?= Html::encode($user->last_name) ?></li>
             <li><b>Email</b>: <?= Html::encode($user->email) ?></li>
-            <li><b>Tipo</b>: <?= Html::encode($isMerchant[$user->is_merchant] ?? '') ?></li>
+            <li><b>Tipo</b>: <?= Html::encode($memberType) ?></li>
         </ul>
         </p>
 
