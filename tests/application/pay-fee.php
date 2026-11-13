@@ -63,6 +63,10 @@ $db->createCommand()->insert('payment_methods', ['description' => 'Paypal', 'min
 $db->createCommand()->insert('settings', ['description' => 'fixture', 'code' => 'quota_iscrizione_socio', 'value' => '25,50'])->execute();
 $db->createCommand()->insert('settings', ['description' => 'fixture', 'code' => 'quota_iscrizione_socioGiuridico', 'value' => '50'])->execute();
 $db->createCommand()->insert('member_profiles', ['user_id' => (int) $db->createCommand("SELECT id FROM users WHERE username='runtime-merchant'")->queryScalar(), 'is_corporate' => 1, 'denomination' => 'Ditta'])->execute();
+// These are explicit PF members; the fixture named operator has legacy level40, not a POS profile.
+foreach (['user', 'operator'] as $memberRole) {
+    $db->createCommand()->insert('member_profiles', ['user_id'=>(int)$db->createCommand('SELECT id FROM users WHERE username=:u', [':u'=>'runtime-'.$memberRole])->queryScalar(), 'is_corporate'=>0])->execute();
+}
 mode('');
 
 try {

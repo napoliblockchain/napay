@@ -8,6 +8,9 @@ define('YII_ENABLE_ERROR_HANDLER', false);
 require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
 $app = new yii\web\Application(require $root . '/config/web.php');
 $db = $app->db;
+$quoteMemberId = (int)$db->createCommand("SELECT id FROM users WHERE username='runtime-user'")->queryScalar();
+$quoteProfileCreated = !$db->createCommand('SELECT COUNT(*) FROM member_profiles WHERE user_id=:u', [':u'=>$quoteMemberId])->queryScalar();
+if ($quoteProfileCreated) $db->createCommand()->insert('member_profiles', ['user_id'=>$quoteMemberId, 'is_corporate'=>0])->execute();
 $mock = '/tmp/paypal-mock';
 $checks = 0;
 function check($condition, $label) {
@@ -162,6 +165,7 @@ try {
     check(!str_contains($register . $files, 'forged-signature') && !str_contains($register . $files, 'valid-signature') && !str_contains($register . $files, (string) getenv('PAYPAL_CLIENT_SECRET')), 'No signatures or secrets in logs');
 } finally {
     mode('');
+    if ($quoteProfileCreated) $db->createCommand()->delete('member_profiles', ['user_id'=>$quoteMemberId])->execute();
     foreach (['paypal_webhook_events', 'membership_payments', 'payment_methods', 'membership_fees'] as $table) $db->createCommand()->delete($table)->execute();
 }
 echo "PASS {$checks} PayPal webhook checks\n";

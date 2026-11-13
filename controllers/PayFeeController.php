@@ -10,6 +10,7 @@ use yii\filters\AccessControl;
 use yii\helpers\Url;
 
 use app\components\Log;
+use app\components\identity\AccountEligibility;
 use app\components\association\MembershipFee;
 use app\components\association\BtcpayPayments;
 use app\components\association\PayPalPayments;
@@ -38,7 +39,10 @@ class PayFeeController extends Controller
             ],
             'access' => [
                 'class' => AccessControl::class,
-                'rules' => [['allow' => true, 'roles' => ['@']]],
+                'rules' => [[
+                    'allow' => true, 'roles' => ['@'],
+                    'matchCallback' => static fn() => AccountEligibility::isMemberAccount((int)Yii::$app->user->id),
+                ]],
             ],
         ];
     }

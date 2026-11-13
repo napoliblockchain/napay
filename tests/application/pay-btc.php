@@ -70,6 +70,14 @@ function event(string $type, ?string $invoiceId, array $extra = []): array {
         'type' => $type, 'timestamp' => time(), 'storeId' => getenv('BTCPAY_STORE_ID'), 'invoiceId' => $invoiceId], $extra);
 }
 $year = (int) date('Y');
+$memberFixtureIds = [];
+foreach (['user'=>0, 'operator'=>0, 'admin'=>0, 'merchant'=>1] as $memberRole=>$memberType) {
+    $memberId = (int)$db->createCommand('SELECT id FROM users WHERE username=:u', [':u'=>'runtime-'.$memberRole])->queryScalar();
+    if (!$db->createCommand('SELECT COUNT(*) FROM member_profiles WHERE user_id=:u', [':u'=>$memberId])->queryScalar()) {
+        $db->createCommand()->insert('member_profiles', ['user_id'=>$memberId, 'is_corporate'=>$memberType, 'denomination'=>$memberType===1?'Bitcoin fixture PG':null])->execute();
+        $memberFixtureIds[] = $memberId;
+    }
+}
 
 $db->createCommand()->insert('membership_fees', ['description' => 'Quota associativa annuale', 'duration' => 1, 'amount' => '20.00'])->execute();
 $db->createCommand()->insert('payment_methods', ['description' => 'Bitcoin', 'min_level' => 0])->execute(); $btcId = (int) $db->getLastInsertID();
@@ -183,6 +191,7 @@ try {
     check(!str_contains($all, (string) getenv('BTCPAY_API_KEY')) && !str_contains($all, $secret), 'No BTCPay API key or webhook secret in logs');
 } finally {
     mode('');
+    if ($memberFixtureIds !== []) $db->createCommand()->delete('member_profiles', ['user_id'=>$memberFixtureIds])->execute();
     foreach (['btcpay_webhook_events', 'membership_payments', 'payment_methods', 'membership_fees'] as $table) $db->createCommand()->delete($table)->execute();
 }
 echo "PASS {$checks} Bitcoin (BTCPay) fee checks\n";

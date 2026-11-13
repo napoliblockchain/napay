@@ -33,6 +33,13 @@ final class AccountEligibility
             && self::classify($account) === self::OPERATOR;
     }
 
+    public static function isMemberAccount(int $userId): bool
+    {
+        $account = self::account($userId);
+        return $account !== null && (int)$account['is_active'] === 1
+            && in_array(self::classify($account), [self::MEMBER_PF, self::MEMBER_PG], true);
+    }
+
     public static function merchantForManager(int $userId): ?int
     {
         $account = self::account($userId);

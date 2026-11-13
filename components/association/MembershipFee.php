@@ -7,6 +7,7 @@ use app\models\MembershipFees;
 use app\models\MembershipPayments;
 use app\models\Settings;
 use app\models\Users;
+use app\components\identity\AccountEligibility;
 
 /**
  * Quota da pagare online (TIP-020 passo 5b): importo, periodo e quota decisi dal server, mai dal client.
@@ -24,9 +25,11 @@ final class MembershipFee
     public static function quote(Users $user, ?string $today = null): array
     {
         $today = $today ?? date('Y-m-d');
-        $paidUntil = MembershipPayments::find()->where(['user_id' => $user->id, 'status' => 'paid'])->max('expires_on');
         $result = ['payable' => false, 'reason' => null, 'fee' => null, 'amount' => null, 'year' => null,
-            'starts_on' => null, 'expires_on' => null, 'paid_until' => $paidUntil ?: null];
+            'starts_on' => null, 'expires_on' => null, 'paid_until' => null];
+        if (!AccountEligibility::isMemberAccount((int)$user->id)) return ['reason'=>'not_member'] + $result;
+        $paidUntil = MembershipPayments::find()->where(['user_id' => $user->id, 'status' => 'paid'])->max('expires_on');
+        $result['paid_until'] = $paidUntil ?: null;
 
         $fee = MembershipFees::find()->where(['>=', 'duration', 1])->orderBy('id')->one();
         if ($fee === null) return ['reason' => 'no_fee'] + $result;
