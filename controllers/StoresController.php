@@ -10,6 +10,7 @@ use app\models\Webhooks;
 use app\models\search\StoresSearch;
 use yii\web\Controller;
 use yii\web\NotFoundHttpException;
+use yii\web\BadRequestHttpException;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
 use yii\helpers\ArrayHelper;
@@ -172,11 +173,19 @@ class StoresController extends Controller
 
         $model = new Stores();
 
+        $data = Yii::$app->request->post('Stores');
+        // Solo valori scalari: un array resterebbe nel model e romperebbe il form al nuovo rendering.
+        if ($data !== null && (!is_array($data) || array_filter($data, static fn($value) => !is_scalar($value)) !== [])) {
+            throw new BadRequestHttpException(Yii::t('app', 'Richiesta non valida.'));
+        }
         if ($model->load(Yii::$app->request->post())) {
             // Il merchant crea negozi solo per sé: il merchant_id inviato dal browser non conta.
             if (!User::isAdministrator()) $model->merchant_id = User::getMerchantId();
+            $model->description = trim((string) $model->description);
             $merchant = Merchants::findOne(['id' => (int) $model->merchant_id]);
-            if ($merchant === null) {
+            if ($model->description === '') {
+                $model->addError('description', Yii::t('app', 'Descrizione obbligatoria.'));
+            } elseif ($merchant === null) {
                 $model->addError('merchant_id', Yii::t('app', 'Merchant non valido.'));
             } else {
                 foreach (['email', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse', 'addressCity', 'addressZip', 'addressProvince', 'addressCountry'] as $field) {
