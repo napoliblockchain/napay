@@ -19,6 +19,7 @@ final class ProvisioningJobs
     /** Risposte remote che provano la mancata esecuzione: solo queste riportano un lavoro in volo a running. */
     public const REMOTE_NOT_EXECUTED = [429];
     public const MAX_ATTEMPTS = 1000;
+    public const KINDS = ['merchant_account', 'store_link', 'pos_link', 'key_rotation', 'key_revoke'];
     private const TABLE = 'btcpay_provisioning_jobs';
     private const SCAN = 20;
     private const CLEAR_LEASE = ', lease_owner = NULL, lease_until = NULL';
@@ -39,18 +40,25 @@ final class ProvisioningJobs
      * mai ripreso; tentativi esauriti -> failed; running scaduto senza checkpoint -> ripreso con nuovo owner.
      * Restituisce solo identificativi e versione, o null.
      */
-    public function claim(string $instance): ?array
+    public function claim(string $instance, ?array $kinds = null): ?array
     {
         if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1) throw new \InvalidArgumentException('invalid_instance');
+        // W3b: filtro facoltativo per tipo (default invariato: tutti i tipi).
+        $filter = ''; $kindParams = [];
+        if ($kinds !== null) {
+            if ($kinds === [] || array_diff($kinds, self::KINDS) !== []) throw new \InvalidArgumentException('invalid_kind');
+            foreach (array_values(array_unique($kinds)) as $n => $kind) $kindParams[':k' . $n] = $kind;
+            $filter = ' AND kind IN (' . implode(', ', array_keys($kindParams)) . ')';
+        }
         $this->guard();
         $now = $this->now();
         $transaction = $this->db->beginTransaction(Transaction::READ_COMMITTED);
         try {
             for ($i = 0; $i < self::SCAN; ++$i) {
                 $job = $this->db->createCommand('SELECT id, kind, instance, merchant_id, entity_id, generation, state, attempts, version, in_flight_op FROM ' . self::TABLE
-                    . " WHERE instance = :instance AND (lease_until IS NULL OR lease_until <= :now)"
+                    . " WHERE instance = :instance" . $filter . " AND (lease_until IS NULL OR lease_until <= :now)"
                     . " AND ((state IN ('pending', 'retry_wait') AND (next_attempt_at <= :now OR in_flight_op IS NOT NULL)) OR state IN ('running', 'in_flight'))"
-                    . ' ORDER BY next_attempt_at, id LIMIT 1 FOR UPDATE SKIP LOCKED', [':instance' => $instance, ':now' => $now])->queryOne();
+                    . ' ORDER BY next_attempt_at, id LIMIT 1 FOR UPDATE SKIP LOCKED', [':instance' => $instance, ':now' => $now] + $kindParams)->queryOne();
                 if ($job === false) break;
                 $where = ' WHERE id = :id AND version = :version';
                 $params = [':id' => $job['id'], ':version' => $job['version'], ':now' => $now];
@@ -85,6 +93,17 @@ final class ProvisioningJobs
         $now = $this->now();
         return $this->cas($id, $version, ['running'], true, "state = 'in_flight', in_flight_op = :op, in_flight_started_at = :now, in_flight_owner = :owner, lease_until = :until",
             [':op' => $operation, ':until' => $now + $this->leaseSeconds], $now, $mutate);
+    }
+
+    /**
+     * W3b: passo remoto riuscito ma lavoro non concluso (es. utente creato, ora la chiave): in_flight -> running,
+     * marker azzerati, lease rinnovata. Il mapping del passo va scritto nel callback, nella stessa transazione.
+     */
+    public function advance(int $id, int $version, #[\SensitiveParameter] callable $mutate): ?int
+    {
+        $now = $this->now();
+        return $this->cas($id, $version, ['in_flight'], false, "state = 'running', lease_until = :until" . self::CLEAR_FLIGHT,
+            [':until' => $now + $this->leaseSeconds], $now, $mutate);
     }
 
     /** Esito remoto positivo (o lavoro concluso senza chiamata): done, lease e marker azzerati. */

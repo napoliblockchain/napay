@@ -216,6 +216,6 @@ $source = file_get_contents($root . '/components/btcpay/provisioning/Provisionin
 check(preg_match('/password|secret|token|kek|authorization|Yii::|error_log|file_put_contents|echo |print/i', $source) === 0, 'Component holds no credential handling or logging');
 $methods = array_map(fn($m) => $m->name, (new ReflectionClass(ProvisioningJobs::class))->getMethods(ReflectionMethod::IS_PUBLIC));
 sort($methods);
-check($methods === ['__construct', 'checkpoint', 'claim', 'fail', 'reconcile', 'remoteRejected', 'retryLater', 'succeed'], 'Public API limited to queue transitions');
+check($methods === ['__construct', 'advance', 'checkpoint', 'claim', 'fail', 'reconcile', 'remoteRejected', 'retryLater', 'succeed'], 'Public API limited to queue transitions');
 
 echo "PASS $checks BTCPay provisioning queue checks\n";
