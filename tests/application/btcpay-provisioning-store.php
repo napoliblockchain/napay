@@ -21,12 +21,16 @@ $connectWorker = static function () use ($password): yii\db\Connection {
 $instance = hash('sha256', 'https://btcpay.regtest.invalid');
 $keyring = ['k1' => str_repeat("\x01", 32), 'k2' => str_repeat("\x02", 32)];
 // Processi figli per le gare: connessione worker propria, partenza su segnale.
-if (in_array($argv[1] ?? '', ['--ensure', '--promote'], true)) {
+if (in_array($argv[1] ?? '', ['--ensure', '--promote', '--verify'], true)) {
     try {
         $store = new ProvisioningStore($connectWorker(), $instance, $keyring, 'k1');
         $account = $store->account((int) $argv[2]);
         fwrite(STDOUT, "ready\n"); fread(STDIN, 1);
-        $result = $argv[1] === '--ensure' ? $store->ensureAccount((int) $argv[2])['id'] : ($store->promoteKey($account, (int) $argv[3]) ? 'ok' : 'no');
+        $result = match ($argv[1]) {
+            '--ensure' => $store->ensureAccount((int) $argv[2])['id'],
+            '--promote' => $store->promoteKey($account, (int) $argv[3]) ? 'ok' : 'no',
+            '--verify' => $store->verifyKey($account, (int) $argv[3], (int) $argv[4]) ? 'ok' : 'no',
+        };
         fwrite(STDOUT, $result . "\n");
         exit(0);
     } catch (Throwable $e) { exit(2); }
@@ -114,21 +118,35 @@ $copy = $row; $copy['account_id'] = $accountB['id']; $copy['merchant_id'] = $b; 
 $db->createCommand()->insert('btcpay_merchant_credentials', $copy)->execute();
 refuses(fn() => $store->password($accountB), UnexpectedValueException::class, 'decryption_failed', 'Envelope copied to another account refused (cross-context)');
 
-// --- chiavi API: generazioni, una sola current, revoca
+// --- chiavi API: pending -> verified -> current, una sola current, revoca con CAS
 $k1 = 'key-' . bin2hex(random_bytes(16)); $k2 = 'key-' . bin2hex(random_bytes(16)); $k3 = 'key-' . bin2hex(random_bytes(16));
+$envelopeOf = static fn(int $generation): array|false => $db->createCommand("SELECT state,lock_version,ciphertext,key_fingerprint FROM btcpay_merchant_credentials WHERE account_id=:a AND kind='api_key' AND generation=:g",
+    [':a' => $account['id'], ':g' => $generation])->queryOne();
 check($store->storeKey($account, 1, $k1) && !$store->storeKey($account, 1, $k2), 'Key generation stored once');
-check($store->currentKey($account) === null, 'Pending key is not current');
-check($store->promoteKey($account, 1) && $store->currentKey($account) === ['generation' => 1, 'key' => $k1], 'Promoted key becomes current, fingerprint verified');
-check($store->storeKey($account, 2, $k2) && $store->promoteKey($account, 2) && $store->currentKey($account)['key'] === $k2, 'Rotation: new generation current');
-check($db->createCommand("SELECT state FROM btcpay_merchant_credentials WHERE account_id=:a AND kind='api_key' AND generation=1", [':a' => $account['id']])->queryScalar() === 'retiring', 'Previous key retiring until revoked');
-check(!$store->revokeKey($account, 2) && $store->revokeKey($account, 1), 'Current key cannot be revoked; retiring one can');
-$revoked = $db->createCommand("SELECT state,ciphertext,key_fingerprint FROM btcpay_merchant_credentials WHERE account_id=:a AND kind='api_key' AND generation=1", [':a' => $account['id']])->queryOne();
-check($revoked === ['state' => 'revoked', 'ciphertext' => null, 'key_fingerprint' => null], 'Revocation clears the envelope, keeps the row');
-check(!$store->promoteKey($account, 1) && !$store->promoteKey($account, 9), 'Revoked or missing generation cannot be promoted');
+check($store->currentKey($account) === null && !$store->promoteKey($account, 1), 'Pending (unverified) key cannot be promoted');
+$pending = $store->key($account, 1);
+check($pending === ['generation' => 1, 'state' => 'pending', 'lock_version' => 0, 'key' => $k1], 'Resume: pending generation readable after a crash before remote verification');
+check(!$store->verifyKey($account, 1, 5) && $store->key($account, 1)['state'] === 'pending', 'Verification with stale lock_version rejected');
+check($store->verifyKey($account, 1, 0) && !$store->verifyKey($account, 1, 0), 'pending -> verified once (CAS)');
+check($store->promoteKey($account, 1) && $store->currentKey($account) === ['generation' => 1, 'key' => $k1], 'Verified key promoted to current, fingerprint checked');
+check($store->storeKey($account, 2, $k2) && $store->verifyKey($account, 2, 0) && $store->promoteKey($account, 2) && $store->currentKey($account)['key'] === $k2, 'Rotation: new verified generation becomes current');
+$retiring = $store->key($account, 1);
+check($retiring['state'] === 'retiring', 'Previous key retiring until revoked');
+$before = $envelopeOf(1);
+check(!$store->revokeKey($account, 1, $retiring['lock_version'] - 1) && $envelopeOf(1) === $before, 'Stale revocation rejected, envelope untouched');
+check(!$store->revokeKey($account, 2, $store->key($account, 2)['lock_version']), 'Current key cannot be revoked');
+check($store->revokeKey($account, 1, $retiring['lock_version']), 'Retiring key revoked with the expected lock_version');
+$revoked = $envelopeOf(1);
+check($revoked['state'] === 'revoked' && $revoked['ciphertext'] === null && $revoked['key_fingerprint'] === null && $store->key($account, 1) === null, 'Revocation clears the envelope, keeps the row');
+check(!$store->promoteKey($account, 1) && !$store->promoteKey($account, 9) && !$store->verifyKey($account, 1, (int) $revoked['lock_version']), 'Revoked or missing generation cannot be verified or promoted');
 $db->createCommand()->update('btcpay_merchant_credentials', ['key_fingerprint' => hash('sha256', 'other')], ['account_id' => $account['id'], 'kind' => 'api_key', 'generation' => 2])->execute();
 refuses(fn() => $store->currentKey($account), UnexpectedValueException::class, 'fingerprint_mismatch', 'Fingerprint mismatch detected');
 $db->createCommand()->update('btcpay_merchant_credentials', ['key_fingerprint' => hash('sha256', $k2)], ['account_id' => $account['id'], 'kind' => 'api_key', 'generation' => 2])->execute();
+// Gare su due connessioni: verifica concorrente della stessa generazione, promozioni concorrenti di due verificate.
 $store->storeKey($account, 3, $k3); $store->storeKey($account, 4, 'key-' . bin2hex(random_bytes(16)));
+$out = race([['--verify', (string) $a, '3', '0'], ['--verify', (string) $a, '3', '0']], $password);
+check(in_array($out[0] . $out[2], ['okno', 'nook'], true) && $store->key($account, 3)['state'] === 'verified', 'Concurrent verification of one generation: exactly one wins');
+$store->verifyKey($account, 4, 0);
 $out = race([['--promote', (string) $a, '3'], ['--promote', (string) $a, '4']], $password);
 $current = $db->createCommand("SELECT generation FROM btcpay_merchant_credentials WHERE account_id=:a AND kind='api_key' AND state='current'", [':a' => $account['id']])->queryColumn();
 check($out[0] === 'ok' && $out[2] === 'ok' && count($current) === 1 && in_array((int) $current[0], [3, 4], true), 'Concurrent promotions on two connections: exactly one current');
@@ -168,6 +186,14 @@ check($failedSynced, 'Synced link without remote id refused by the DB CHECK');
 $denied = false;
 try { $worker->createCommand('DELETE FROM btcpay_merchant_credentials WHERE 1 = 0')->execute(); } catch (yii\db\Exception $e) { $denied = (int) ($e->errorInfo[1] ?? 0) === 1142; }
 check($denied, 'Worker cannot delete credentials');
+// RV1: un'eccezione nel costruttore non deve esporre la Connection (password DB) né il keyring nella trace strutturata.
+$canary = 'canary-' . bin2hex(random_bytes(12));
+$probe = new yii\db\Connection(['dsn' => 'mysql:host=127.0.0.1;dbname=none', 'username' => 'none', 'password' => $canary]);
+$frames = '';
+try { new ProvisioningStore($probe, 'not-hex', ['k1' => $canary . 'kek'], 'k1'); } catch (InvalidArgumentException $e) {
+    $frames = print_r($e->getTrace(), true) . var_export($e->getTrace(), true) . $e->getTraceAsString();
+}
+check(ini_get('zend.exception_ignore_args') === '0' && $frames !== '' && str_contains($frames, 'SensitiveParameterValue') && !str_contains($frames, $canary), 'Constructor trace hides the DB connection password and the keyring');
 $leakKey = 'key-' . bin2hex(random_bytes(16));
 $trace = '';
 try { $store->storeKey($account, 0, $leakKey); } catch (InvalidArgumentException $e) { $trace = $e->getTraceAsString() . print_r(array_filter($e->getTrace(), fn($f) => ($f['class'] ?? '') === ProvisioningStore::class), true); }
