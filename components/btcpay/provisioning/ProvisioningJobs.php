@@ -9,6 +9,9 @@ use yii\db\Transaction;
  * Solo ID, stati e checkpoint: nessun segreto, nessun log. Ogni scrittura è un CAS su ID, owner, versione e
  * lease non scaduta; un esito tardivo di un worker scaduto non cambia nulla (null).
  * Non serializza la risorsa: lock del mapping e ricontrolli tenant/idoneità restano all'orchestratore.
+ * W3a: ogni esito accetta un callback opzionale che modifica mapping/credenziali nella stessa transazione INTERNA
+ * della coda, eseguito solo dopo aver bloccato la riga e verificato owner, versione e lease; il CAS finale usa un
+ * tempo fresco. Lease scaduta, versione cambiata o callback in errore = rollback di tutto. HTTP sempre fuori.
  */
 final class ProvisioningJobs
 {
@@ -23,7 +26,7 @@ final class ProvisioningJobs
 
     private readonly \Closure $clock;
 
-    public function __construct(private readonly Connection $db, private readonly string $owner, private readonly int $leaseSeconds = 60, ?\Closure $clock = null)
+    public function __construct(#[\SensitiveParameter] private readonly Connection $db, private readonly string $owner, private readonly int $leaseSeconds = 60, ?\Closure $clock = null)
     {
         if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $owner) !== 1) throw new \InvalidArgumentException('invalid_owner');
         if ($leaseSeconds < 1 || $leaseSeconds > 3600) throw new \InvalidArgumentException('invalid_lease');
@@ -76,60 +79,87 @@ final class ProvisioningJobs
     }
 
     /** Checkpoint prima della chiamata remota: running senza marker -> in_flight, lease rinnovata. */
-    public function checkpoint(int $id, int $version, string $operation): ?int
+    public function checkpoint(int $id, int $version, string $operation, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
         if (!in_array($operation, self::OPERATIONS, true)) throw new \InvalidArgumentException('invalid_operation');
         $now = $this->now();
         return $this->cas($id, $version, ['running'], true, "state = 'in_flight', in_flight_op = :op, in_flight_started_at = :now, in_flight_owner = :owner, lease_until = :until",
-            [':op' => $operation, ':until' => $now + $this->leaseSeconds], $now);
+            [':op' => $operation, ':until' => $now + $this->leaseSeconds], $now, $mutate);
     }
 
     /** Esito remoto positivo (o lavoro concluso senza chiamata): done, lease e marker azzerati. */
-    public function succeed(int $id, int $version): ?int
+    public function succeed(int $id, int $version, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
-        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'done', last_error_code = NULL" . self::CLEAR_LEASE . self::CLEAR_FLIGHT, [], $this->now());
+        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'done', last_error_code = NULL" . self::CLEAR_LEASE . self::CLEAR_FLIGHT, [], $this->now(), $mutate);
     }
 
     /** Errore definitivo con esito remoto noto: failed, lease e marker azzerati. */
-    public function fail(int $id, int $version, string $code): ?int
+    public function fail(int $id, int $version, string $code, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
-        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'failed', last_error_code = :code" . self::CLEAR_LEASE . self::CLEAR_FLIGHT, [':code' => self::code($code)], $this->now());
+        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'failed', last_error_code = :code" . self::CLEAR_LEASE . self::CLEAR_FLIGHT, [':code' => self::code($code)], $this->now(), $mutate);
     }
 
     /** Esito remoto ignoto o ambiguo: reconcile_required, marker conservati. */
-    public function reconcile(int $id, int $version, string $code): ?int
+    public function reconcile(int $id, int $version, string $code, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
-        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'reconcile_required', last_error_code = :code" . self::CLEAR_LEASE, [':code' => self::code($code)], $this->now());
+        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'reconcile_required', last_error_code = :code" . self::CLEAR_LEASE, [':code' => self::code($code)], $this->now(), $mutate);
     }
 
     /** In volo -> running solo con una risposta remota che prova la mancata esecuzione (REMOTE_NOT_EXECUTED). */
-    public function remoteRejected(int $id, int $version, int $httpStatus): ?int
+    public function remoteRejected(int $id, int $version, int $httpStatus, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
         if (!in_array($httpStatus, self::REMOTE_NOT_EXECUTED, true)) throw new \InvalidArgumentException('outcome_not_proven');
-        return $this->cas($id, $version, ['in_flight'], false, "state = 'running'" . self::CLEAR_FLIGHT, [], $this->now());
+        return $this->cas($id, $version, ['in_flight'], false, "state = 'running'" . self::CLEAR_FLIGHT, [], $this->now(), $mutate);
     }
 
     /** Nuovo tentativo a un istante dato (calcolo dell'attesa al chiamante); solo da running senza checkpoint. deferred: poi solo admin. */
-    public function retryLater(int $id, int $version, string $code, int $nextAttemptAt, bool $deferred = false): ?int
+    public function retryLater(int $id, int $version, string $code, int $nextAttemptAt, bool $deferred = false, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
         $now = $this->now();
         if ($nextAttemptAt <= $now) throw new \InvalidArgumentException('invalid_next_attempt');
         return $this->cas($id, $version, ['running'], true, 'state = :state, last_error_code = :code, next_attempt_at = :next' . self::CLEAR_LEASE,
-            [':state' => $deferred ? 'deferred' : 'retry_wait', ':code' => self::code($code), ':next' => $nextAttemptAt], $now);
+            [':state' => $deferred ? 'deferred' : 'retry_wait', ':code' => self::code($code), ':next' => $nextAttemptAt], $now, $mutate);
     }
 
-    /** Una sola UPDATE: vale solo con stesso owner, stessa versione e lease ancora valida. Restituisce la nuova versione. */
-    private function cas(int $id, int $version, array $states, bool $noCheckpoint, string $set, array $params, int $now): ?int
+    /**
+     * Una sola UPDATE: vale solo con stesso owner, stessa versione e lease ancora valida. Restituisce la nuova versione.
+     * Con $mutate: transazione interna, riga del lavoro bloccata e owner/versione/lease verificati PRIMA del callback (nessuna
+     * chiamata se già invalido), poi CAS con tempo fresco; qualunque fallimento annulla anche le modifiche del callback.
+     */
+    private function cas(int $id, int $version, array $states, bool $noCheckpoint, string $set, array $params, int $now, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
         if ($id < 1 || $version < 0 || $version >= 2147483647) throw new \InvalidArgumentException('invalid_job');
         $this->guard();
         $in = [];
         foreach ($states as $n => $state) { $in[] = ':s' . $n; $params[':s' . $n] = $state; }
-        $changed = $this->db->createCommand('UPDATE ' . self::TABLE . ' SET ' . $set . ', version = version + 1, updated_at = :now'
+        $sql = 'UPDATE ' . self::TABLE . ' SET ' . $set . ', version = version + 1, updated_at = :now'
             . ' WHERE id = :id AND version = :version AND lease_owner = :owner AND lease_until > :now AND state IN (' . implode(', ', $in) . ')'
-            . ($noCheckpoint ? ' AND in_flight_op IS NULL' : ''),
-            $params + [':id' => $id, ':version' => $version, ':owner' => $this->owner, ':now' => $now])->execute();
-        return $changed === 1 ? $version + 1 : null;
+            . ($noCheckpoint ? ' AND in_flight_op IS NULL' : '');
+        $params += [':id' => $id, ':version' => $version, ':owner' => $this->owner];
+        if ($mutate === null) return $this->db->createCommand($sql, $params + [':now' => $now])->execute() === 1 ? $version + 1 : null;
+        $transaction = $this->db->beginTransaction(Transaction::READ_COMMITTED);
+        try {
+            $row = $this->db->createCommand('SELECT state, version, lease_owner, lease_until, in_flight_op FROM ' . self::TABLE . ' WHERE id = :id FOR UPDATE', [':id' => $id])->queryOne();
+            $locked = $this->now();
+            if ($row === false || (int) $row['version'] !== $version || $row['lease_owner'] !== $this->owner || $row['lease_until'] === null
+                || (int) $row['lease_until'] <= $locked || !in_array($row['state'], $states, true) || ($noCheckpoint && $row['in_flight_op'] !== null)) {
+                $transaction->rollBack();
+                return null;
+            }
+            $mutate($this->db);
+            // Tempo fresco: una lease scaduta durante il callback invalida l'intero esito.
+            $fresh = $this->now();
+            if (array_key_exists(':until', $params)) $params[':until'] = $fresh + $this->leaseSeconds;
+            if ($this->db->createCommand($sql, $params + [':now' => $fresh])->execute() !== 1) {
+                $transaction->rollBack();
+                return null;
+            }
+            $transaction->commit();
+            return $version + 1;
+        } catch (\Throwable $error) {
+            if ($transaction->isActive) $transaction->rollBack();
+            throw $error;
+        }
     }
 
     /** La coda non entra in transazioni del chiamante: un suo rollback annullerebbe presa o esito già comunicati. */
