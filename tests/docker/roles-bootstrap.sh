@@ -3,6 +3,8 @@
 set -eu
 root=$(CDPATH= cd -- "$(dirname -- "$0")/../.." && pwd)
 export NAPAY_ROLE_BOOTSTRAP_ROOT="$root"
+suite=${NAPAY_ROLE_TEST_SUITE:-runtime}
+case "$suite" in runtime|pos|stores) ;; *) echo 'Unknown role test suite.' >&2; exit 1 ;; esac
 umask 077
 private=$(mktemp -d)
 trap 'rm -rf "$private"' EXIT
@@ -83,7 +85,7 @@ docker run --rm --network none --read-only --security-opt no-new-privileges:true
     chmod 0700 /output /runtime; chown -R 33:33 /output /runtime
 '
 SETUP
-awk '
+awk -v suite="$suite" '
  /^docker volume create / { copy=1 }
  !copy { next }
  /^compose run --rm --no-deps bootstrap \| grep -q already-complete$/ {
@@ -98,6 +100,13 @@ awk '
  /^compose run --rm --no-deps --entrypoint php bootstrap .*fixture.php$/ {
     print "compose run --rm --no-deps worker-db-check"
     print "compose run --rm --no-deps --entrypoint php bootstrap /app/tests/application/roles-bootstrap.php"
+    if (suite != "runtime") {
+        test = suite == "pos" ? "pos-openings.php" : "stores-without-btcpay.php"
+        print "compose exec -T web php /var/www/html/tests/application/" test
+        print "compose run --rm --no-deps bootstrap > \"$work/bootstrap-repeat.log\" 2>&1"
+        print "grep -q already-complete \"$work/bootstrap-repeat.log\""
+        exit
+    }
  }
 ' "$root/tests/docker/runtime.sh" >> "$private/runtime.sh"
 cat >> "$private/runtime.sh" <<'VERIFY'

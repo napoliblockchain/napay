@@ -36,6 +36,9 @@ try {
         }
     }
     rejected(static fn() => $web->query('SELECT COUNT(*) FROM btcpay_merchant_credentials')->fetchColumn(), 'Actual web has no credential table access');
+    $web->query('SELECT id FROM pos_terminal_openings')->fetchAll(); check(true, 'Web reads POS opening history');
+    rejected(static fn() => $web->exec('DELETE FROM pos_terminal_openings WHERE 1=0'), 'Web cannot delete POS opening history');
+    rejected(static fn() => $worker->query('SELECT id FROM pos_terminal_openings')->fetchAll(), 'BTCPay worker cannot read POS openings');
     $worker->query('SELECT account_id,kind FROM btcpay_merchant_credentials')->fetchAll(); check(true, 'Worker alone reads encrypted credentials');
     rejected(static fn() => $worker->query('SELECT dataset_sha256 FROM _napay_bootstrap')->fetchAll(), 'Worker marker columns are minimal');
     $stage = 'misconfigured grants';
