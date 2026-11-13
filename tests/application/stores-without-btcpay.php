@@ -62,6 +62,24 @@ check(str_contains(location($created), 'stores/view') && preg_match('/[?&]id=([^
 $id = $match[1];
 $view = web('/stores/view?id=' . urlencode($id));
 check($view['status'] === 200 && str_contains($view['body'], 'Pagamenti BTC da configurare'), 'Store page explains that BTC payments are pending');
+// Input malformati: rifiuto controllato, nessun negozio o impostazione creati.
+$counts = static fn(): array => [(int) scalar('SELECT COUNT(*) FROM stores'), (int) scalar('SELECT COUNT(*) FROM storesettings')];
+$baseline = $counts();
+foreach ([
+    'description array' => ['description' => ['x'], 'merchant_id' => $merchantA],
+    'merchant_id array' => ['description' => 'Negozio array', 'merchant_id' => ['x']],
+    'whole form scalar' => 'x',
+] as $label => $payload) {
+    $page = web('/stores/create');
+    $r = web('/stores/create', ['_csrf' => csrf($page), 'Stores' => $payload]);
+    check($r['status'] === 400 && $counts() === $baseline, 'Malformed input refused (400), nothing saved: ' . $label);
+}
+foreach (['' => 'missing description', '   ' => 'blank description'] as $description => $label) {
+    $page = web('/stores/create');
+    $fields = $description === '' ? ['merchant_id' => $merchantA] : ['description' => $description, 'merchant_id' => $merchantA];
+    $r = web('/stores/create', ['_csrf' => csrf($page), 'Stores' => $fields]);
+    check($r['status'] === 200 && str_contains($r['body'], 'Descrizione obbligatoria') && $counts() === $baseline, 'Form shown again with error, nothing saved: ' . $label);
+}
 foreach (['update-general', 'update-rates', 'update-checkout', 'update-criteria', 'update-webhook'] as $action) {
     $r = web('/stores/' . $action . '?id=' . urlencode($id));
     check($r['status'] === 302 && str_contains(location($r), 'stores/view'), 'BTCPay settings page waits for the link: ' . $action);
