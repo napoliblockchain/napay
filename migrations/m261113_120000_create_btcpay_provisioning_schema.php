@@ -280,7 +280,7 @@ class m261113_120000_create_btcpay_provisioning_schema extends Migration
             [, $type, $nullable, $default, $collation, $extra, $generation] = $definition['columns'][$column['COLUMN_NAME']];
             if ($column['COLUMN_TYPE'] !== $type || $column['IS_NULLABLE'] !== $nullable || $column['COLUMN_DEFAULT'] !== $default
                 || $column['COLLATION_NAME'] !== $collation || $column['EXTRA'] !== $extra
-                || self::clause((string) $column['GENERATION_EXPRESSION']) !== self::clause($generation)) $this->incompatible();
+                || self::clause(self::stored((string) $column['GENERATION_EXPRESSION'])) !== self::clause($generation)) $this->incompatible();
         }
         $indexes = $this->indexes($name);
         $wanted = array_map(fn($index) => ['unique' => $index[0], 'columns' => $index[1]], $definition['indexes']);
@@ -300,7 +300,7 @@ class m261113_120000_create_btcpay_provisioning_schema extends Migration
         $checks = [];
         foreach ($this->db->createCommand("SELECT t.CONSTRAINT_NAME,c.CHECK_CLAUSE,t.ENFORCED FROM information_schema.TABLE_CONSTRAINTS t JOIN information_schema.CHECK_CONSTRAINTS c ON c.CONSTRAINT_SCHEMA=t.CONSTRAINT_SCHEMA AND c.CONSTRAINT_NAME=t.CONSTRAINT_NAME WHERE t.TABLE_SCHEMA=DATABASE() AND t.TABLE_NAME=:t AND t.CONSTRAINT_TYPE='CHECK'", [':t' => $table])->queryAll() as $check) {
             if ($check['ENFORCED'] !== 'YES') $this->incompatible();
-            $checks[$check['CONSTRAINT_NAME']] = self::clause($check['CHECK_CLAUSE']);
+            $checks[$check['CONSTRAINT_NAME']] = self::clause(self::stored($check['CHECK_CLAUSE']));
         }
         $wantedChecks = array_map([self::class, 'clause'], array_intersect_key(self::CANONICAL_CHECKS, $this->checks($name)));
         if (count($wantedChecks) !== count($this->checks($name))) $this->incompatible();
@@ -326,10 +326,7 @@ class m261113_120000_create_btcpay_provisioning_schema extends Migration
         return $only === null ? $result : ($result[$only] ?? []);
     }
 
-    /**
-     * Resa di MySQL 8.4.13 dei CHECK di checks(); confronto senza spazi, backtick, escape e introducer di charset
-     * (dopo un ALTER MySQL riscrive _utf8mb4 in _ascii sulle colonne ascii); maiuscole e parentesi intatte.
-     */
+    /** Resa di MySQL 8.4.13 dei CHECK di checks(), dopo stored(); confronto con clause(). */
     private const CANONICAL_CHECKS = [
         'ck-btcpay-accounts-email' => "(technical_email = concat(_utf8mb4'm-',ref,_utf8mb4'@btcpay-merchants.jamprojects.it'))",
         'ck-btcpay-accounts-error' => "((last_error_code is null) or regexp_like(last_error_code,_utf8mb4'^[a-z0-9_]{1,64}\$',_utf8mb4'c'))",
@@ -381,9 +378,39 @@ class m261113_120000_create_btcpay_provisioning_schema extends Migration
         'ck-btcpay-stores-version' => "(version >= 0)",
     ];
 
+    /** information_schema riporta il testo dell'espressione con un livello di escape in più (\' e \\): lo toglie. */
+    private static function stored(string $sql): string
+    {
+        return preg_replace_callback('/\\\\([\\\\\'])/', fn($m) => $m[1], $sql);
+    }
+
+    /**
+     * Normalizza solo fuori dai letterali: spazi, backtick e introducer _utf8mb4/_ascii (dopo un ALTER MySQL
+     * riscrive l'uno nell'altro). I letterali restano byte per byte, escape compresi; letterale aperto = incompatibile.
+     */
     private static function clause(string $sql): string
     {
-        return preg_replace(['/[\s`\\\\]+/', "/_(?:utf8mb4|ascii)'/"], ['', "'"], $sql);
+        $out = '';
+        for ($i = 0, $n = strlen($sql); $i < $n; ++$i) {
+            $c = $sql[$i];
+            if ($c === "'") {
+                for ($j = $i + 1; $j < $n; ++$j) {
+                    if ($sql[$j] === '\\') { ++$j; continue; }
+                    if ($sql[$j] === "'") {
+                        if (($sql[$j + 1] ?? '') !== "'") break;
+                        ++$j;
+                    }
+                }
+                if ($j >= $n) throw new RuntimeException('BTCPay provisioning schema is incompatible; no automatic repair permitted.');
+                $out .= substr($sql, $i, $j - $i + 1);
+                $i = $j;
+            } elseif (preg_match("/\\G_(?:utf8mb4|ascii)(?=')/", $sql, $m, 0, $i) === 1) {
+                $i += strlen($m[0]) - 1;
+            } elseif ($c !== '`' && !ctype_space($c)) {
+                $out .= $c;
+            }
+        }
+        return $out;
     }
 
     private function table(string $name): string { return $this->db->tablePrefix . $name; }
