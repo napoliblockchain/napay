@@ -18,7 +18,7 @@ function grants(PDO $admin, string $user): array { $rows = $admin->query("SHOW G
 function rejected(callable $fn, string $label): void { $refused = false; try { $fn(); } catch (RuntimeException|InvalidArgumentException|LogicException $e) { $refused = true; } check($refused, $label); }
 try {
     $password = trim(file_get_contents('/run/secrets/db-role-test-root'));
-    $admin = new PDO('mysql:unix_socket=/run/napay-mysql/mysqld.sock;dbname=napay_test_runtime;charset=utf8mb4', 'root', $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION]);
+    $admin = new PDO('mysql:unix_socket=/run/napay-mysql/mysqld.sock;dbname=napay_test_runtime;charset=utf8mb4', 'root', $password, [PDO::ATTR_ERRMODE => PDO::ERRMODE_EXCEPTION, PDO::MYSQL_ATTR_USE_BUFFERED_QUERY => false]);
     unset($password);
     check($admin->query('SELECT DATABASE()')->fetchColumn() === 'napay_test_runtime', 'Disposable database confirmed');
     $stage = 'create disposable roles'; $connections = []; $passwords = [];
