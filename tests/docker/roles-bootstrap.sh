@@ -75,7 +75,7 @@ docker volume create "$project-runtime" >/dev/null
 docker volume create "$project-fixture-secrets" >/dev/null
 # Separate trusted fixture container, never web: same UID/runtime/network as Apache,
 # but only it receives the migrator secret. Preserve 0700/0600 on directories/files.
-docker run --rm --network none --user 0:0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE \
+docker run --rm --network none --read-only --security-opt no-new-privileges:true --user 0:0 --cap-drop ALL --cap-add CHOWN --cap-add DAC_OVERRIDE \
     -v "$work/migrator-password:/input-secret:ro" -v "$project-runtime:/runtime" \
     -v "$project-fixture-secrets:/output" --entrypoint sh php:8.3.36-cli -c '
     umask 077; cp /input-secret /output/napay_db_migrator_password
