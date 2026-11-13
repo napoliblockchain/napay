@@ -39,6 +39,14 @@ foreach ([-1, 7, '3', 2.0, null] as $bad) {
 refused(fn() => $none->decide(null, 0, $now), InvalidArgumentException::class, 'invalid_attempt', 'Attempt 0 refused');
 refused(fn() => $none->decide(null, 1001, $now), InvalidArgumentException::class, 'invalid_attempt', 'Attempt over the queue limit refused');
 refused(fn() => $none->decide(null, 1, -1), InvalidArgumentException::class, 'invalid_now', 'Negative clock refused');
+$edge = PHP_INT_MAX - RetryPolicy::MAX_BACKOFF;
+foreach ([null, '120', 'Fri, 31 Dec 9999 23:59:59 GMT'] as $header) {
+    $result = $full->decide($header, 8, $edge);
+    check(is_int($result['next_attempt_at']) && $result['next_attempt_at'] === PHP_INT_MAX, 'Clock at the representable limit stays integer: ' . json_encode($header));
+    foreach ([$edge + 1, PHP_INT_MAX] as $clock) {
+        refused(fn() => $full->decide($header, 1, $clock), InvalidArgumentException::class, 'invalid_now', 'Clock beyond the limit refused, never saturated: ' . json_encode($header) . ' at ' . ($clock === PHP_INT_MAX ? 'max' : 'limit+1'));
+    }
+}
 
 // --- Retry-After in secondi ---
 check($at($none, '120') === ['next_attempt_at' => $now + 120, 'deferred' => false, 'server' => true], 'Server seconds later than backoff win');
