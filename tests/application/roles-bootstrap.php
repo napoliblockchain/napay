@@ -10,6 +10,8 @@ $root = dirname(__DIR__, 2); $checks = 0; $stage = 'connect';
 function check(bool $ok, string $label): void { global $checks; if (!$ok) throw new RuntimeException('check_failed'); ++$checks; echo "PASS: $label\n"; }
 function rejected(callable $fn, string $label): void { $refused = false; try { $fn(); } catch (Throwable $e) { $refused = true; } check($refused, $label); }
 try {
+    check(count((new ReflectionParameter([V2Bootstrap::class, 'connect'], 'password'))->getAttributes(SensitiveParameter::class)) === 1, 'Database connection password hidden from exception traces');
+    check(count((new ReflectionParameter([V2Bootstrap::class, 'run'], 'client'))->getAttributes(SensitiveParameter::class)) === 1, 'Restore client credentials hidden from exception traces');
     $config = napayBootstrapConfig();
     $admin = V2Bootstrap::connect('mysql:unix_socket=/run/napay-mysql/mysqld.sock;dbname=napay_test_runtime;charset=utf8mb4', 'root', DatabaseSecret::read('/run/secrets/mysql_root_password'), 10);
     $migrator = V2Bootstrap::connect($config['dsn'], $config['user'], $config['password'], 10);

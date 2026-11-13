@@ -11,7 +11,7 @@ final class V2Bootstrap
     public const STATE_TABLE = '_napay_bootstrap';
     public const TABLES = ['logs', 'merchants', 'migration', 'np_comuni_italiani', 'privileges', 'settings', 'stores', 'storesettings', 'user_consensus', 'users', 'webhooks'];
 
-    public static function connect(string $dsn, string $user, string $password, int $seconds = 60): PDO
+    public static function connect(string $dsn, string $user, #[\SensitiveParameter] string $password, int $seconds = 60): PDO
     {
         $deadline = microtime(true) + $seconds;
         $delay = 100000;
@@ -173,7 +173,7 @@ final class V2Bootstrap
         throw new RuntimeException('Bootstrap subprocess timeout; partial target requires recovery.');
     }
 
-    public static function run(PDO $db, string $root, string $directory, array $client, int $seconds = 1800): string
+    public static function run(PDO $db, string $root, string $directory, #[\SensitiveParameter] array $client, int $seconds = 1800): string
     {
         $deadline = microtime(true) + $seconds;
         $remaining = static function () use ($deadline): int {
