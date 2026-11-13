@@ -20,6 +20,8 @@ final class StepOutcome
     public const REPEAT = 'repeat';
     /** Nessuna esecuzione remota (429) o lettura ripetibile: riprovare più tardi, Retry-After grezzo se presente. */
     public const RETRY = 'retry';
+    /** B1 §3.1 passo B: 429 sulla creazione della chiave. Retry-After grezzo; nessuna nuova generazione né chiamata automatica. */
+    public const DEFERRED = 'deferred';
     /** Esito remoto ignoto o ambiguo: solo riconciliazione, mai un nuovo POST di creazione. */
     public const RECONCILE = 'reconcile';
     /** Errore definitivo con esito noto (es. 401/403): nessuna escalation. */
@@ -28,6 +30,7 @@ final class StepOutcome
     public const PENDING = 'pending';
 
     private const DATA = ['remote_user_id', 'remote_store_id', 'remote_app_id', 'generation'];
+    public const LINK_STATES = ['pending', 'synced', 'reconcile_required', 'failed', 'suspended'];
     public const REMOTE_ID = '/^[A-Za-z0-9_-]{1,64}$/D';
 
     private function __construct(public readonly string $kind, public readonly ?string $code, public readonly array $data,
@@ -38,6 +41,7 @@ final class StepOutcome
     public static function found(string $remoteUserId): self { return self::make(self::FOUND, null, ['remote_user_id' => $remoteUserId], null, null); }
     public static function repeat(string $code): self { return self::make(self::REPEAT, $code, [], null, null); }
     public static function retry(string $code, ?string $retryAfter = null): self { return self::make(self::RETRY, $code, [], $retryAfter, null); }
+    public static function deferred(string $code, ?string $retryAfter): self { return self::make(self::DEFERRED, $code, [], $retryAfter, null); }
     public static function reconcile(string $code): self { return self::make(self::RECONCILE, $code, [], null, null); }
     public static function failed(string $code): self { return self::make(self::FAILED, $code, [], null, null); }
     public static function pending(string $code): self { return self::make(self::PENDING, $code, [], null, null); }
@@ -62,11 +66,36 @@ final class StepOutcome
         }
     }
 
+    /** Lista JSON di soli oggetti con ID remoto valido (store o app), altrimenti null. */
+    public static function objectList(?array $json): ?array
+    {
+        if (!is_array($json) || !array_is_list($json)) return null;
+        foreach ($json as $item) if (!is_array($item) || self::remoteId($item) === null) return null;
+        return $json;
+    }
+
     /** ID remoto dal corpo JSON (oggetto con chiave `id`), o null se assente/malformato. */
     public static function remoteId(?array $json): ?string
     {
         $id = $json['id'] ?? null;
         return is_string($id) && preg_match(self::REMOTE_ID, $id) === 1 ? $id : null;
+    }
+
+    /**
+     * Mapping store/app: stato in allowlist; `failed`/`suspended` restano tali anche con un vecchio ID; solo un mapping
+     * `synced` con ID valido è già fatto (ID assente o malformato = snapshot rifiutato). Altrimenti null: si procede.
+     */
+    public static function linkState(#[\SensitiveParameter] array $snapshot, string $idField): ?self
+    {
+        $state = $snapshot['state'] ?? null;
+        if (!in_array($state, self::LINK_STATES, true) || !is_string($snapshot['marker'] ?? null) || preg_match('/^[0-9a-f]{32}$/D', $snapshot['marker']) !== 1) {
+            throw new \InvalidArgumentException('invalid_snapshot');
+        }
+        $id = $snapshot[$idField] ?? null;
+        if ($id !== null && (!is_string($id) || preg_match(self::REMOTE_ID, $id) !== 1)) throw new \InvalidArgumentException('invalid_snapshot');
+        if ($state === 'failed' || $state === 'suspended') return self::failed('link_' . $state);
+        if ($state === 'synced') return $id !== null ? self::done([$idField => $id]) : throw new \InvalidArgumentException('invalid_snapshot');
+        return null;
     }
 
     private static function make(string $kind, ?string $code, array $data, ?string $retryAfter, ?\SensitiveParameterValue $secret): self

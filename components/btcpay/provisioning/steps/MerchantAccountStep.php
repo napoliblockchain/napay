@@ -65,11 +65,13 @@ final class MerchantAccountStep
             $key = $response['json']['apiKey'] ?? null;
             // Chiave illeggibile: forse creata ma non ricevuta, come un esito ignoto.
             if (!is_string($key) || preg_match('/^[\x21-\x7e]{16,256}$/D', $key) !== 1) return StepOutcome::repeat('key_response_malformed');
+            // Solo il permesso richiesto: una chiave più ampia non diventa mai un segreto utilizzabile.
+            if (($response['json']['permissions'] ?? null) !== [self::STORE_PERMISSION]) return StepOutcome::reconcile('key_permissions_unexpected');
             return StepOutcome::done(['generation' => $generation], new \SensitiveParameterValue($key));
         }
         return match (true) {
             $response['status'] === 401 => StepOutcome::reconcile('password_rejected'),
-            $response['status'] === 429 => StepOutcome::retry('rate_limited', $response['retry_after']),
+            $response['status'] === 429 => StepOutcome::deferred('rate_limited', $response['retry_after']),
             $response['status'] === 403 => StepOutcome::failed('key_forbidden'),
             $response['status'] >= 500 => StepOutcome::repeat('key_outcome_unknown'),
             default => StepOutcome::failed('key_rejected'),
@@ -82,7 +84,7 @@ final class MerchantAccountStep
         [$response, $failure] = StepOutcome::call(fn() => ($this->withKey)('GET', '/api/v1/stores', null, $apiKey), StepOutcome::retry('verify_unavailable'));
         if ($failure !== null) return $failure;
         return match (true) {
-            $response['status'] === 200 => is_array($response['json']) && array_is_list($response['json'])
+            $response['status'] === 200 => StepOutcome::objectList($response['json']) !== null
                 ? StepOutcome::done() : StepOutcome::retry('verify_response_malformed'),
             $response['status'] === 429 => StepOutcome::retry('rate_limited', $response['retry_after']),
             in_array($response['status'], [401, 403], true) => StepOutcome::reconcile('key_not_accepted'),

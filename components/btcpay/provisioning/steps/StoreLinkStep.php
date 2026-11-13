@@ -18,7 +18,7 @@ final class StoreLinkStep
         $ready = self::ready($snapshot, $apiKey);
         if ($ready !== null) return $ready;
         // Mai un secondo POST: con un tentativo in volo o già incerto si può solo riconciliare.
-        if (!empty($snapshot['in_flight']) || $snapshot['state'] !== 'pending') return $this->reconcile($snapshot, $apiKey);
+        if (!empty($snapshot['in_flight']) || $snapshot['state'] !== 'pending' || ($snapshot['remote_store_id'] ?? null) !== null) return $this->reconcile($snapshot, $apiKey);
         $name = self::name((string) ($snapshot['store_name'] ?? ''), $snapshot['marker']);
         [$response, $failure] = StepOutcome::call(fn() => ($this->withKey)('POST', '/api/v1/stores', ['name' => $name], $apiKey), StepOutcome::reconcile('store_outcome_unknown'));
         if ($failure !== null) return $failure;
@@ -63,14 +63,12 @@ final class StoreLinkStep
     }
 
     /** Già sincronizzato o dipendenze non pronte: nessuna chiamata. */
+    /** Stato del mapping, poi dipendenza: account sincronizzato con chiave corrente. */
     private static function ready(#[\SensitiveParameter] array $snapshot, #[\SensitiveParameter] ?string $apiKey): ?StepOutcome
     {
-        if (!is_string($snapshot['marker'] ?? null) || preg_match('/^[0-9a-f]{32}$/D', $snapshot['marker']) !== 1 || !is_string($snapshot['state'] ?? null)) {
-            throw new \InvalidArgumentException('invalid_snapshot');
-        }
-        if (is_string($snapshot['remote_store_id'] ?? null)) return StepOutcome::done(['remote_store_id' => $snapshot['remote_store_id']]);
+        $state = StepOutcome::linkState($snapshot, 'remote_store_id');
+        if ($state !== null) return $state;
         if (($snapshot['account_state'] ?? null) !== 'synced' || $apiKey === null || $apiKey === '') return StepOutcome::pending('account_not_ready');
-        if (in_array($snapshot['state'], ['failed', 'suspended'], true)) return StepOutcome::failed('link_' . $snapshot['state']);
         return null;
     }
 }
