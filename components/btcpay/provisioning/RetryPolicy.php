@@ -32,7 +32,8 @@ final class RetryPolicy
     public function decide(?string $retryAfter, int $attempt, int $now): array
     {
         if ($attempt < 1 || $attempt > self::MAX_ATTEMPT) throw new \InvalidArgumentException('invalid_attempt');
-        if ($now < 0) throw new \InvalidArgumentException('invalid_now');
+        // Un orologio che non può rappresentare il backoff massimo non viene saturato: accorcerebbe l'attesa minima.
+        if ($now < 0 || $now > PHP_INT_MAX - self::MAX_BACKOFF) throw new \InvalidArgumentException('invalid_now');
         $backoff = $this->backoff($attempt);
         $next = $now + $backoff;
         $server = $retryAfter === null ? null : self::serverTime($retryAfter, $now);
