@@ -80,6 +80,17 @@ if (!function_exists('env_required')) {
     }
 }
 
+$databaseSecret = env('NAPAY_DB_PASSWORD_FILE', '');
+if ($databaseSecret !== '') {
+    if (!is_string($databaseSecret) || env('NAPAY_DB_ROLE') === 'web') throw new \RuntimeException('Invalid database secret scope.');
+    require_once dirname(__DIR__) . '/components/db/DatabaseSecret.php';
+    $databasePassword = \app\components\db\DatabaseSecret::read($databaseSecret);
+    $_ENV['DB_PASSWORD'] = $databasePassword;
+    putenv('DB_PASSWORD=' . $databasePassword);
+    unset($databasePassword);
+}
+unset($databaseSecret);
+
 $environment = env('APP_ENV', 'prod');
 if (!in_array($environment, ['prod', 'dev', 'test'], true)) {
     throw new \RuntimeException('Invalid APP_ENV: use prod, dev or test');

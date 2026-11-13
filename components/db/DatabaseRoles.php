@@ -30,6 +30,8 @@ final class DatabaseRoles
         'membership_payments' => ['user_id'], 'pos_operators' => ['user_id'],
         'merchants' => ['id', 'user_id'], 'stores' => ['id', 'merchant_id'],
         'pos_terminals' => ['id', 'store_id', 'merchant_id'],
+        'migration' => ['version'],
+        '_napay_bootstrap' => ['id', 'phase', 'code_sha256', 'schema_sha256'],
     ];
 
     /**
@@ -38,19 +40,12 @@ final class DatabaseRoles
      */
     public static function apply(\PDO $admin, string $database, string $web, string $migrator, string $worker): void
     {
-        if (!preg_match('/^[a-zA-Z0-9_]{1,64}$/D', $database)
-            || count(array_unique([$web, $migrator, $worker])) !== 3) throw new \InvalidArgumentException('invalid_database_roles');
-        foreach ([$web, $migrator, $worker] as $user) {
-            if (!preg_match('/^napay_[a-z0-9_]{1,26}$/D', $user)) throw new \InvalidArgumentException('invalid_database_roles');
-        }
-        if ($admin->inTransaction()) throw new \LogicException('caller_transaction_open');
-        if ($admin->getAttribute(\PDO::ATTR_DRIVER_NAME) !== 'mysql'
-            || !preg_match('/^8\.4\./', (string) $admin->getAttribute(\PDO::ATTR_SERVER_VERSION))
-            || $admin->query('SELECT DATABASE()')->fetchColumn() !== $database) throw new \RuntimeException('database_roles_preflight_failed');
+        self::validate($admin, $database, $web, $migrator, $worker);
         $lock = 'napay-db-roles-' . substr(hash('sha256', $database), 0, 40);
         $statement = $admin->prepare('SELECT GET_LOCK(?, 0)');
         $statement->execute([$lock]);
-        if ((int) $statement->fetchColumn() !== 1) throw new \RuntimeException('database_roles_busy');
+        $acquired = (int) $statement->fetchColumn(); $statement->closeCursor();
+        if ($acquired !== 1) throw new \RuntimeException('database_roles_busy');
         try {
             $columns = [];
             $statement = $admin->prepare('SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?');
@@ -64,24 +59,9 @@ final class DatabaseRoles
                     if (array_diff($required, $columns[$table])) throw new \RuntimeException('database_roles_preflight_failed');
                 }
             }
-            foreach ([$web, $migrator, $worker] as $user) {
-                $statement = $admin->prepare("SELECT COUNT(*) FROM mysql.user WHERE User = ? AND Host = '%' AND account_locked = 'N'");
-                $statement->execute([$user]);
-                if ((int) $statement->fetchColumn() !== 1) throw new \RuntimeException('database_roles_preflight_failed');
-                // Refuse to repurpose an account with global, role, proxy or another schema's grants.
-                foreach ($admin->query('SHOW GRANTS FOR ' . self::account($user))->fetchAll(\PDO::FETCH_COLUMN) as $grant) {
-                    if (preg_match('/^GRANT USAGE ON \*\.\* TO /', $grant)) continue;
-                    if (!preg_match('/^GRANT .+ ON `([^`]+)`\.(?:\*|`[^`]+`) TO /', $grant, $match)
-                        || str_replace(['\\_', '\\%'], ['_', '%'], $match[1]) !== $database) {
-                        throw new \RuntimeException('database_roles_foreign_privileges');
-                    }
-                }
-            }
-            // Database-level grants interpret '_' as a wildcard unless partial_revokes is enabled.
-            $schema = (int) $admin->query('SELECT @@partial_revokes')->fetchColumn() === 1
-                ? $database : str_replace('_', '\\_', $database);
+            self::accounts($admin, $database, [$web, $migrator, $worker]);
             foreach ([$web, $migrator, $worker] as $user) $admin->exec('REVOKE ALL PRIVILEGES, GRANT OPTION FROM ' . self::account($user));
-            $admin->exec('GRANT ALL PRIVILEGES ON ' . self::identifier($schema) . '.* TO ' . self::account($migrator));
+            self::grantMigrator($admin, $database, $migrator);
             $grant = static function (string $privileges, string $table, string $user) use ($admin, $database): void {
                 $admin->exec('GRANT ' . $privileges . ' ON ' . self::identifier($database) . '.' . self::identifier($table) . ' TO ' . self::account($user));
             };
@@ -98,6 +78,55 @@ final class DatabaseRoles
         } finally {
             try { $statement = $admin->prepare('SELECT RELEASE_LOCK(?)'); $statement->execute([$lock]); } catch (\Throwable $ignored) { }
         }
+    }
+
+    /** Before DDL, remove legacy schema-wide application access; only the migrator can see new tables. */
+    public static function prepare(\PDO $admin, string $database, string $web, string $migrator, string $worker): void
+    {
+        self::validate($admin, $database, $web, $migrator, $worker);
+        $lock = 'napay-db-roles-' . substr(hash('sha256', $database), 0, 40);
+        $query = $admin->prepare('SELECT GET_LOCK(?,0)'); $query->execute([$lock]);
+        $acquired = (int) $query->fetchColumn(); $query->closeCursor();
+        if ($acquired !== 1) throw new \RuntimeException('database_roles_busy');
+        try {
+            self::accounts($admin, $database, [$web, $migrator, $worker]);
+            foreach ([$web, $migrator, $worker] as $user) $admin->exec('REVOKE ALL PRIVILEGES, GRANT OPTION FROM ' . self::account($user));
+            self::grantMigrator($admin, $database, $migrator);
+        } finally {
+            $query = $admin->prepare('SELECT RELEASE_LOCK(?)'); $query->execute([$lock]);
+        }
+    }
+
+    private static function validate(\PDO $admin, string $database, string $web, string $migrator, string $worker): void
+    {
+        if (!preg_match('/^[a-zA-Z0-9_]{1,64}$/D', $database) || count(array_unique([$web, $migrator, $worker])) !== 3) throw new \InvalidArgumentException('invalid_database_roles');
+        foreach ([$web, $migrator, $worker] as $user) {
+            if (!preg_match('/^napay_[a-z0-9_]{1,26}$/D', $user)) throw new \InvalidArgumentException('invalid_database_roles');
+        }
+        if ($admin->inTransaction()) throw new \LogicException('caller_transaction_open');
+        if ($admin->getAttribute(\PDO::ATTR_DRIVER_NAME) !== 'mysql' || !preg_match('/^8\.4\./', (string) $admin->getAttribute(\PDO::ATTR_SERVER_VERSION))
+            || $admin->query('SELECT DATABASE()')->fetchColumn() !== $database) throw new \RuntimeException('database_roles_preflight_failed');
+    }
+
+    private static function accounts(\PDO $admin, string $database, array $users): void
+    {
+        foreach ($users as $user) {
+            $statement = $admin->prepare("SELECT COUNT(*) FROM mysql.user WHERE User = ? AND Host = '%' AND account_locked = 'N'");
+            $statement->execute([$user]);
+            $exists = (int) $statement->fetchColumn(); $statement->closeCursor();
+            if ($exists !== 1) throw new \RuntimeException('database_roles_preflight_failed');
+            foreach ($admin->query('SHOW GRANTS FOR ' . self::account($user))->fetchAll(\PDO::FETCH_COLUMN) as $grant) {
+                if (preg_match('/^GRANT USAGE ON \*\.\* TO /', $grant)) continue;
+                if (!preg_match('/^GRANT .+ ON `([^`]+)`\.(?:\*|`[^`]+`) TO /', $grant, $match)
+                    || str_replace(['\\_', '\\%'], ['_', '%'], $match[1]) !== $database) throw new \RuntimeException('database_roles_foreign_privileges');
+            }
+        }
+    }
+
+    private static function grantMigrator(\PDO $admin, string $database, string $migrator): void
+    {
+        $schema = (int) $admin->query('SELECT @@partial_revokes')->fetchColumn() === 1 ? $database : str_replace('_', '\\_', $database);
+        $admin->exec('GRANT ALL PRIVILEGES ON ' . self::identifier($schema) . '.* TO ' . self::account($migrator));
     }
 
     private static function identifier(string $value): string { return '`' . str_replace('`', '``', $value) . '`'; }

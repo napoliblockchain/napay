@@ -132,6 +132,28 @@ final class V2Bootstrap
         if (count($found) !== 3) throw new RuntimeException('Bootstrap migration history mismatch.');
     }
 
+    /** Restricted services trust bootstrap's read-only marker; only the migrator can inspect the complete schema. */
+    public static function readyRestricted(PDO $db, string $root, string $role): void
+    {
+        if (!in_array($role, ['web', 'worker'], true)) throw new RuntimeException('Invalid readiness role.');
+        $database = self::rows($db, 'SELECT DATABASE() AS name')[0]['name'];
+        foreach (self::rows($db, 'SHOW GRANTS') as $row) {
+            $grant = (string) reset($row);
+            if (str_contains($grant, 'GRANT OPTION')) throw new RuntimeException('Readiness requires restricted privileges.');
+            if (str_starts_with($grant, 'GRANT USAGE ON *.* TO ')) continue;
+            if (!preg_match('/^GRANT (.+) ON `([^`]+)`\.`([^`]+)` TO /', $grant, $parts) || $parts[2] !== $database) throw new RuntimeException('Readiness requires restricted privileges.');
+            $dml = '(?:SELECT|INSERT|UPDATE|DELETE)(?:\s*\([^)]*\))?';
+            if (!preg_match('/^' . $dml . '(?:,\s*' . $dml . ')*$/D', $parts[1])) throw new RuntimeException('Readiness requires restricted privileges.');
+            if (in_array($parts[3], ['migration', '_napay_bootstrap'], true) && !preg_match('/^SELECT(?:\s*\([^)]*\))?$/D', $parts[1])) throw new RuntimeException('Readiness marker must be read-only.');
+            if ($role === 'web' && $parts[3] === 'btcpay_merchant_credentials') throw new RuntimeException('Web cannot access provisioning credentials.');
+        }
+        $state = self::rows($db, 'SELECT phase,code_sha256,schema_sha256 FROM _napay_bootstrap WHERE id=1')[0] ?? null;
+        if (!$state || $state['phase'] !== 'complete' || !hash_equals(self::version($root), $state['code_sha256'])
+            || !preg_match('/^[a-f0-9]{64}$/D', (string) $state['schema_sha256'])) throw new RuntimeException('Bootstrap incomplete or version mismatch.');
+        $required = ['m231113_093348_create_users_table', 'm261023_120000_add_activation_code_to_users', 'm261023_120100_create_auth_table'];
+        if (count(self::rows($db, 'SELECT version FROM migration WHERE version IN (?,?,?)', $required)) !== 3) throw new RuntimeException('Bootstrap migration history mismatch.');
+    }
+
     private static function process(array $command, ?string $input, int $seconds): void
     {
         $process = proc_open($command, [0 => ['file', $input ?? '/dev/null', 'r'], 1 => ['file', '/dev/null', 'w'], 2 => ['file', '/dev/null', 'w']], $pipes);

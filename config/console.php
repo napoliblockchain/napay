@@ -23,6 +23,8 @@ $config = [
                 [
                     'class' => 'yii\log\FileTarget',
                     'levels' => ['error', 'warning'],
+                    // Bootstrap now carries role credentials: never dump environment/server variables.
+                    'logVars' => [],
                 ],
             ],
         ],
