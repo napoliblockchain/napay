@@ -17,6 +17,7 @@ use app\components\identity\AccountEligibility;
 use app\components\pos\management\ManagementException;
 use app\components\pos\management\PosInvitations;
 use app\components\pos\management\PosManagement;
+use app\components\pos\TerminalOpenings;
 use app\components\pos\management\Scope;
 use app\models\Merchants;
 use app\models\PosOperatorInvitations;
@@ -32,7 +33,7 @@ use app\models\forms\pos\TerminalForm;
 /**
  * C4 (SIP-021/SIP-023): terminali POS, profili operatore esistenti e grant ai negozi.
  * Admin su tutti i merchant, gestore solo sul proprio; scope nella query e su ogni ID.
- * Disponibilità sempre "Non verificata": nessuna apertura o sblocco da qui.
+ * Disponibilità dalle aperture esclusive (SIP-021 fase 2); qui solo lo sblocco forzato, mai l'apertura.
  */
 class PosManagementController extends Controller
 {
@@ -46,7 +47,7 @@ class PosManagementController extends Controller
                 'actions' => [
                     'index' => ['GET'], 'operator' => ['GET'],
                     'terminal-create' => ['GET', 'POST'], 'terminal-update' => ['GET', 'POST'],
-                    'terminal-enable' => ['POST'], 'terminal-disable' => ['POST'],
+                    'terminal-enable' => ['POST'], 'terminal-disable' => ['POST'], 'terminal-unlock' => ['POST'],
                     'operator-enable' => ['POST'], 'operator-disable' => ['POST'],
                     'grant-create' => ['POST'], 'grant-enable' => ['POST'], 'grant-disable' => ['POST'],
                     'invitation-create' => ['POST'], 'invitation-resend' => ['POST'], 'invitation-revoke' => ['POST'],
@@ -78,7 +79,7 @@ class PosManagementController extends Controller
     {
         $storeId = $store === null ? null : $this->scopedStore($store);
         $terminals = (new Query())
-            ->select(['t.public_id', 't.name', 't.is_enabled', 'store' => 's.description', 'merchant' => 'm.description'])
+            ->select(['t.id', 't.public_id', 't.name', 't.is_enabled', 'store' => 's.description', 'merchant' => 'm.description'])
             ->from(['t' => PosTerminals::tableName()])
             ->innerJoin(['s' => Stores::tableName()], 's.id=t.store_id AND s.merchant_id=t.merchant_id')
             ->innerJoin(['m' => Merchants::tableName()], 'm.id=t.merchant_id')
@@ -101,14 +102,16 @@ class PosManagementController extends Controller
             ->orderBy(['i.created_at' => SORT_DESC, 'i.id' => SORT_DESC]);
         $this->scope->apply($invitations, 'i.merchant_id');
 
+        $terminalList = new ActiveDataProvider(['query' => $terminals, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'tpage']]);
         return $this->render('index', [
+            'openings' => TerminalOpenings::activeFor(array_column($terminalList->getModels(), 'id')),
             'invitations' => new ActiveDataProvider(['query' => $invitations, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'ipage']]),
             'invitationForm' => new InvitationForm(),
             'merchants' => $this->scope->isAdmin() ? $this->merchantOptions() : [],
             'admin' => $this->scope->isAdmin(),
             'stores' => $this->storeOptions(),
             'store' => $storeId === null ? null : $store,
-            'terminals' => new ActiveDataProvider(['query' => $terminals, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'tpage']]),
+            'terminals' => $terminalList,
             'operators' => new ActiveDataProvider(['query' => $operators, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'opage']]),
         ]);
     }
@@ -149,6 +152,20 @@ class PosManagementController extends Controller
     public function actionTerminalDisable(string $id)
     {
         return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, false), Yii::t('app', 'Terminale disabilitato.'), ['index']);
+    }
+
+    public function actionTerminalUnlock(string $id)
+    {
+        try {
+            $unlocked = PosManagement::unlockTerminal($this->scope, $id);
+            Yii::$app->session->setFlash($unlocked ? 'success' : 'info', $unlocked
+                ? Yii::t('app', 'Terminale sbloccato: la vecchia apertura non è più valida.')
+                : Yii::t('app', 'Il terminale era già libero.'));
+        } catch (ManagementException $e) {
+            if ($e->getMessage() === ManagementException::NOT_FOUND) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+            Yii::$app->session->setFlash('danger', $e->userMessage());
+        }
+        return $this->redirect(['index']);
     }
 
     public function actionOperator(string $id)

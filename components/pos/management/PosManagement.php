@@ -3,6 +3,7 @@ namespace app\components\pos\management;
 
 use Yii;
 use app\components\Log;
+use app\components\pos\TerminalOpenings;
 use app\components\identity\AccountEligibility;
 use app\components\pos\PosApi;
 use app\models\PosOperators;
@@ -61,6 +62,21 @@ final class PosManagement
             $terminal->is_enabled = $enabled ? 1 : 0;
             if (!$terminal->save(false, ['is_enabled', 'updated_at'])) throw new ManagementException(ManagementException::FAILED);
             Log::event(sprintf('Terminale POS %s %s', $terminal->public_id, $enabled ? 'abilitato' : 'disabilitato'), Log::TYPE_DATA);
+        });
+    }
+
+    /**
+     * SIP-021 fase 2: sblocco forzato dell'apertura attiva (admin o gestore del merchant), lock merchant -> terminale
+     * -> apertura come l'acquisizione. La vecchia apertura resta revocata: ogni sua richiesta riceve 409.
+     * @return bool false se il terminale era già libero
+     */
+    public static function unlockTerminal(Scope $scope, string $publicId): bool
+    {
+        return self::write(function (Connection $db) use ($scope, $publicId) {
+            $terminal = self::lockTerminal($db, $scope, $publicId);
+            if (!TerminalOpenings::unlock($db, (int) $terminal->id, $scope->actorId)) return false;
+            Log::event(sprintf('Terminale POS %s sbloccato dal manager #%d', $terminal->public_id, $scope->actorId), Log::TYPE_SECURITY);
+            return true;
         });
     }
 

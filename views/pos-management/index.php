@@ -10,6 +10,7 @@ use app\components\pos\management\PosInvitations;
 /* @var $stores array ID negozio cifrato => etichetta */
 /* @var $store string|null filtro attivo (ID cifrato) */
 /* @var $terminals yii\data\ActiveDataProvider */
+/* @var $openings array aperture attive per ID interno del terminale */
 /* @var $operators yii\data\ActiveDataProvider */
 /* @var $invitations yii\data\ActiveDataProvider */
 /* @var $invitationForm app\models\forms\pos\InvitationForm */
@@ -45,12 +46,26 @@ $this->params['breadcrumbs'][] = $this->title;
                     <?php if ($admin): ?><td><?= Html::encode($t['merchant']) ?></td><?php endif; ?>
                     <td><?= Html::encode($t['store'] . ' - ' . $t['name']) ?></td>
                     <td><?= $this->render('_status', ['enabled' => (int) $t['is_enabled'] === 1]) ?></td>
-                    <td class="text-secondary"><?= Html::encode(Yii::t('app', 'Non verificata')) ?></td>
+                    <?php $open = $openings[$t['id']] ?? null; ?>
+                    <td>
+                        <?php if ($open === null): ?>
+                            <span class="text-secondary"><?= Html::encode(Yii::t('app', 'Libero')) ?></span>
+                        <?php else: ?>
+                            <span class="badge bg-warning-lt"><?= Html::encode(Yii::t('app', 'In uso')) ?></span>
+                            <div class="small text-secondary"><?= Html::encode(Yii::t('app', '{name}, dalle {opened}; ultimo contatto {seen}', [
+                                'name' => trim($open['first_name'] . ' ' . $open['last_name']),
+                                'opened' => Yii::$app->formatter->asDatetime((int) $open['opened_at'], 'short'),
+                                'seen' => Yii::$app->formatter->asRelativeTime((int) $open['last_seen_at']),
+                            ])) ?></div>
+                        <?php endif; ?>
+                    </td>
                     <td class="text-nowrap text-end">
                         <?= Html::a('<i class="fas fa-pen"></i>', ['terminal-update', 'id' => $t['public_id']], ['class' => 'btn btn-sm btn-outline-secondary', 'title' => Yii::t('app', 'Modifica')]) ?>
                         <?= (int) $t['is_enabled'] === 1
                             ? $this->render('_post', ['action' => ['terminal-disable', 'id' => $t['public_id']], 'label' => Yii::t('app', 'Disabilita'), 'class' => 'btn-outline-danger'])
                             : $this->render('_post', ['action' => ['terminal-enable', 'id' => $t['public_id']], 'label' => Yii::t('app', 'Abilita'), 'class' => 'btn-outline-success']) ?>
+                        <?= $open === null ? '' : $this->render('_post', ['action' => ['terminal-unlock', 'id' => $t['public_id']], 'label' => Yii::t('app', 'Sblocca'),
+                            'class' => 'btn-outline-warning', 'confirm' => Yii::t('app', 'Sbloccare il terminale? Il dispositivo che lo usa non potrà più operare.')]) ?>
                     </td>
                 </tr>
             <?php endforeach; ?>
