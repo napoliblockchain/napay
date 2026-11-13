@@ -46,6 +46,8 @@ variabili `NAPAY_DB_MIGRATOR_SECRET_FILE` e `NAPAY_DB_WORKER_SECRET_FILE`.
 Root e migrator non sono disponibili al web. Non lasciare `.env` nella root
 del codice montata nei container. Il parser PHP mantiene compatibilita con
 le vecchie configurazioni nei test, non e il contratto del nuovo launcher.
+Il preflight controlla la password web risolta da Compose (non il testo
+grezzo prima dell'interpolazione), senza stampare il modello o i valori.
 
 Il compose riceve il file esterno a runtime, senza build args DB. Espone soltanto
 HTTP diagnostico su `127.0.0.1:18120`, parametrizzabile con `NAPAY_HTTP_PORT`.

@@ -60,7 +60,7 @@ esegue bootstrap/migrazioni col migrator e avvia web dopo il completamento.
 Fermare gli writer prima dell'upgrade; mantenere backup e vecchi file privati.
 Questo codice e collaudato su stack usa-e-getta, non attiva da solo la sandbox.
 
-Test host: `bash tests/docker/launcher.sh` (23 controlli),
+Test host: `bash tests/docker/launcher.sh` (26 controlli),
 `bash tests/docker/local-launcher.sh` (17). Compose e PHP reali, operazioni
 persistenti intercettate; la suite MySQL prova anche la verifica account reale.
 

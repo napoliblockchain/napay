@@ -20,15 +20,15 @@ napay_private_input "${fields[1]}" directory "$job_uid"
 for name in manifest.json napay-v2.sql; do napay_private_input "${fields[1]}/$name" file "$job_uid"; done
 [[ ${fields[0]} != "${fields[5]}" && ${fields[0]} != "${fields[6]}" && ${fields[5]} != "${fields[6]}" ]] || { echo 'Role secrets require distinct files.' >&2; exit 1; }
 # Reuse runtime secret validation without exposing values in argv, stdout or environment.
-docker run --rm --network none --read-only --user "$job_uid:$job_gid" --cap-drop ALL --security-opt no-new-privileges:true \
+"${compose[@]}" --profile db-check config --format json | docker run --rm -i --network none --read-only --user "$job_uid:$job_gid" --cap-drop ALL --security-opt no-new-privileges:true \
     -v "$root/components/db/DatabaseSecret.php:/check/components/db/DatabaseSecret.php:ro" \
-    -v "$root/config/env.php:/check/config/env.php:ro" -v "$env_file:/check/.env:ro" \
     -v "${fields[0]}:/run/secrets/root:ro" -v "${fields[5]}:/run/secrets/migrator:ro" -v "${fields[6]}:/run/secrets/worker:ro" \
     --entrypoint php php:8.3.36-cli -r '
-    try { require "/check/config/env.php"; require_once "/check/components/db/DatabaseSecret.php";
+    try { require_once "/check/components/db/DatabaseSecret.php";
+        $model = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR);
         $values = array_map([app\components\db\DatabaseSecret::class,"read"], ["/run/secrets/root","/run/secrets/migrator","/run/secrets/worker"]);
-        $web = env_required("DB_PASSWORD");
-        if (strlen($web) < 32 || strlen($web) > 256 || strpbrk($web,"\r\n\0") !== false) throw new RuntimeException();
+        $web = $model["services"]["web"]["environment"]["DB_PASSWORD"] ?? null;
+        if (!is_string($web) || strlen($web) < 32 || strlen($web) > 256 || strpbrk($web,"\r\n\0") !== false) throw new RuntimeException();
         $values[] = $web;
         if (count(array_unique($values)) !== 4) throw new RuntimeException();
     } catch (Throwable $e) { fwrite(STDERR,"Invalid or reused role secret.\n"); exit(1); }

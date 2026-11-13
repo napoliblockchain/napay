@@ -85,5 +85,15 @@ change NAPAY_DB_WORKER_USERNAME napay_web; reject 'Shared account identity refus
 change NAPAY_BOOTSTRAP_UID "$(( $(id -u) + 1 ))"; reject 'Bootstrap owner mismatch refused'
 cp "$work/base.env" "$work/test.env"
 printf 'NAPAY_STACK_WAIT_SECONDS=0\n' >> "$work/test.env"; reject 'Invalid wait budget refused'
+interpolate() {
+    { printf 'A_LONG_COMPOSE_INTERPOLATION_VARIABLE=%s\n' "$1";
+      sed 's|^DB_PASSWORD=.*|DB_PASSWORD=${A_LONG_COMPOSE_INTERPOLATION_VARIABLE}|' "$work/base.env"; } > "$work/test.env"
+}
+interpolate short
+reject 'Interpolated short web password refused'
+interpolate "$(cat "$work/root")"
+reject 'Interpolated root/web password reuse refused'
+interpolate "$(openssl rand -hex 32)"
+run_check; pass 'Distinct strong interpolated password validated from the actual Compose model'
 [[ ! -e $work/persistent ]] || exit 1
 printf 'PASS %s role launcher preflight checks\n' "$checks"
