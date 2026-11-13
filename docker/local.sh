@@ -9,7 +9,7 @@ source "$root/docker/local-roles.sh"
 state="${NAPAY_LOCAL_STATE:-${HOME}/.local/share/napay/browser-local}"
 napay_private_location "$state"
 action=${1:-status}
-[[ $# -le 1 && $action =~ ^(up|check|prepare-roles|status|stop|mail)$ ]] || { echo 'Usage: bash docker/local.sh {up|check|prepare-roles|status|stop|mail}' >&2; exit 1; }
+[[ $# -le 1 && $action =~ ^(up|init|check|prepare-roles|status|stop|mail)$ ]] || { echo 'Usage: bash docker/local.sh {up|init|check|prepare-roles|status|stop|mail}' >&2; exit 1; }
 [[ ! -L $state ]] || exit 1
 mkdir -p "$state"
 napay_private_input "$state" directory "$(id -u)"
@@ -18,7 +18,7 @@ napay_local_ignore
 exec 9>>"$state/control.lock"
 flock -n 9 || { echo 'Another local sandbox operation is in progress.' >&2; exit 1; }
 [[ ! -L $state/local.env ]] || { echo 'Symlink environment refused.' >&2; exit 1; }
-if [[ $action == up && ! -e $state/local.env ]]; then
+if [[ $action =~ ^(up|init)$ && ! -e $state/local.env ]]; then
     dataset=$(realpath -e -- "${NAPAY_IMPORT_DIR:?Set reviewed v2 dataset directory}")
     [[ $dataset != *$'\n'* ]] || exit 1
     # Do not silently replace credentials after a partial/previous installation.
@@ -63,14 +63,14 @@ if [[ $action == prepare-roles && $role_mode == 0 ]]; then
     role_mode=1
 fi
 if [[ $role_mode == 1 ]]; then compose+=(-f "$root/docker-compose.roles.yml"); fi
-if [[ $action =~ ^(up|check|prepare-roles)$ ]]; then
+if [[ $action =~ ^(up|init|check|prepare-roles)$ ]]; then
     [[ $role_mode == 1 ]] || { echo 'Run prepare-roles once before starting this existing sandbox.' >&2; exit 1; }
     bash "$root/docker/up.sh" "$state/local.env" --check
     "${compose[@]}" --profile db-check config --format json | docker run --rm -i --network none --read-only \
         -v "$root/tests/docker/local-config.php:/check.php:ro" --entrypoint php php:8.3.36-cli /check.php
 fi
 case "$action" in
-    check|prepare-roles) echo 'Local role configuration ready; no services started.' ;;
+    init|check|prepare-roles) echo 'Local role configuration ready; no services started.' ;;
     up)
         # rete interna condivisa con napay-gateway (vedi start-localhost.sh dell'orchestratore)
         docker network inspect napay_local_browser >/dev/null 2>&1 \

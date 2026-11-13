@@ -61,8 +61,11 @@ Fermare gli writer prima dell'upgrade; mantenere backup e vecchi file privati.
 Questo codice e collaudato su stack usa-e-getta, non attiva da solo la sandbox.
 
 Test host: `bash tests/docker/launcher.sh` (26 controlli),
-`bash tests/docker/local-launcher.sh` (17). Compose e PHP reali, operazioni
+`bash tests/docker/local-launcher.sh` (20). Compose e PHP reali, operazioni
 persistenti intercettate; la suite MySQL prova anche la verifica account reale.
+`local.sh init` prepara soltanto i file della prima installazione e verifica
+il preflight, senza avviare servizi: l'orchestratore puo usarlo prima degli
+altri stack. Su sandbox legacy non sostituisce `prepare-roles`.
 
 ## HTTPS locale
 

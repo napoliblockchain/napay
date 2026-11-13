@@ -52,6 +52,13 @@ legacy() {
     sed -i '/^NAPAY_DB_\(MIGRATOR\|WORKER\)_/d' "$1/local.env"
     cp "$fresh/root-password" "$1/root-password"; cp "$fresh/browser-password" "$1/browser-password"
 }
+state="$work/init"
+run_local init
+[[ -f $state/worker-password && ! -e $work/calls ]]
+pass 'Fresh init prepares private role inputs without service or database operations'
+fingerprint > "$work/before"; run_local init; fingerprint > "$work/after"; cmp "$work/before" "$work/after"
+[[ ! -e $work/calls ]]
+pass 'Repeated init leaves private files unchanged and starts no services'
 state="$work/fresh"; fresh=$state
 run_local up
 [[ $(grep -c '^up$' "$work/calls") == 1 ]]
@@ -70,6 +77,7 @@ run_local prepare-roles; cmp "$work/calls-before" "$work/calls"
 pass 'Prepared installation is idempotent, with no new secrets or SQL probe'
 state="$work/legacy"; legacy "$state"
 reject 'Legacy up requires explicit preparation' up
+reject 'Legacy init cannot bypass explicit role preparation' init
 [[ ! -e $state/migrator-password && ! -e $state/worker-password ]]
 sha256sum "$state/root-password" "$state/browser-password" > "$work/old-before"
 run_local prepare-roles
