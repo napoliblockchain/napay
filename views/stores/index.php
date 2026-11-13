@@ -23,8 +23,7 @@ $speedPolicy = [
 
 ];
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-md-12">
             <div class="stores-index">
                 <?= app\widgets\Alert::widget() ?>
@@ -148,4 +147,3 @@ $speedPolicy = [
             </div>
         </div>
     </div>
-</div>

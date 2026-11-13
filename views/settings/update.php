@@ -13,8 +13,7 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Impostazioni'), 'url
 $this->params['breadcrumbs'][] = ['label' => $model->id, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
 $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="settings-update">
                 <?php if (Yii::$app->session->hasFlash('error')) : ?>
@@ -36,4 +35,3 @@ $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
             </div>
         </div>
     </div>
-</div>

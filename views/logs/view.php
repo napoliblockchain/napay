@@ -11,8 +11,7 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Logs'), 'url' => ['i
 $this->params['breadcrumbs'][] = $this->title;
 \yii\web\YiiAsset::register($this);
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-12">
             <div class="logs-view">
                 <div class="card">
@@ -46,4 +45,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

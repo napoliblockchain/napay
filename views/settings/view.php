@@ -13,8 +13,7 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Impostazioni'), 'url
 $this->params['breadcrumbs'][] = $this->title;
 \yii\web\YiiAsset::register($this);
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="settings-view">
                 <?php if (Yii::$app->session->hasFlash('success')) : ?>
@@ -80,4 +79,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

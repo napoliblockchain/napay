@@ -14,8 +14,7 @@ use yii\bootstrap5\ActiveForm;
 $this->title = Yii::t('app', 'Logs');
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-md-12">
             <div class="logs-index">
                 <div class="card">
@@ -123,4 +122,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

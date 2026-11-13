@@ -21,8 +21,7 @@ if (!$ownCompany) {
     $this->params['breadcrumbs'][] = $this->title;
 }
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="commercianti-update">
                 <?php if (Yii::$app->session->hasFlash('error')) : ?>
@@ -44,4 +43,3 @@ if (!$ownCompany) {
             </div>
         </div>
     </div>
-</div>

@@ -13,8 +13,7 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Privileges'), 'url' 
 $this->params['breadcrumbs'][] = ['label' => $model->id, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
 $this->params['breadcrumbs'][] = Yii::t('app', 'Update');
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="privilege-update">
                 <?php if (Yii::$app->session->hasFlash('error')) : ?>
@@ -36,4 +35,3 @@ $this->params['breadcrumbs'][] = Yii::t('app', 'Update');
             </div>
         </div>
     </div>
-</div>
