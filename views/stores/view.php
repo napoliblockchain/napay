@@ -14,8 +14,7 @@ $this->params['breadcrumbs'][] = $this->title;
 
 
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="stores-view">
                 <?= app\widgets\Alert::widget() ?>
@@ -95,4 +94,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

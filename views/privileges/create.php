@@ -9,8 +9,7 @@ $this->title = Yii::t('app', 'Create Role');
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Roles'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="privilege-create">
                 <?php if (Yii::$app->session->hasFlash('error')) : ?>
@@ -32,4 +31,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

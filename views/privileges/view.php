@@ -12,8 +12,7 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Privileges'), 'url' 
 $this->params['breadcrumbs'][] = $this->title;
 \yii\web\YiiAsset::register($this);
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="privileges-view">
                 <?php if (Yii::$app->session->hasFlash('success')) : ?>
@@ -71,4 +70,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

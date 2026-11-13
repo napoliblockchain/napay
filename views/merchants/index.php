@@ -17,8 +17,7 @@ $this->params['breadcrumbs'][] = $this->title;
 
 // $status_list = ['Attivo', 'Disabilitato'];
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-md-12">
             <div class="merchants-index">
                 <?= app\widgets\Alert::widget() ?>
@@ -107,4 +106,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

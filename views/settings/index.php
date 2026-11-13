@@ -13,8 +13,7 @@ $this->title = Yii::t('app', 'Impostazioni');
 $this->params['breadcrumbs'][] = $this->title;
 ?>
 
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-12">
             <div class="settings-index">
                 <?php if (Yii::$app->session->hasFlash('success')) : ?>
@@ -86,4 +85,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

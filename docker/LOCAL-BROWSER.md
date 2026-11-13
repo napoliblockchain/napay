@@ -26,7 +26,8 @@ le immagini PHP gia previste dal progetto; non cambia versione PHP.
 - HTTP: `http://napay.local`, solo redirect HTTPS; `localhost` reindirizza qui.
 - Gateway `napay-gateway` dell'orchestratore su `127.0.0.1:80/443`; diagnostica `18120`.
 - Email di accesso: `browser-admin@example.invalid` (login solo con email, SIP-020).
-- Password casuale: `$HOME/.local/share/napay/browser-local/browser-password`.
+- Cartella privata: `NAPAY_LOCAL_STATE` (in locale `/var/www/documents/progetti/napoliblockchain/napay/ambiente-locale`, 0700; default storico `$HOME/.local/share/napay/browser-local`).
+- Password casuale: `$NAPAY_LOCAL_STATE/browser-password`.
 - Configurazione privata: stessa directory, `local.env` (0600).
 - CA pubblica locale: stessa directory, `caddy-root.crt`.
 
@@ -46,7 +47,7 @@ La procedura non cambia automaticamente la fiducia di sistema.
 Verifica TLS senza bypass:
 
 ```sh
-curl --cacert "$HOME/.local/share/napay/browser-local/caddy-root.crt" \
+curl --cacert "$NAPAY_LOCAL_STATE/caddy-root.crt" \
   https://napay.local/site/login --output /dev/null --fail
 ```
 
@@ -69,7 +70,7 @@ Registrazione/recupero salvano messaggi privati nel volume runtime persistente.
 bash docker/local.sh mail
 ```
 
-Messaggi copiati in `$HOME/.local/share/napay/browser-local/mail-review/`
+Messaggi copiati in `$NAPAY_LOCAL_STATE/mail-review/`
 (directory 0700, file 0600). Aprire `.eml` localmente e seguire link HTTPS.
 I link contengono credenziali temporanee: non incollarli in chat/log pubblici.
 Prima richiesta mail va generata tramite registrazione o recupero password.

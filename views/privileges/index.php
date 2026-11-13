@@ -12,8 +12,7 @@ use app\components\Crypt;
 $this->title = Yii::t('app', 'Privileges');
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-md-12">
             <div class="servizi-index">
                 <?php if (Yii::$app->session->hasFlash('success')) : ?>
@@ -91,4 +90,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>

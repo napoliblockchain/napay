@@ -11,8 +11,7 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Negozi'), 'url' => [
 $this->params['breadcrumbs'][] = ['label' => substr($model->storesettings->bps_storeid, 0, 15) . '…', 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
 $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="stores-update">
                 <?php if (Yii::$app->session->hasFlash('error')) : ?>
@@ -35,4 +34,3 @@ $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
             </div>
         </div>
     </div>
-</div>

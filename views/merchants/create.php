@@ -9,8 +9,7 @@ $this->title = Yii::t('app', 'Nuovo Esercente');
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Esercenti'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<div class="container-fluid">
-    <div class="row">
+    <div class="row row-cards">
         <div class="col-lg-8">
             <div class="commercianti-create">
                 <?= app\widgets\Alert::widget() ?>
@@ -28,4 +27,3 @@ $this->params['breadcrumbs'][] = $this->title;
             </div>
         </div>
     </div>
-</div>
