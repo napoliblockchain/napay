@@ -81,6 +81,15 @@ try {
     denied($worker, 'SELECT description FROM stores', 'Worker cannot read unneeded store details');
     $worker->query('SELECT id,merchant_id FROM stores')->fetchAll(); check(true, 'Worker reads minimum tenant identifiers');
     denied($worker, 'UPDATE logs SET description=\'x\' WHERE 1=0', 'Worker cannot rewrite audit history');
+    // Exercise the application's actual Yii schema lookup, not only explicit INSERT SQL.
+    define('YII_ENABLE_ERROR_HANDLER', false);
+    require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
+    $config = require $root . '/config/console.php';
+    $config['components']['log']['targets'] = [];
+    $config['components']['db'] = new yii\db\Connection(['dsn' => env_required('DB_DSN'), 'pdo' => $worker]);
+    $app = new yii\console\Application($config);
+    check(app\components\Log::save('btcpay-provision', 'role-fixture', 'Database role fixture') === true, 'Worker writes through actual Log::save Yii schema lookup');
+    check((int) $admin->query("SELECT COUNT(*) FROM logs WHERE controller='btcpay-provision' AND action='role-fixture' AND description='Database role fixture'")->fetchColumn() === 1, 'Worker audit entry actually persisted');
     $migrator->exec('CREATE TABLE role_owned (id INT PRIMARY KEY)');
     $migrator->exec('DROP TABLE role_owned'); check(true, 'Migrator alone owns schema DDL');
     $migrator->query('SELECT * FROM btcpay_merchant_credentials')->fetchAll(); check(true, 'Migrator can verify complete schema');
