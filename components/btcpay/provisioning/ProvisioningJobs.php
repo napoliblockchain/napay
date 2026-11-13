@@ -31,9 +31,10 @@ final class ProvisioningJobs
     }
 
     /**
-     * Prende il primo lavoro dovuto dell'istanza. In volo con lease scaduta o assente (marker presente, qualunque
-     * stato attivo) -> reconcile_required, mai ripreso; tentativi esauriti -> failed; running scaduto senza
-     * checkpoint -> ripreso con nuovo owner. Restituisce solo identificativi e versione, o null.
+     * Prende il primo lavoro dovuto dell'istanza, mai con una lease ancora valida. deferred non è mai preso: richiede
+     * l'admin (SIP B1 §4). Marker in volo con lease scaduta o assente (qualunque stato attivo) -> reconcile_required,
+     * mai ripreso; tentativi esauriti -> failed; running scaduto senza checkpoint -> ripreso con nuovo owner.
+     * Restituisce solo identificativi e versione, o null.
      */
     public function claim(string $instance): ?array
     {
@@ -44,8 +45,8 @@ final class ProvisioningJobs
         try {
             for ($i = 0; $i < self::SCAN; ++$i) {
                 $job = $this->db->createCommand('SELECT id, kind, instance, merchant_id, entity_id, generation, state, attempts, version, in_flight_op FROM ' . self::TABLE
-                    . " WHERE instance = :instance AND ((state IN ('pending', 'retry_wait', 'deferred') AND (next_attempt_at <= :now OR in_flight_op IS NOT NULL))"
-                    . " OR (state IN ('running', 'in_flight') AND (lease_until IS NULL OR lease_until <= :now)))"
+                    . " WHERE instance = :instance AND (lease_until IS NULL OR lease_until <= :now)"
+                    . " AND ((state IN ('pending', 'retry_wait') AND (next_attempt_at <= :now OR in_flight_op IS NOT NULL)) OR state IN ('running', 'in_flight'))"
                     . ' ORDER BY next_attempt_at, id LIMIT 1 FOR UPDATE SKIP LOCKED', [':instance' => $instance, ':now' => $now])->queryOne();
                 if ($job === false) break;
                 $where = ' WHERE id = :id AND version = :version';
@@ -108,7 +109,7 @@ final class ProvisioningJobs
         return $this->cas($id, $version, ['in_flight'], false, "state = 'running'" . self::CLEAR_FLIGHT, [], $this->now());
     }
 
-    /** Nuovo tentativo a un istante dato (calcolo dell'attesa al chiamante); solo da running senza checkpoint. */
+    /** Nuovo tentativo a un istante dato (calcolo dell'attesa al chiamante); solo da running senza checkpoint. deferred: poi solo admin. */
     public function retryLater(int $id, int $version, string $code, int $nextAttemptAt, bool $deferred = false): ?int
     {
         $now = $this->now();
