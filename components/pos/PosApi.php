@@ -135,14 +135,22 @@ final class PosApi
     {
         if (!is_string($token) || !str_starts_with($token, self::TOKEN_PREFIX) || strlen($token) > 128) return null;
         $session = PosOperatorSessions::find()->where(['token_sha256' => hash('sha256', $token)])->with('user')->one();
-        if ($session === null || $session->revoked_at !== null || (int) $session->expires_at <= time()
-            || !hash_equals($session->client_key_prefix, $clientPrefix)) return null;
+        if ($session === null || !hash_equals($session->client_key_prefix, $clientPrefix)) return null;
+        return self::sessionUsable($session) ? $session : null;
+    }
+
+    /**
+     * La sessione può ancora agire: non revocata né scaduta, utente attivo con la stessa password, profilo
+     * operatore abilitato, identità R1 e merchant qualificato. Usata anche per il titolare di un'apertura POS.
+     */
+    public static function sessionUsable(PosOperatorSessions $session): bool
+    {
+        if ($session->revoked_at !== null || (int) $session->expires_at <= time()) return false;
         $user = $session->user;
-        if ($user === null || !$user->validateStatus() || !hash_equals($session->credential_fingerprint, self::fingerprint($user))) return null;
+        if ($user === null || !$user->validateStatus() || !hash_equals($session->credential_fingerprint, self::fingerprint($user))) return false;
         $profile = PosOperators::find()->select(['merchant_id', 'is_enabled'])->where(['user_id' => $user->id])->asArray()->one();
-        if ($profile === null || (int) $profile['is_enabled'] !== 1 || !AccountEligibility::isOperatorAccount((int) $user->id)
-            || !AccountEligibility::qualifiedMerchant((int) $profile['merchant_id'])) return null;
-        return $session;
+        return $profile !== null && (int) $profile['is_enabled'] === 1 && AccountEligibility::isOperatorAccount((int) $user->id)
+            && AccountEligibility::qualifiedMerchant((int) $profile['merchant_id']);
     }
 
     public static function revoke(PosOperatorSessions $session, string $reason): void
