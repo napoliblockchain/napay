@@ -20,9 +20,9 @@ issue() { # nome-CA nome-certificato DNS...
 }
 issue ca server btcpay.test slow.test
 issue rogue-ca rogue rogue.test
-# Lette dall'utente del container; restano nella cartella privata, rimossa a fine esecuzione.
-chmod 0755 "$certs"; chmod 0644 "$certs"/*.pem "$certs"/*.key
-docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --cap-drop ALL --security-opt no-new-privileges:true \
+# Cartella 0700 e file 0600: il container gira con uid/gid dell'host, senza allargare permessi né DAC_OVERRIDE.
+chmod 0700 "$certs"; chmod 0600 "$certs"/*
+docker run --rm -u "$(id -u):$(id -g)" --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --cap-drop ALL --security-opt no-new-privileges:true \
     -v "$root:/app:ro" -v "$certs:/certs:ro" -w /app --entrypoint php "$image" -l components/btcpay/provisioning/ProvisioningHttpClient.php >/dev/null
-docker run --rm --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --cap-drop ALL --security-opt no-new-privileges:true \
+docker run --rm -u "$(id -u):$(id -g)" --network none --read-only --tmpfs /tmp:rw,nosuid,nodev,size=64m --cap-drop ALL --security-opt no-new-privileges:true \
     -v "$root:/app:ro" -v "$certs:/certs:ro" -w /app --entrypoint php "$image" tests/application/btcpay-provisioning-http.php
