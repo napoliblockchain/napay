@@ -3,6 +3,8 @@
 use yii\helpers\Url;
 use app\components\User;
 use kartik\icons\Icon;
+use app\components\identity\AccountEligibility;
+use app\components\pos\management\Scope;
 
 /* @var $this yii\web\View */
 /* @var $searchModel app\models\search\UsersSearch */
@@ -12,13 +14,15 @@ Icon::map($this);
 
 $this->title = Yii::t('app', 'Dashboard');
 $this->params['breadcrumbs'][] = $this->title;
+$commerce = Scope::current() !== null;
+$member = AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
 ?>
 
 <div class="body-content">
     <div class="row mt-2">
         <div class="col-lg-12 col-12">
             <div class="row g-3">
-                <?php if (User::can(40)) : ?>
+                <?php if (User::isAdministrator()) : ?>
                     <div class="col-lg-3 col-md-12">
                         <a href="<?= Url::to(['merchants/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
                             <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
@@ -30,7 +34,7 @@ $this->params['breadcrumbs'][] = $this->title;
 
                                 <div class="flex-fill">
                                     <span class="text-secondary">
-                                        <?= Yii::t('app', 'Totale Esercenti') ?>
+                                        <?= Yii::t('app', 'Aziende') ?>
                                     </span>
                                     <span class="d-block fw-semibold">
                                         <!-- <small>%</small> -->
@@ -42,7 +46,7 @@ $this->params['breadcrumbs'][] = $this->title;
                         </a>
                     </div>
                 <?php endif; ?>
-                <?php if (User::can(30)) : ?>
+                <?php if ($commerce) : ?>
                     <div class="col-lg-3 col-md-12">
                         <a href="<?= Url::to(['stores/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
                             <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
@@ -54,7 +58,7 @@ $this->params['breadcrumbs'][] = $this->title;
 
                                 <div class="flex-fill">
                                     <span class="text-secondary">
-                                        <?= Yii::t('app', 'Totale Negozi') ?>
+                                        <?= Yii::t('app', 'Negozi') ?>
                                     </span>
                                     <span class="d-block fw-semibold">
                                         <!-- <small>%</small> -->
@@ -66,8 +70,9 @@ $this->params['breadcrumbs'][] = $this->title;
                         </a>
                     </div>
                 <?php endif; ?>
+                <?php if ($commerce): ?>
                 <div class="col-lg-3 col-md-12">
-                    <a href="<?= Url::to(['pos/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
+                    <a href="<?= Url::to(['pos-management/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
                         <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
                             <span class="avatar bg-primary text-white">
                                 <div class="icon">
@@ -77,7 +82,7 @@ $this->params['breadcrumbs'][] = $this->title;
 
                             <div class="flex-fill">
                                 <span class="text-secondary">
-                                    <?= Yii::t('app', 'Totale Pos') ?>
+                                    <?= Yii::t('app', 'Terminali POS') ?>
                                 </span>
                                 <span class="d-block fw-semibold">
                                     <!-- <small>%</small> -->
@@ -89,28 +94,14 @@ $this->params['breadcrumbs'][] = $this->title;
                     </a>
                 </div>
 
-                <div class="col-lg-3 col-md-12">
-                    <a href="<?= Url::to(['invoices/index']) ?>" class="d-block h-100 text-reset text-decoration-none">
-                        <div class="card card-sm h-100 flex-row align-items-center p-3 gap-3">
-                            <span class="avatar bg-warning text-white">
-                                <div class="icon">
-                                    <?= Icon::show('file-invoice') ?>
-                                </div>
-                            </span>
-
-                            <div class="flex-fill">
-                                <span class="text-secondary">
-                                    <?= Yii::t('app', 'Totale Transazioni') ?>
-                                </span>
-                                <span class="d-block fw-semibold">
-                                    <!-- <small>%</small> -->
-                                </span>
-                            </div>
-                            <!-- /.info-box-content -->
-                        </div>
-                        <!-- /.info-box -->
-                    </a>
-                </div>
+                <?php endif; ?>
+                <?php if ($member): ?>
+                    <div class="col-lg-3 col-md-12">
+                        <a class="card card-sm h-100 p-3 text-reset text-decoration-none" href="<?= Url::to(['pay-fee/index']) ?>"><?= Yii::t('app', 'Paga quota') ?></a>
+                    </div>
+                <?php elseif (!$commerce && AccountEligibility::isOperatorAccount((int)Yii::$app->user->id)): ?>
+                    <div class="col-12"><div class="alert alert-info"><?= Yii::t('app', 'Account operatore POS. Accedi al POS con le tue credenziali per scegliere il terminale assegnato.') ?></div></div>
+                <?php endif; ?>
             </div>
         </div>
     </div>

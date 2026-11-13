@@ -114,9 +114,9 @@ try {
     check($list['status'] === 200, 'Admin reads restored users list');
     check(!in_array('runtime-higher', listNames($list['body']), true), 'Admin list excludes higher privilege');
     $panel = request('/admin/index');
-    check($panel['status'] === 200 && !in_array('runtime-higher', listNames($panel['body']), true), 'Admin panel user card respects privilege boundary');
+    check($panel['status'] === 302 && str_contains($panel['headers'], '/users/index'), 'Legacy admin panel redirects to dedicated user controller');
     $panel = request('/admin/index?' . http_build_query(['UsersSearch' => ['username' => 'runtime-higher']]));
-    check($panel['status'] === 200 && !in_array('runtime-higher', listNames($panel['body']), true), 'Admin panel filters cannot bypass user scope');
+    check($panel['status'] === 302 && !str_contains($panel['body'], 'runtime-higher'), 'Legacy admin filters do not render out-of-scope users');
     check(request('/users/index?sort=id')['status'] === 200, 'Scoped list retains ID sorting');
     $filter = request('/users/index?' . http_build_query(['UsersSearch' => ['username' => 'runtime-higher']]));
     check($filter['status'] === 200 && listNames($filter['body']) === [], 'Admin filter cannot reveal higher privilege');
