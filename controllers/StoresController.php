@@ -21,6 +21,7 @@ use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
 use app\components\BTCPayServer;
+use app\components\btcpay\provisioning\ProvisioningOutbox;
 
 use app\models\Settings;
 use app\models\Pos;
@@ -198,6 +199,8 @@ class StoresController extends Controller
                     if ($model->save()) {
                         $storesettings = $this->defaultSettings($model);
                         if ($storesettings->save()) {
+                            // Lavoro BTCPay accodato nella stessa transazione (se il provisioning è attivo).
+                            ProvisioningOutbox::enqueueStore(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
                             $transaction->commit();
                             Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio creato. Pagamenti BTC da configurare: il collegamento a BTCPay verrà creato automaticamente.'));
                             Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has created a new {item}: {itemname}', [

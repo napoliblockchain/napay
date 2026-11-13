@@ -3,6 +3,7 @@ namespace app\components\pos\management;
 
 use Yii;
 use app\components\Log;
+use app\components\btcpay\provisioning\ProvisioningOutbox;
 use app\components\pos\TerminalOpenings;
 use app\components\identity\AccountEligibility;
 use app\components\pos\PosApi;
@@ -39,6 +40,7 @@ final class PosManagement
             self::requireQualified($merchantId);
             $terminal = new PosTerminals(['merchant_id' => $merchantId, 'store_id' => $storeId, 'name' => $name, 'is_enabled' => 0]);
             if (!$terminal->save()) throw new ManagementException(ManagementException::INVALID);
+            ProvisioningOutbox::enqueueTerminal($db, (int) $terminal->id, $storeId, $merchantId, $scope->actorId);
             Log::event(sprintf('Terminale POS %s creato (negozio %d, merchant %d, nome %s)', $terminal->public_id, $storeId, $merchantId, Log::quote($terminal->name)), Log::TYPE_DATA);
             return $terminal->public_id;
         });
