@@ -22,7 +22,7 @@ final class ProvisioningStore
     private const INT_MAX = 2147483647;
 
     /** @param array<string,string> $keyring versione KEK => chiave; $kekVersion cifra le nuove buste */
-    public function __construct(private readonly Connection $db, private readonly string $instance,
+    public function __construct(#[\SensitiveParameter] private readonly Connection $db, private readonly string $instance,
         #[\SensitiveParameter] private readonly array $keyring, private readonly string $kekVersion)
     {
         if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1) throw new \InvalidArgumentException('invalid_instance');
@@ -85,7 +85,7 @@ final class ProvisioningStore
         return $row === null || $row['state'] !== 'current' ? null : $this->open($account, $row);
     }
 
-    /** Nuova chiave API della generazione indicata, `pending` finché non verificata e promossa. */
+    /** Nuova chiave API della generazione indicata: `pending`, poi `verified` (verifyKey) e infine `current` (promoteKey). */
     public function storeKey(array $account, int $generation, #[\SensitiveParameter] string $apiKey): bool
     {
         $this->own($account);
@@ -93,15 +93,39 @@ final class ProvisioningStore
         return $this->insertCredential($account, 'api_key', $generation, 'pending', $apiKey);
     }
 
-    /** La generazione indicata diventa l'unica `current`; la precedente passa a `retiring` (revocata dopo, R4). */
+    /**
+     * Chiave di una generazione non revocata (ripresa dopo un crash tra salvataggio e verifica remota).
+     * @return array{generation:int, state:string, lock_version:int, key:string}|null
+     */
+    public function key(array $account, int $generation): ?array
+    {
+        $this->own($account);
+        self::id($generation);
+        $row = $this->credential($account, 'api_key', $generation);
+        if ($row === null || $row['state'] === 'revoked') return null;
+        $key = $this->open($account, $row);
+        if (!hash_equals((string) $row['key_fingerprint'], hash('sha256', $key))) throw new \UnexpectedValueException('fingerprint_mismatch');
+        return ['generation' => $generation, 'state' => (string) $row['state'], 'lock_version' => (int) $row['lock_version'], 'key' => $key];
+    }
+
+    /** pending -> verified dopo la verifica remota (B1 §6 R2/R3), CAS su stato e lock_version letti. */
+    public function verifyKey(array $account, int $generation, int $lockVersion): bool
+    {
+        $this->own($account);
+        self::id($generation);
+        return $this->db->createCommand()->update(self::CREDENTIALS, ['state' => 'verified', 'lock_version' => $lockVersion + 1, 'updated_at' => time()],
+            ['account_id' => $account['id'], 'instance' => $this->instance, 'kind' => 'api_key', 'generation' => $generation, 'state' => 'pending', 'lock_version' => $lockVersion])->execute() === 1;
+    }
+
+    /** Solo una generazione `verified` diventa l'unica `current`; la precedente passa a `retiring` (revocata dopo, R4). */
     public function promoteKey(array $account, int $generation): bool
     {
         $this->own($account);
         self::id($generation);
         return (bool) $this->db->transaction(function () use ($account, $generation) {
             $rows = $this->db->createCommand('SELECT generation, state, lock_version FROM ' . self::CREDENTIALS
-                . " WHERE account_id=:a AND kind='api_key' AND state IN ('pending','verified','current') FOR UPDATE", [':a' => $account['id']])->queryAll();
-            $target = current(array_filter($rows, fn($r) => (int) $r['generation'] === $generation && $r['state'] !== 'current'));
+                . " WHERE account_id=:a AND kind='api_key' AND state IN ('verified','current') FOR UPDATE", [':a' => $account['id']])->queryAll();
+            $target = current(array_filter($rows, fn($r) => (int) $r['generation'] === $generation && $r['state'] === 'verified'));
             if ($target === false) return false;
             foreach ($rows as $row) {
                 if ($row['state'] === 'current') $this->credentialCas($account, (int) $row['generation'], (int) $row['lock_version'], ['state' => 'retiring']);
@@ -122,14 +146,18 @@ final class ProvisioningStore
         return ['generation' => (int) $row['generation'], 'key' => $key];
     }
 
-    /** Busta azzerata, riga conservata per l'audit. La chiave `current` non si revoca: prima se ne promuove un'altra. */
-    public function revokeKey(array $account, int $generation): bool
+    /**
+     * Busta azzerata, riga conservata per l'audit. CAS su stato e lock_version letti: una revoca su dati vecchi non
+     * azzera nulla. La chiave `current` non si revoca: prima se ne promuove un'altra.
+     */
+    public function revokeKey(array $account, int $generation, int $lockVersion): bool
     {
         $this->own($account);
         self::id($generation);
         return $this->db->createCommand()->update(self::CREDENTIALS, ['state' => 'revoked', 'envelope_version' => null, 'kek_version' => null, 'secret_nonce' => null,
-            'ciphertext' => null, 'dek_nonce' => null, 'wrapped_dek' => null, 'key_fingerprint' => null, 'lock_version' => new \yii\db\Expression('lock_version + 1'), 'updated_at' => time()],
-            ['account_id' => $account['id'], 'instance' => $this->instance, 'kind' => 'api_key', 'generation' => $generation, 'state' => ['pending', 'verified', 'retiring']])->execute() === 1;
+            'ciphertext' => null, 'dek_nonce' => null, 'wrapped_dek' => null, 'key_fingerprint' => null, 'lock_version' => $lockVersion + 1, 'updated_at' => time()],
+            ['account_id' => $account['id'], 'instance' => $this->instance, 'kind' => 'api_key', 'generation' => $generation,
+                'state' => ['pending', 'verified', 'retiring'], 'lock_version' => $lockVersion])->execute() === 1;
     }
 
     // --- store e app POS
