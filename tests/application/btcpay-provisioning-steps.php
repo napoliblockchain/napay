@@ -68,7 +68,8 @@ foreach ([
 check($http->calls[0][1] === '/api/v1/users/' . $email, 'A-r: GET by technical e-mail; never a reset or update');
 
 // --- B: chiave propria (Basic con la password salvata), limite di generazioni
-$http->reset([$r(200, ['apiKey' => $newKey, 'label' => 'x'])]);
+$perm = ['btcpay.store.canmodifystoresettings'];
+$http->reset([$r(200, ['apiKey' => $newKey, 'label' => 'x', 'permissions' => $perm])]);
 $o = $account->createKey($email, $pw, $ref, 2);
 check($o->kind === O::DONE && $o->data === ['generation' => 2] && $o->secret() === $newKey, 'B 200 -> key returned as a secret, with its generation');
 check($http->calls[0][0] === 'POST' && $http->calls[0][1] === '/api/v1/api-keys' && $http->calls[0][3] === 'basic:' . $email . ':' . $pw
@@ -77,10 +78,13 @@ $dump = print_r($o, true) . var_export($o, true) . json_encode($o);
 ob_start(); var_dump($o); $dump .= ob_get_clean();
 check(!str_contains($dump, $newKey), 'Returned key invisible to print_r/var_dump/var_export/json');
 foreach ([
-    'malformed key' => [[$r(200, ['apiKey' => 'short'])], O::REPEAT, 'key_response_malformed'],
+    'malformed key' => [[$r(200, ['apiKey' => 'short', 'permissions' => $perm])], O::REPEAT, 'key_response_malformed'],
+    'extra global permission' => [[$r(200, ['apiKey' => $newKey, 'permissions' => array_merge($perm, ['btcpay.server.canmodifyserversettings'])])], O::RECONCILE, 'key_permissions_unexpected'],
+    'unrestricted key' => [[$r(200, ['apiKey' => $newKey, 'permissions' => ['unrestricted']])], O::RECONCILE, 'key_permissions_unexpected'],
+    'permissions missing' => [[$r(200, ['apiKey' => $newKey])], O::RECONCILE, 'key_permissions_unexpected'],
     'no key field' => [[$r(200, [])], O::REPEAT, 'key_response_malformed'],
     'password rejected 401' => [[$r(401)], O::RECONCILE, 'password_rejected'],
-    '429' => [[$r(429, null, '10')], O::RETRY, 'rate_limited'],
+    '429 deferred (B1 3.1)' => [[$r(429, null, '10')], O::DEFERRED, 'rate_limited'],
     '403' => [[$r(403)], O::FAILED, 'key_forbidden'],
     '500' => [[$r(500)], O::REPEAT, 'key_outcome_unknown'],
     'unknown' => [[$unknown], O::REPEAT, 'key_outcome_unknown'],
@@ -98,6 +102,8 @@ foreach ([
     'stores listed' => [[$r(200, [['id' => 's1']])], O::DONE, null],
     'empty list' => [[$r(200, [])], O::DONE, null],
     'not a list' => [[$r(200, ['id' => 'x'])], O::RETRY, 'verify_response_malformed'],
+    'list of strings' => [[$r(200, ['junk'])], O::RETRY, 'verify_response_malformed'],
+    'object without valid id' => [[$r(200, [['id' => 'bad id']])], O::RETRY, 'verify_response_malformed'],
     'key not accepted 401' => [[$r(401)], O::RECONCILE, 'key_not_accepted'],
     '429' => [[$r(429)], O::RETRY, 'rate_limited'],
     'unknown' => [[$unknown], O::RETRY, 'verify_unavailable'],
@@ -113,7 +119,14 @@ $snap = ['state' => 'pending', 'marker' => $marker, 'remote_store_id' => null, '
 $name = 'Negozio Roma [napay-' . $marker . ']';
 $http->reset([]);
 check($is($stores->create(array_replace($snap, ['account_state' => 'key_saved']), $newKey), O::PENDING, 'account_not_ready') && $is($stores->create($snap, null), O::PENDING, 'account_not_ready') && $http->calls === [], 'Store: account not ready -> pending, no call');
-check($is($stores->create(array_replace($snap, ['remote_store_id' => 'st-1']), $newKey), O::DONE, null, ['remote_store_id' => 'st-1']) && $http->calls === [], 'Store already linked: no call');
+check($is($stores->create(array_replace($snap, ['state' => 'synced', 'remote_store_id' => 'st-1']), $newKey), O::DONE, null, ['remote_store_id' => 'st-1']) && $http->calls === [], 'Store already synced: no call');
+foreach (['suspended', 'failed'] as $state) check($is($stores->create(array_replace($snap, ['state' => $state, 'remote_store_id' => 'st-old']), $newKey), O::FAILED, 'link_' . $state) && $http->calls === [], "Store $state with an old ID is not done");
+foreach ([['state' => 'weird'], ['state' => 'synced'], ['state' => 'synced', 'remote_store_id' => ''], ['state' => 'synced', 'remote_store_id' => '../x']] as $bad) {
+    $refused = false; try { $stores->create(array_replace($snap, $bad), $newKey); } catch (InvalidArgumentException $e) { $refused = true; }
+    check($refused && $http->calls === [], 'Store snapshot refused: ' . json_encode($bad));
+}
+$http->reset([$r(200, [['id' => 'st-1', 'name' => 'Negozio Roma [napay-' . $marker . ']']])]);
+check($is($stores->create(array_replace($snap, ['remote_store_id' => 'st-1']), $newKey), O::DONE, null, ['remote_store_id' => 'st-1']) && count($http->calls) === 1 && $http->calls[0][0] === 'GET', 'Pending with a remote ID: only GET, never POST');
 foreach ([
     'created' => [[$r(200, ['id' => 'st-1', 'name' => $name])], O::DONE, null, ['remote_store_id' => 'st-1']],
     'malformed' => [[$r(200, ['name' => $name])], O::RECONCILE, 'store_response_malformed', []],
@@ -155,7 +168,9 @@ $http->reset([]);
 check($is($apps->create(array_replace($psnap, ['remote_store_id' => null]), $newKey), O::PENDING, 'store_not_ready')
     && $is($apps->create(array_replace($psnap, ['remote_store_id' => '../x']), $newKey), O::PENDING, 'store_not_ready') && $http->calls === [], 'App: store not synced (or bad id) -> pending, no call');
 foreach ([
-    'created' => [[$r(200, ['id' => 'app-1', 'appName' => $appName])], O::DONE, null, ['remote_app_id' => 'app-1']],
+    'created' => [[$r(200, ['id' => 'app-1', 'appName' => $appName, 'appType' => 'PointOfSale'])], O::DONE, null, ['remote_app_id' => 'app-1']],
+    'created but Crowdfund' => [[$r(200, ['id' => 'app-1', 'appName' => $appName, 'appType' => 'Crowdfund'])], O::RECONCILE, 'app_response_malformed', []],
+    'created without type' => [[$r(200, ['id' => 'app-1', 'appName' => $appName])], O::RECONCILE, 'app_response_malformed', []],
     '500' => [[$r(500)], O::RECONCILE, 'app_outcome_unknown', []],
     'unknown' => [[$unknown], O::RECONCILE, 'app_outcome_unknown', []],
     '403' => [[$r(403)], O::FAILED, 'merchant_key_denied', []],
@@ -164,11 +179,15 @@ foreach ([
     check($is($apps->create($psnap, $newKey), $kind, $code, $data) && count($http->calls) === 1, "App create $label -> $kind");
 }
 check($http->calls[0][1] === '/api/v1/stores/st-1/apps/pos' && $http->calls[0][2] === ['appName' => $appName], 'App POST in the linked store with the marker name');
-$http->reset([$r(200, [['id' => 'app-7', 'appName' => $appName], ['id' => 'app-8', 'appName' => 'Altra']])]);
+$http->reset([$r(200, [['id' => 'app-6', 'appName' => $appName, 'appType' => 'Crowdfund'], ['id' => 'app-7', 'appName' => $appName, 'appType' => 'PointOfSale'], ['id' => 'app-8', 'appName' => 'Altra', 'appType' => 'PointOfSale']])]);
 check($is($apps->create(array_replace($psnap, ['in_flight' => true]), $newKey), O::DONE, null, ['remote_app_id' => 'app-7']) && count($http->calls) === 1
     && $http->calls[0][0] === 'GET' && $http->calls[0][1] === '/api/v1/stores/st-1/apps', 'Uncertain app: only GET of the store apps, unique marker adopted');
 $http->reset([$r(200, [])]);
 check($is($apps->reconcile($psnap, $newKey), O::RECONCILE, 'app_not_found'), 'Zero apps: stays in reconciliation');
+$http->reset([$r(200, [['id' => 'app-6', 'appName' => $appName, 'appType' => 'Crowdfund']])]);
+check($is($apps->reconcile($psnap, $newKey), O::RECONCILE, 'app_not_found'), 'A non-POS app with the marker is never adopted');
+$http->reset([]);
+check($is($apps->create(array_replace($psnap, ['state' => 'suspended', 'remote_app_id' => 'app-old']), $newKey), O::FAILED, 'link_suspended') && $http->calls === [], 'Suspended app with an old ID is not done');
 
 // --- Input e segreti
 foreach ([fn() => $account->createUser('evil@example.invalid', $pw, $prov), fn() => $account->createKey($email, $pw, 'xyz', 1), fn() => $stores->create(['state' => 'pending', 'marker' => 'x'], $newKey)] as $bad) {
