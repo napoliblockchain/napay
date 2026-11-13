@@ -149,10 +149,13 @@ $t += 31;
 $job = $b->claim($i5);
 check($job['id'] === $c && $job['attempts'] === 2 && $row($c)['lease_owner'] === $ownerB, 'Due retry claimed again with a new attempt');
 $v = $b->retryLater($c, $job['version'], 'retry_after_long', $t + 90000, true);
-check($row($c)['state'] === 'deferred' && $b->claim($i5) === null, 'Deferred job waits for its time');
+check($row($c)['state'] === 'deferred' && $b->claim($i5) === null, 'Deferred job not claimed before its time');
 $t += 90001;
+$before = $row($c);
+check($a->claim($i5) === null && $b->claim($i5) === null && $row($c) === $before, 'Due deferred job never claimed automatically (admin only)');
+$failing = $insert($i5);
 $job = $a->claim($i5);
-check($job['id'] === $c && $a->fail($c, $job['version'], 'remote_rejected') === $job['version'] + 1 && $row($c)['state'] === 'failed' && $row($c)['lease_owner'] === null, 'Deferred job claimed when due; definitive failure recorded');
+check($job['id'] === $failing && $a->fail($failing, $job['version'], 'remote_rejected') === $job['version'] + 1 && $row($failing)['state'] === 'failed' && $row($failing)['lease_owner'] === null, 'Definitive failure recorded, lease released');
 check($a->claim($i5) === null, 'Failed job never claimed again');
 
 // --- Esito tardivo: lease scaduta senza checkpoint, ripresa da un altro worker ---
@@ -183,6 +186,18 @@ $marked = [
     'pending' => $insert($i8, ['in_flight_op' => 'create_pos_app', 'in_flight_started_at' => $t - 5, 'in_flight_owner' => $ownerA]),
     'retry_wait' => $insert($i8, ['state' => 'retry_wait', 'next_attempt_at' => $t + 1000, 'in_flight_op' => 'revoke_api_key', 'in_flight_started_at' => $t - 5, 'in_flight_owner' => $ownerA]),
 ];
+// RV2: marker con lease ancora valida -> owner attivo preservato; solo dopo la scadenza riconciliazione.
+$i11 = $instance();
+$leased = [
+    'pending' => $insert($i11, ['lease_owner' => $ownerA, 'lease_until' => $t + 30, 'in_flight_op' => 'create_store', 'in_flight_started_at' => $t, 'in_flight_owner' => $ownerA]),
+    'retry_wait' => $insert($i11, ['state' => 'retry_wait', 'lease_owner' => $ownerA, 'lease_until' => $t + 30, 'in_flight_op' => 'create_pos_app', 'in_flight_started_at' => $t, 'in_flight_owner' => $ownerA]),
+];
+$snapshot = array_map($row, $leased);
+check($b->claim($i11) === null && array_map($row, $leased) === $snapshot, 'Marker with a live lease left untouched, owner preserved');
+$t += 31;
+check($b->claim($i11) === null, 'Expired marked jobs not handed to another worker');
+foreach ($leased as $state => $id) check($row($id)['state'] === 'reconcile_required' && $row($id)['lease_owner'] === null && $row($id)['in_flight_owner'] === $ownerA, 'Expired marker in ' . $state . ' sent to reconciliation');
+check($a->claim($i11) === null && $b->claim($i11) === null, 'No new claim after reconciliation');
 check($b->claim($i8) === null, 'Jobs carrying an in-flight marker are never claimed');
 foreach ($marked as $state => $id) check($row($id)['state'] === 'reconcile_required', 'In-flight marker with state ' . $state . ' sent to reconciliation');
 $i9 = $instance(); $live = $insert($i9);
