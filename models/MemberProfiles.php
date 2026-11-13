@@ -24,15 +24,55 @@ use Yii;
  */
 class MemberProfiles extends \yii\db\ActiveRecord
 {
+    public const SCENARIO_PROFILE_UPDATE = 'profile-update';
+
+    public function scenarios()
+    {
+        $scenarios = parent::scenarios();
+        $scenarios[self::SCENARIO_PROFILE_UPDATE] = [
+            'association_role_id', '!is_corporate', 'denomination', 'vat', 'address', 'cap', 'city', 'country',
+        ];
+        return $scenarios;
+    }
+
     public function rules()
     {
         return [
             [['denomination', 'vat', 'address', 'cap', 'city', 'country'], 'filter', 'filter' => static fn($v) => is_string($v) && trim($v) !== '' ? trim($v) : null],
+            [['is_corporate'], 'required'],
             [['is_corporate'], 'boolean'],
+            [['is_corporate'], 'validateImmutableType', 'skipOnEmpty' => false],
             [['denomination', 'vat', 'address', 'cap', 'city', 'country'], 'string', 'max' => 250],
             [['association_role_id'], 'exist', 'skipOnEmpty' => true, 'targetClass' => AssociationRoles::class, 'targetAttribute' => 'id'],
-            [['denomination'], 'required', 'when' => fn($m) => (int) $m->is_corporate === 1],
+            [['denomination'], 'required', 'when' => fn($m) => (int) $m->is_corporate === 1,
+                'whenClient' => 'function (attribute, value) { var type = document.getElementById("member-profile-type"); return type !== null && type.getAttribute("data-is-corporate") === "1"; }'],
         ];
+    }
+
+    public function validateImmutableType($attribute): void
+    {
+        if (!$this->isNewRecord && !$this->hasUnchangedType()) {
+            $this->addError($attribute, Yii::t('app', 'Il tipo PF/PG non è modificabile dopo la registrazione.'));
+        }
+    }
+
+    public function beforeSave($insert)
+    {
+        // Enforce immutable type even when a caller skips validation.
+        if ((!$insert && !$this->hasUnchangedType())
+            || !in_array($this->is_corporate, [0, 1, '0', '1', false, true], true)) {
+            $this->addError('is_corporate', Yii::t('app', 'Il tipo PF/PG non è modificabile dopo la registrazione.'));
+            return false;
+        }
+        return parent::beforeSave($insert);
+    }
+
+    private function hasUnchangedType(): bool
+    {
+        $old = $this->getOldAttribute('is_corporate');
+        return in_array($old, [0, 1, '0', '1', false, true], true)
+            && in_array($this->is_corporate, [0, 1, '0', '1', false, true], true)
+            && (int)$old === (int)$this->is_corporate;
     }
 
     public function attributeLabels()

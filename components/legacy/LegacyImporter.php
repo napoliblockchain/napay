@@ -108,8 +108,12 @@ final class LegacyImporter
                 'first_name' => trim((string) $row['name']), 'last_name' => trim((string) $row['surname']),
                 'privilege_id' => $privileges[self::PRIVILEGE_LEVELS[$type]], 'is_merchant' => $type === 2 ? 1 : 0, 'is_active' => $active,
             ];
-            $profile = Db::rows($target, 'SELECT id, user_id, user_imported FROM member_profiles WHERE legacy_user_id=?', [$row['id_user']])[0] ?? null;
+            $corporate = (string)$row['corporate'] === '1' ? 1 : 0;
+            $profile = Db::rows($target, 'SELECT id, user_id, user_imported, is_corporate FROM member_profiles WHERE legacy_user_id=?', [$row['id_user']])[0] ?? null;
             if ($profile) {
+                if ((string)$profile['is_corporate'] !== (string)$corporate) {
+                    throw new LegacyImportException('Legacy member type differs from the registered profile; automatic conversion refused.');
+                }
                 $userId = (int) $profile['user_id'];
                 if ($profile['user_imported'] === '1') {
                     self::update($target, 'users', $fields, 'id', $userId);
@@ -134,12 +138,12 @@ final class LegacyImporter
                     $imported = 1;
                     $users['created']++;
                 }
-                $profileId = self::insert($target, 'member_profiles', ['user_id' => $userId, 'legacy_user_id' => (int) $row['id_user'], 'user_imported' => $imported]);
+                $profileId = self::insert($target, 'member_profiles', ['user_id' => $userId, 'legacy_user_id' => (int) $row['id_user'], 'user_imported' => $imported, 'is_corporate'=>$corporate]);
                 $profile = ['id' => $profileId];
             }
             self::update($target, 'member_profiles', [
                 'legacy_user_type' => $type, 'association_role_id' => $roles[(int) $row['id_carica']] ?? null,
-                'is_corporate' => (string) $row['corporate'] === '1' ? 1 : 0, 'denomination' => self::text($row['denomination']),
+                'denomination' => self::text($row['denomination']),
                 'vat' => self::text($row['vat']), 'address' => self::text($row['address']), 'cap' => self::text($row['cap']),
                 'city' => self::city($row['city'], $comuni), 'country' => self::text($row['country']),
             ], 'id', (int) $profile['id']);

@@ -112,6 +112,16 @@ check(one($db, 'SELECT file_sha256 FROM assembly_minutes WHERE legacy_id=1')['fi
 
 $before = digest();
 $again = import();
+foreach ([11=>['0','1'], 12=>['1','0']] as $legacyUserId=>[$originalType,$changedType]) {
+    $typeBefore = digest();
+    $legacy->prepare('UPDATE np_users SET corporate=? WHERE id_user=?')->execute([$changedType,$legacyUserId]);
+    try {
+        rejected(fn()=>import(), 'Legacy cannot convert registered PF/PG: ' . $legacyUserId);
+        check(digest() === $typeBefore, 'Rejected member type conversion rolls back the entire import');
+    } finally {
+        $legacy->prepare('UPDATE np_users SET corporate=? WHERE id_user=?')->execute([$originalType,$legacyUserId]);
+    }
+}
 check($again['users']['created'] === 0 && $again['users']['updated'] === 4 && $again['payments']['imported'] === 5, 'second run updates in place');
 check(digest() === $before, 'second run is idempotent (no changes, no duplicates)');
 check(import(null)['minutes']['files_missing'] === 1 && one($db, 'SELECT file_content FROM assembly_minutes WHERE legacy_id=1')['file_content'] !== null, 'stored file kept when the folder is no longer mounted');
@@ -134,6 +144,10 @@ check(true, 'next import restores legacy-authoritative values');
 
 $payments = one($db, 'SELECT COUNT(*) AS total FROM membership_payments')['total'];
 $before = digest();
+// Reproduce a pre-R2 corrupt fixture only in this disposable DB, then restore the UNIQUE index.
+if (one($db, 'SELECT DATABASE() AS name')['name'] !== 'napay_test_bootstrap') exit(1);
+$db->exec('ALTER TABLE users DROP INDEX `uq-users-email-normalized`');
+try {
 $db->exec("INSERT INTO users (username,email,password,first_name,last_name,oauth_provider,oauth_uid,authKey,accessToken,picture,privilege_id,is_merchant,is_active) SELECT 'twin-1', 'twin@example.invalid', password, first_name, last_name, oauth_provider, oauth_uid, authKey, accessToken, picture, privilege_id, is_merchant, is_active FROM users WHERE email='linked@example.invalid'");
 $db->exec("INSERT INTO users (username,email,password,first_name,last_name,oauth_provider,oauth_uid,authKey,accessToken,picture,privilege_id,is_merchant,is_active) SELECT 'twin-2', 'twin@example.invalid', password, first_name, last_name, oauth_provider, oauth_uid, authKey, accessToken, picture, privilege_id, is_merchant, is_active FROM users WHERE email='linked@example.invalid'");
 $twins = digest();
@@ -141,9 +155,12 @@ $legacy->exec("INSERT INTO np_users VALUES (17,5,5,'twin@example.invalid','x',NU
 $legacy->exec("INSERT INTO st_pagamenti VALUES (108,17,1,2023,11,20,2,'2023-04-01','2023-01-01','2023-12-31','x','0','paid')");
 rejected(fn() => import(), 'ambiguous v2 email blocks the import');
 check(digest() === $twins && one($db, 'SELECT COUNT(*) AS total FROM membership_payments')['total'] === $payments, 'failed import rolled back completely');
-$legacy->exec('DELETE FROM np_users WHERE id_user=17');
-$legacy->exec('DELETE FROM st_pagamenti WHERE id_pagamento=108');
-$db->exec("DELETE FROM users WHERE email='twin@example.invalid'");
+} finally {
+    $legacy->exec('DELETE FROM np_users WHERE id_user=17');
+    $legacy->exec('DELETE FROM st_pagamenti WHERE id_pagamento=108');
+    $db->exec("DELETE FROM users WHERE username IN ('twin-1','twin-2') AND email='twin@example.invalid'");
+    $db->exec('ALTER TABLE users ADD UNIQUE INDEX `uq-users-email-normalized` (email_normalized)');
+}
 check(digest() === $before, 'fixture restored after ambiguity case');
 
 $legacy->exec("INSERT INTO np_users_type VALUES (7,'Altro','0','x')");

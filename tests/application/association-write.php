@@ -56,9 +56,17 @@ function post($path, array $fields, $formPage = null) {
 }
 function userId($role) { global $db; return (int) $db->createCommand('SELECT id FROM users WHERE username=:u', [':u' => 'runtime-' . $role])->queryScalar(); }
 function scalar($sql, array $p = []) { global $db; return $db->createCommand($sql, $p)->queryScalar(); }
+function profileEditUrl(string $email): string {
+    $list = request('/association/members?' . http_build_query(['MembersSearch'=>['q'=>$email]]));
+    $member = request(href($list, '//a[contains(@href,"/association/member?id=")]/@href'));
+    return href($member, '//a[contains(@href,"member-update")]/@href');
+}
 $pdf = tempnam('/tmp', 'napay-pdf-'); file_put_contents($pdf, "%PDF-1.4\n1 0 obj << /Type /Catalog >> endobj\ntrailer << /Root 1 0 R >>\n%%EOF\n");
 $fake = tempnam('/tmp', 'napay-fake-'); file_put_contents($fake, "<?php echo 'not a pdf';");
 $png = tempnam('/tmp', 'napay-png-'); file_put_contents($png, base64_decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg=='));
+// Types originate from registration/import, never from the profile editor.
+$db->createCommand()->insert('member_profiles', ['user_id'=>userId('user'), 'is_corporate'=>0])->execute();
+$db->createCommand()->insert('member_profiles', ['user_id'=>userId('merchant'), 'is_corporate'=>1, 'denomination'=>'PG fixture'])->execute();
 
 try {
     // accessi
@@ -153,11 +161,44 @@ try {
 
     // profilo socio
     $profileUrl = href($memberPage, '//a[contains(@href,"member-update")]/@href');
-    check(post($profileUrl, ['MemberProfiles' => ['is_corporate' => 1, 'denomination' => '']])['status'] === 200, 'Company profile requires a denomination');
-    check(post($profileUrl, ['MemberProfiles' => ['association_role_id' => $roleId, 'is_corporate' => 1, 'denomination' => 'Ditta Test', 'city' => 'Napoli (NA)', 'user_id' => userId('admin'), 'legacy_user_id' => 5]])['status'] === 302, 'Member profile saved');
+    $profileForm = request($profileUrl);
+    check(xp($profileForm)->query('//input[@name="MemberProfiles[is_corporate]"]')->length === 0, 'Even administrator has no editable member type input');
+    check(xp($profileForm)->query('//*[@id="member-profile-type" and @data-is-corporate="0"]')->length === 1, 'PF type displayed read-only');
+    check(str_contains($profileForm['body'], 'type.getAttribute'), 'Client required validator uses immutable displayed type');
+    foreach (['', '   '] as $emptyDenomination) {
+        check(post($profileUrl, ['MemberProfiles'=>['denomination'=>$emptyDenomination]])['status'] === 302, 'PF accepts an empty denomination');
+        $savedPf = $db->createCommand('SELECT is_corporate, denomination FROM member_profiles WHERE user_id=:u', [':u'=>userId('user')])->queryOne();
+        check((int)$savedPf['is_corporate'] === 0 && $savedPf['denomination'] === null, 'PF blank denomination stored as null');
+    }
+    $pgUrl = profileEditUrl('merchant@example.invalid');
+    check(post($pgUrl, ['MemberProfiles'=>['denomination'=>'']])['status'] === 200, 'PG requires a denomination without relying on JavaScript');
+    check(post($pgUrl, ['MemberProfiles'=>['denomination'=>'   ']])['status'] === 200, 'PG whitespace denomination rejected server-side');
+    check(post($profileUrl, ['MemberProfiles'=>['is_corporate'=>1, 'denomination'=>'Forged PG']])['status'] === 400, 'Administrator cannot change PF to PG');
+    check(post($pgUrl, ['MemberProfiles'=>['is_corporate'=>0, 'denomination'=>'']])['status'] === 400, 'Administrator cannot change PG to PF');
+    check(post($pgUrl, ['MemberProfiles'=>['is_corporate'=>['0']]])['status'] === 400, 'Malformed posted type rejected');
+    check(scalar('SELECT denomination FROM member_profiles WHERE user_id=:u', [':u'=>userId('merchant')]) === 'PG fixture', 'Rejected PG changes preserve the existing denomination');
+    $unclassifiedUrl = profileEditUrl('other@example.invalid');
+    check(request($unclassifiedUrl)['status'] === 404, 'Editor cannot invent a PF profile for an unclassified account');
+    foreach (['user'=>1, 'merchant'=>0] as $typeOwner=>$changedType) {
+        $model = app\models\MemberProfiles::findOne(['user_id'=>userId($typeOwner)]);
+        $model->is_corporate = $changedType;
+        check(!$model->validate(['is_corporate']) && $model->hasErrors('is_corporate'), 'Model validation denies member type conversion: ' . $typeOwner);
+        check(!$model->save(false), 'Skipping validation cannot change member type: ' . $typeOwner);
+    }
+    foreach (['user', 'merchant', 'operator'] as $profileActor) {
+        login($profileActor);
+        check(request($profileUrl)['status'] === 403, 'Non-admin cannot see corporate checkbox: ' . $profileActor);
+        check(post($profileUrl, ['MemberProfiles'=>['is_corporate'=>1, 'denomination'=>'Forbidden PG']])['status'] === 403, 'Non-admin cannot change member type with crafted POST: ' . $profileActor);
+    }
+    login('admin');
+    $profileUrl = profileEditUrl('user@example.invalid');
+    $pgUrl = profileEditUrl('merchant@example.invalid');
+    check((int)scalar('SELECT is_corporate FROM member_profiles WHERE user_id=:u', [':u'=>userId('user')]) === 0, 'Rejected PG posts leave PF unchanged');
+    check(post($profileUrl, ['MemberProfiles' => ['association_role_id' => $roleId, 'denomination' => '', 'city' => 'Napoli (NA)', 'user_id' => userId('admin'), 'legacy_user_id' => 5]])['status'] === 302, 'PF profile details saved without changing type');
     $profile = $db->createCommand('SELECT * FROM member_profiles WHERE user_id=:u', [':u' => userId('user')])->queryOne();
     check($profile && (int) $profile['association_role_id'] === $roleId && $profile['legacy_user_id'] === null, 'Profile saved for the URL user; user_id and legacy id not assignable');
     check(post($profileUrl, ['MemberProfiles' => ['association_role_id' => 999999]])['status'] === 200, 'Unknown role rejected');
+    check(post($pgUrl, ['MemberProfiles'=>['denomination'=>'PG aggiornata']])['status'] === 302, 'PG denomination remains editable without changing type');
 
     // verbali: solo PDF veri
     $minuteForm = request('/association/minute-create');

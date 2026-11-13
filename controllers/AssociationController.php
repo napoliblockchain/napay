@@ -254,9 +254,17 @@ class AssociationController extends Controller
         self::ensureWritable();
         $user = Users::findOne($this->decodeId($id));
         if ($user === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
-        $profile = MemberProfiles::findOne(['user_id' => $user->id]) ?? new MemberProfiles(['user_id' => $user->id]);
+        $profile = MemberProfiles::findOne(['user_id' => $user->id]);
+        if ($profile === null || !in_array((string)$profile->is_corporate, ['0', '1'], true)) {
+            throw new NotFoundHttpException(Yii::t('app', 'Profilo socio non disponibile.'));
+        }
+        $profile->scenario = MemberProfiles::SCENARIO_PROFILE_UPDATE;
+        $submitted = Yii::$app->request->post('MemberProfiles');
+        if (is_array($submitted) && array_key_exists('is_corporate', $submitted)) {
+            throw new BadRequestHttpException(Yii::t('app', 'Il tipo PF/PG non è modificabile dopo la registrazione.'));
+        }
         // solo campi del profilo: user_id e collegamenti legacy non sono modificabili dal form
-        if ($profile->load(Yii::$app->request->post(), 'MemberProfiles') && $profile->save(true, ['association_role_id', 'is_corporate', 'denomination', 'vat', 'address', 'cap', 'city', 'country', 'user_id'])) {
+        if ($profile->load(Yii::$app->request->post(), 'MemberProfiles') && $profile->save(true, ['association_role_id', 'denomination', 'vat', 'address', 'cap', 'city', 'country'])) {
             Yii::$app->session->setFlash('success', Yii::t('app', 'Profilo socio aggiornato.'));
             return $this->redirect(['member', 'id' => Crypt::encrypt($user->id)]);
         }

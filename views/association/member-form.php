@@ -21,8 +21,11 @@ $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
         <?php $form = ActiveForm::begin(['id' => 'member-form']); ?>
         <div class="row">
             <div class="col-md-4"><?= $form->field($profile, 'association_role_id')->dropDownList($roles, ['prompt' => Yii::t('app', 'Nessuna')]) ?></div>
-            <div class="col-md-2 pt-4"><?= $form->field($profile, 'is_corporate')->checkbox() ?></div>
-            <div class="col-md-6"><?= $form->field($profile, 'denomination')->textInput(['maxlength' => 250]) ?></div>
+            <div class="col-md-2">
+                <div class="form-label"><?= Html::encode(Yii::t('app', 'Persona')) ?></div>
+                <div class="form-control-plaintext" id="member-profile-type" data-is-corporate="<?= (int)$profile->is_corporate ?>"><?= Html::encode(Yii::t('app', (int)$profile->is_corporate === 1 ? 'Giuridica' : 'Fisica')) ?></div>
+            </div>
+            <div class="col-md-6"><?= $form->field($profile, 'denomination')->textInput(['maxlength' => 250])->hint(Yii::t('app', 'Obbligatoria solo per le persone giuridiche.')) ?></div>
             <div class="col-md-4"><?= $form->field($profile, 'vat')->textInput(['maxlength' => 250]) ?></div>
             <div class="col-md-8"><?= $form->field($profile, 'address')->textInput(['maxlength' => 250]) ?></div>
             <div class="col-md-2"><?= $form->field($profile, 'cap')->textInput(['maxlength' => 250]) ?></div>
