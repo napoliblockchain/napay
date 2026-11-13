@@ -4,8 +4,8 @@ set -euo pipefail
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
 source "$root/docker/private-inputs.sh"
 [[ ! -e $root/.env && ! -L $root/.env ]] || { echo 'Role separation requires an external environment file, not repository .env.' >&2; exit 1; }
-[[ $# -le 2 && ( ${2:-} == '' || ${2:-} == --check ) ]] || { echo 'Usage: docker/up.sh [env-file] [--check]' >&2; exit 1; }
-env_file=${1:-$root/.env}
+[[ $# -ge 1 && $# -le 2 && ( ${2:-} == '' || ${2:-} == --check ) ]] || { echo 'Usage: docker/up.sh env-file [--check]' >&2; exit 1; }
+env_file=$1
 napay_private_input "$env_file" file
 export NAPAY_ENV_FILE="$env_file"
 compose=(docker compose --project-directory "$root" --env-file "$env_file" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml")

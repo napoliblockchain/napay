@@ -10,7 +10,13 @@ function localCheck(bool $condition): void {
 }
 $services = $config['services'];
 $names = array_keys($services); sort($names);
-localCheck($names === ['bootstrap', 'egress', 'mysql', 'web']);
+$roles = ($services['web']['environment']['NAPAY_DB_ROLE_MODE'] ?? '') === 'true';
+localCheck($names === ($roles ? ['bootstrap', 'egress', 'mysql', 'web', 'worker-db-check'] : ['bootstrap', 'egress', 'mysql', 'web']));
+if ($roles) {
+    localCheck(empty($services['web']['secrets']) && empty($services['web']['environment']['NAPAY_WEB_DB_PASSWORD']));
+    localCheck(array_keys($services['worker-db-check']['networks']) === ['database']);
+    localCheck(array_column($services['worker-db-check']['secrets'], 'source') === ['napay_db_worker_password']);
+}
 localCheck(empty($services['web']['ports']) && empty($services['mysql']['ports']));
 localCheck($config['networks']['database']['internal'] === true);
 // browser network: internal, created outside Compose (start-localhost.sh / local.sh), shared only with napay-gateway

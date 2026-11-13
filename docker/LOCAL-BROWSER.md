@@ -35,6 +35,35 @@ Non cancellare questi file per recuperare credenziali: il volume DB persiste.
 Il provisioning verifica l'identita locale gia presente senza cambiarne password.
 Nessuna password viene stampata nei log o salvata nel repository.
 
+### Preparazione ruoli DB v2
+
+Il nuovo launcher usa sempre l'overlay `docker-compose.roles.yml`. Prima
+installazione: genera anche `migrator-password` e `worker-password` nella
+cartella privata, con esclusioni Git locali prima della scrittura. Web vede
+solo la propria password; bootstrap vede root/migrator/worker; il controllo
+worker vede soltanto il proprio secret. Tutti i file 0600, directory 0700.
+
+Sandbox gia esistente: dopo backup verificato e integrazione del codice,
+con MySQL avviato, preparare una volta (non avvia o migra servizi):
+
+```sh
+NAPAY_LOCAL_STATE=/percorso/privato/ambiente-locale bash docker/local.sh prepare-roles
+NAPAY_LOCAL_STATE=/percorso/privato/ambiente-locale bash docker/local.sh check
+```
+
+La preparazione verifica che gli account dedicati non esistano prima di
+generare segreti e aggiungere i quattro riferimenti a `local.env`. Se account
+gia presenti senza file originali, stato parziale o secret mancante: blocco,
+mai rigenerazione/reset. Ripetere su stato completo verifica soltanto.
+L'avvio effettivo resta `bash ../start-localhost.sh`: attende MySQL healthy,
+esegue bootstrap/migrazioni col migrator e avvia web dopo il completamento.
+Fermare gli writer prima dell'upgrade; mantenere backup e vecchi file privati.
+Questo codice e collaudato su stack usa-e-getta, non attiva da solo la sandbox.
+
+Test host: `bash tests/docker/launcher.sh` (23 controlli),
+`bash tests/docker/local-launcher.sh` (17). Compose e PHP reali, operazioni
+persistenti intercettate; la suite MySQL prova anche la verifica account reale.
+
 ## HTTPS locale
 
 Caddy (`napay-gateway`) genera e rinnova certificati automaticamente; CA e chiavi

@@ -35,6 +35,16 @@ compose up -d --wait --wait-timeout 180 mysql
 container=$(compose ps -q mysql)
 [ "$(docker inspect --format '{{len .HostConfig.PortBindings}}' "$container")" = 0 ]
 printf '%s\n' 'PASS: MySQL has no host port bindings.'
+tool role-accounts-free
+printf '%s\n' 'PASS: role preparation accepts absent dedicated accounts.'
+printf "CREATE USER 'napay_migrator'@'%%' IDENTIFIED BY 'fixture-not-a-production-password';\n" | tool restore --confirm-empty-target
+if tool role-accounts-free 2>"$work/refused"; then
+    printf '%s\n' 'FAIL: role preparation accepted an existing account without its original secret.' >&2; exit 1
+fi
+grep -q 'recover original secret files' "$work/refused"
+printf '%s\n' 'PASS: role preparation refuses existing accounts without rotating credentials.'
+printf "DROP USER 'napay_migrator'@'%%';\n" | tool restore --confirm-empty-target
+tool role-accounts-free
 
 if compose exec -T -e MYSQL_DATABASE=invalid-name mysql sh /opt/napay/mysql-tools.sh inventory 2>"$work/refused"; then
     printf '%s\n' 'FAIL: tool accepted an unsafe database identifier.' >&2; exit 1
