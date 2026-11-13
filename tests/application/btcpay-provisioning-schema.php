@@ -78,6 +78,23 @@ check($rejected && $db->schema->getTableSchema('btcpay_provisioning_jobs', true)
 $db->createCommand('ALTER TABLE btcpay_store_links DROP COLUMN drift')->execute();
 $run();
 check($before === $shape(), 'Partial DDL resumed to the exact schema');
+// RV1: i letterali contano byte per byte (spazi, backslash). Ogni deriva rifiutata prima di qualunque DDL, poi replay valido.
+$marker = static fn(string $state) => "ALTER TABLE btcpay_merchant_credentials MODIFY current_marker TINYINT GENERATED ALWAYS AS (CASE WHEN state = " . $db->quoteValue($state) . ' THEN 1 END) STORED NULL';
+$email = static fn(string $domain) => 'ALTER TABLE btcpay_merchant_accounts DROP CHECK `ck-btcpay-accounts-email`, ADD CONSTRAINT `ck-btcpay-accounts-email` CHECK (technical_email = CONCAT(' . "'m-', ref, " . $db->quoteValue($domain) . '))';
+$kekRegex = static fn(string $regex) => 'ALTER TABLE btcpay_merchant_credentials DROP CHECK `ck-btcpay-credentials-kek`, ADD CONSTRAINT `ck-btcpay-credentials-kek` CHECK (kek_version IS NULL OR REGEXP_LIKE(kek_version, ' . $db->quoteValue($regex) . ", 'c'))";
+foreach ([
+    'Current marker literal with space' => [$marker('cur rent'), $marker('current')],
+    'E-mail domain with space' => [$email('@btcpay-merchants.jamprojects .it'), $email('@btcpay-merchants.jamprojects.it')],
+    'KEK regex with space' => [$kekRegex('^[A-Za-z0-9_ -]{1,64}$'), $kekRegex('^[A-Za-z0-9_-]{1,64}$')],
+    'KEK regex with backslash' => [$kekRegex('^[A-Za-z0-9_\\-]{1,64}$'), $kekRegex('^[A-Za-z0-9_-]{1,64}$')],
+] as $label => [$break, $restore]) {
+    $db->createCommand('DROP TABLE btcpay_provisioning_jobs')->execute();
+    $db->createCommand($break)->execute();
+    $rejected = refused($run) && $db->schema->getTableSchema('btcpay_provisioning_jobs', true) === null;
+    $db->createCommand($restore)->execute();
+    $run();
+    check($rejected && $before === $shape(), 'Literal drift refused before DDL, exact schema accepted again: ' . $label);
+}
 ob_start(); $denied = (new m261113_120000_create_btcpay_provisioning_schema(['db' => $db, 'compact' => true]))->down(); ob_end_clean();
 check($denied === false, 'Destructive rollback disabled');
 
