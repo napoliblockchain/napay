@@ -9,7 +9,7 @@ use kartik\tabs\TabsX;
 /* @var $this yii\web\View */
 /* @var $model app\models\Commercianti */
 
-$this->title = sprintf('Dettaglio Esercente - ID: %s', $model->id);
+$this->title = Yii::t('app', 'Azienda') . ': ' . $model->description;
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Esercenti'), 'url' => User::isAdministrator() ? ['index'] : ''];
 $this->params['breadcrumbs'][] = $this->title;
 
@@ -20,12 +20,12 @@ $this->params['breadcrumbs'][] = $this->title;
         <div class="col-lg-8">
             <div class="commercianti-view">
                 <?= app\widgets\Alert::widget() ?>
-                <div class="card card-outline card-primary">
+                <div class="card">
                     <div class="card-header">
-                        <div class="d-flex flex-row">
-                            <h3><?= Html::encode($this->title) ?></h3>
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                            <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
                             <?php if (User::isAdministrator()) : ?>
-                                <div class="ml-auto">
+                                <div class="ms-auto">
                                     <?= Html::a('<button type="button" class="btn btn-warning">
                                         <i class="fas fa-plus"></i> ' . Yii::t('app', 'Nuovo esercente') . '
                                         </button>', ['create']) ?>
@@ -57,12 +57,12 @@ $this->params['breadcrumbs'][] = $this->title;
 
                     </div>
                     <div class="card-footer">
-                        <div class="d-flex flex-row">
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
                             <div>
                                 <?= Html::a('<i class="fas fa-pen"></i> ' . Yii::t('app', 'Modifica'), ['update', 'id' => Crypt::encrypt($model->id)], ['class' => 'btn btn-primary']) ?>
                             </div>
                             <?php if (User::isAdministrator()) : ?>
-                                <div class="ml-auto">
+                                <div class="ms-auto">
                                     <?= Html::a('<i class="fas fa-trash"></i> ' . Yii::t('app', 'Elimina'), ['delete', 'id' => Crypt::encrypt($model->id)], [
                                         'class' => 'btn btn-danger',
                                         'data' => [

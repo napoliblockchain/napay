@@ -2,7 +2,7 @@
 
 use yii\helpers\Html;
 use yii\helpers\Url;
-use yii\grid\GridView;
+use app\widgets\TablerGridView as GridView;
 use app\components\Crypt;
 use app\components\User;
 use yii\bootstrap5\ActiveForm;
@@ -32,28 +32,26 @@ $status_list = ['Attivo', 'Disabilitato'];
                         <button type="button" class="btn-close" data-bs-dismiss="alert" aria-label="Close"></button>
                     </div>
                 <?php endif; ?>
-                <div class="card card-outline card-primary">
+                <div class="card">
                     <div class="card-header">
-                        <div class="d-flex flex-row">
-                            <h3><?= Html::encode($this->title) ?></h3>
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                            <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
 
                             <?php if (User::can(40)) : ?>
-                                <div class="ml-auto p-1">
-                                    <?= Html::a('<button type="button" class="btn btn-warning">
-                                        <i class="fas fa-plus"></i> ' . Yii::t('app', 'Nuovo Pos') . '
-                                        </button>', ['create']) ?>
+                                <div class="ms-auto p-1">
+                                    <?= Html::a('<i class="fas fa-plus"></i> ' . Yii::t('app', 'Nuovo Pos'), ['create'], ['class' => 'btn btn-primary']) ?>
                                 </div>
                             <?php endif; ?>
                             
-                                <div class="<?= (User::can(40)) ? '' : 'ml-auto' ?> p-1">
+                                <div class="<?= (User::can(40)) ? '' : 'ms-auto' ?> p-1">
                                     <?php $form = ActiveForm::begin([
                                         'id' => 'export-form',
                                         'action' => ['export'],
                                         'method' => 'post',
                                     ]); ?>
-                                    <input type='hidden' name='queryParams' value='<?= $queryParams ?>' />
+                                    <?= Html::hiddenInput('queryParams', $queryParams) ?>
 
-                                    <?= Html::submitButton('<i class="fas fa-file-excel mr-1"></i>' . Yii::t('app', 'Esporta'), [
+                                    <?= Html::submitButton('<i class="fas fa-file-excel me-1"></i>' . Yii::t('app', 'Esporta'), [
                                         'class' => 'btn btn-success',
                                         'target' => '_blank'
                                     ]) ?>
@@ -62,7 +60,7 @@ $status_list = ['Attivo', 'Disabilitato'];
                             
                         </div>
                     </div>
-                    <div class="card-body table-responsive">
+                    <div class="card-body p-0">
                         <?= GridView::widget([
                             'dataProvider' => $dataProvider,
                             'filterModel' => $searchModel,
@@ -94,7 +92,7 @@ $status_list = ['Attivo', 'Disabilitato'];
                                             $url = Url::to(['view', 'id' => Crypt::encrypt($model->id)]);
                                             return Html::a('<i class="fa fa-eye"></i>', $url, [
                                                 'title' => Yii::t('app', 'Dettagli'),
-                                                'class' => 'btn btn-sm btn-default',
+                                                'class' => 'btn btn-sm btn-outline-secondary',
                                             ]);
                                         },
 

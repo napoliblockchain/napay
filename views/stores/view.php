@@ -7,7 +7,7 @@ use app\components\User;
 /* @var $this yii\web\View */
 /* @var $model app\models\Stores */
 
-$this->title = sprintf(Yii::t('app', 'Store ID: ') . '%s', $model->id);
+$this->title = Yii::t('app', 'Negozio') . ': ' . $model->description;
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Stores'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 \yii\web\YiiAsset::register($this);
@@ -19,12 +19,12 @@ $this->params['breadcrumbs'][] = $this->title;
         <div class="col-lg-8">
             <div class="stores-view">
                 <?= app\widgets\Alert::widget() ?>
-                <div class="card card-outline card-primary">
+                <div class="card">
                     <div class="card-header">
-                        <div class="d-flex flex-row">
-                            <h3><?= Html::encode($this->title) ?></h3>
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                            <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
                             <?php if (User::isMerchant()) : ?>
-                                <div class="ml-auto">
+                                <div class="ms-auto">
                                     <?= Html::a('<button type="button" class="btn btn-warning">
                                         <i class="fas fa-plus"></i> ' . Yii::t('app', 'Nuovo negozio') . '
                                         </button>', ['create']) ?>

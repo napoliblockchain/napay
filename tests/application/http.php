@@ -48,7 +48,7 @@ function listNames($html): array {
     $doc = new DOMDocument();
     @$doc->loadHTML($html, LIBXML_NONET);
     $names = [];
-    foreach ((new DOMXPath($doc))->query('//tr[@data-key]/td[2]') as $cell) $names[] = $cell->textContent;
+    foreach ((new DOMXPath($doc))->query('//tr[@data-key]/td[1]') as $cell) $names[] = $cell->textContent;
     return $names;
 }
 function exportNames($response): array {

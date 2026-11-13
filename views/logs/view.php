@@ -6,7 +6,7 @@ use yii\widgets\DetailView;
 /* @var $this yii\web\View */
 /* @var $model app\models\Logs */
 
-$this->title = sprintf('Dettaglio - ID: %s', $model->id);
+$this->title = Yii::t('app', 'Dettaglio attivita');
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Logs'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 \yii\web\YiiAsset::register($this);
@@ -15,10 +15,10 @@ $this->params['breadcrumbs'][] = $this->title;
     <div class="row">
         <div class="col-lg-12">
             <div class="logs-view">
-                <div class="card card-outline card-warning">
+                <div class="card">
                     <div class="card-header">
-                        <div class="d-flex flex-row">
-                            <h3><?= Html::encode($this->title) ?></h3>
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                            <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
                         </div>
                     </div>
                     <div class="card-body">

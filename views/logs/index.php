@@ -2,7 +2,7 @@
 
 use yii\helpers\Html;
 use yii\helpers\Url;
-use yii\grid\GridView;
+use app\widgets\TablerGridView as GridView;
 use yii\jui\DatePicker;
 use app\components\Crypt;
 use yii\bootstrap5\ActiveForm;
@@ -18,19 +18,19 @@ $this->params['breadcrumbs'][] = $this->title;
     <div class="row">
         <div class="col-md-12">
             <div class="logs-index">
-                <div class="card card-outline card-primary">
+                <div class="card">
                     <div class="card-header">
-                        <div class="d-flex flex-row">
-                            <h3><?= Html::encode($this->title) ?></h3>
-                            <div class="ml-auto p-1">
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                            <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
+                            <div class="ms-auto p-1">
                                 <?php $form = ActiveForm::begin([
                                     'id' => 'export-form',
                                     'action' => ['export'],
                                     'method' => 'post',
                                 ]); ?>
-                                <input type='hidden' name='queryParams' value='<?= $queryParams ?>' />
+                                <?= Html::hiddenInput('queryParams', $queryParams) ?>
 
-                                <?= Html::submitButton('<i class="fas fa-file-excel mr-1"></i>' . Yii::t('app', 'Esporta'), [
+                                <?= Html::submitButton('<i class="fas fa-file-excel me-1"></i>' . Yii::t('app', 'Esporta'), [
                                     'class' => 'btn btn-success',
                                     'target' => '_blank'
                                 ]) ?>
@@ -39,7 +39,7 @@ $this->params['breadcrumbs'][] = $this->title;
                         </div>
                     </div>
 
-                    <div class="card-body table-responsive">
+                    <div class="card-body p-0">
                         <?= GridView::widget([
                             'dataProvider' => $dataProvider,
                             'filterModel' => $searchModel,
@@ -60,7 +60,7 @@ $this->params['breadcrumbs'][] = $this->title;
                                             $url = Url::to(['view', 'id' => Crypt::encrypt($model->id)]);
                                             return Html::a('<i class="fa fa-eye"></i>', $url, [
                                                 'title' => Yii::t('app', 'Dettagli'),
-                                                'class' => 'btn btn-sm btn-default',
+                                                'class' => 'btn btn-sm btn-outline-secondary',
                                             ]);
                                         },
 

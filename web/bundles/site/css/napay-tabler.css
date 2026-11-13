@@ -62,3 +62,21 @@ html[data-bs-theme="dark"] .napay-app .select2-container--krajee-bs5 .select2-se
 }
 html[data-bs-theme="dark"] .napay-app .datepicker-dropdown { background-color: var(--tblr-bg-surface); color: var(--tblr-body-color); }
 html[data-bs-theme="dark"] .napay-app .datepicker table tr td.day:hover { background-color: var(--tblr-bg-surface-secondary); }
+/* Keep table controls outside horizontal scrolling; align with association payments. */
+.napay-app .grid-view:has(> .table-responsive) { overflow: visible; }
+.napay-app .grid-view > .table-responsive { max-width: 100%; }
+.napay-app .grid-view .table { margin-bottom: 0; }
+.napay-app .grid-view .filters .form-control,
+.napay-app .grid-view .filters .form-select { min-width: 7rem; }
+.napay-app .card-header { flex-wrap: wrap; gap: .5rem; }
+.napay-app .card-header .card-actions { margin-inline-start: auto; }
+.napay-app .grid-view .text-end .btn-default {
+    color: var(--tblr-secondary); border-color: var(--tblr-border-color); background: transparent;
+}
+@media (max-width: 575.98px) {
+    .napay-app .card-header .card-actions { flex-wrap: wrap; max-width: 100%; }
+    .napay-app [data-napay-user-profile] .nav-tabs { gap: .25rem; }
+    .napay-app [data-napay-user-profile] .nav-link { padding-inline: .625rem; }
+}
+.napay-app .grid-view > .card-footer > .ms-auto { min-width: 0; max-width: 100%; }
+.napay-app .grid-view > .card-footer .pagination { flex-wrap: wrap; row-gap: .25rem; }

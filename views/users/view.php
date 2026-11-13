@@ -1,78 +1,67 @@
 <?php
 
 use yii\helpers\Html;
-use kartik\tabs\TabsX;
-use app\assets\SidebarCollapseAsset;
+use yii\bootstrap5\Tabs;
 use app\components\User;
+use app\models\Users;
 
-/* @var $this yii\web\View */
 /* @var $model app\models\Users */
-
-$this->title = Yii::t('app', 'User: ') . $model->username;
-$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Utenti'), 'url' => User::isAdministrator() ? ['index'] : ''];
-
-\yii\web\YiiAsset::register($this);
-SidebarCollapseAsset::register($this);
-
-// echo "<pre>" . print_r($model->negozio, true) . "</pre>";exit;
+$own = (int) $model->id === (int) Yii::$app->user->id;
+$name = trim($model->first_name . ' ' . $model->last_name);
+$name = $name !== '' ? $name : $model->email;
+$this->title = $own ? Yii::t('app', 'Il mio profilo') : Yii::t('app', 'Profilo utente');
+if (User::can(40)) {
+    $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Utenti'), 'url' => ['index']];
+}
+$this->params['breadcrumbs'][] = $this->title;
+$states = [
+    Users::STATUS_INSERTED => ['bg-warning-lt', Yii::t('app', 'Inattivo')],
+    Users::STATUS_ACTIVE => ['bg-success-lt', Yii::t('app', 'Attivo')],
+    Users::STATUS_BLOCKED => ['bg-danger-lt', Yii::t('app', 'Bloccato')],
+];
+[$badge, $status] = $states[(int) $model->is_active] ?? ['bg-secondary-lt', Yii::t('app', 'Non disponibile')];
+$items = [[
+    'label' => Yii::t('app', 'Panoramica'),
+    'options' => ['id' => 'tab-overview'],
+    'content' => $this->render('_details-overview', ['model' => $model]),
+]];
+// Do not render hidden forms: each tab is created only for its allowed context.
+if ($own) {
+    \app\assets\SidebarCollapseAsset::register($this);
+    $items[] = ['label' => Yii::t('app', 'Preferenze'), 'options' => ['id' => 'tab-settings'],
+        'content' => $this->render('_details-settings', ['model' => $model])];
+} elseif (User::isAdministrator() && (int) Yii::$app->user->identity->privilege->level >= (int) ($model->privilege->level ?? PHP_INT_MAX)) {
+    $items[] = ['label' => Yii::t('app', 'Gestione account'), 'options' => ['id' => 'tab-edit'],
+        'content' => $this->render('_details-edit', ['model' => $model])];
+}
 ?>
-<div class="row">
-    <div class="col-xl-4">
-        <div class="card">
-            <div class="card-body profile-card pt-4 d-flex flex-column align-items-center">
-
-                <?= Html::img($model->picture, [
-                    'alt' => 'Profile',
-                    'class' => "profile-user-img img-fluid img-circle",
-                ]) ?>
-                <h3 class="profile-username text-center"><?= Html::encode($model->first_name . ' ' . $model->last_name) ?></h3>
-                <p class="text-muted text-center mb-0"><?= Html::encode('Profilo: ' . $model->privilege->description) ?></p>
-                <p class="text-muted text-center mt-0"><?= Html::encode('Email: ' . $model->email) ?></p>
+<div class="row g-3" data-napay-user-profile>
+    <div class="col-lg-4 col-xl-3">
+        <section class="card h-100" aria-labelledby="profile-name">
+            <div class="card-body text-center">
+                <span class="avatar avatar-xl mb-3" aria-hidden="true"><i class="fas fa-user"></i></span>
+                <h2 class="h3 mb-1 text-break" id="profile-name"><?= Html::encode($name) ?></h2>
+                <div class="text-secondary text-break mb-3"><?= Html::encode($model->email) ?></div>
+                <span class="badge <?= $badge ?>"><?= Html::encode($status) ?></span>
             </div>
-        </div>
+            <div class="card-footer">
+                <div class="subheader mb-1"><?= Html::encode(Yii::t('app', 'Profilo di accesso')) ?></div>
+                <div><?= Html::encode($model->privilege->description ?? Yii::t('app', 'Non disponibile')) ?></div>
+            </div>
+        </section>
     </div>
-    <div class="col-xl-8">
-        <div class="card">
-            <div class="card-body pt-3">
-                <?php
-                $items = [
-                    [
-                        'label' => 'Generale',
-                        'encode' => false,
-                        // 'active' => !$modelSegnalazione->getIsAnnullata(),
-                        'options' => ['id' => 'tab-overview'],
-                        'content' => $this->render('_details-overview', ['model' => $model]),
-                        // 'visible' => !is_null($model),
-                    ],
-                    [
-                        'label' => Yii::t('app', 'Impostazioni'),
-                        'encode' => false,
-                        // 'active' => $modelSegnalazione->getIsAnnullata(),
-                        'options' => ['id' => 'tab-settings'],
-                        'content' => $this->render('_details-settings', ['model' => $model]),
-                        'visible' => $model->id == Yii::$app->user->id,
-                    ],
-
-                    [
-                        'label' => Yii::t('app', 'Modifica Profilo'),
-                        'encode' => false,
-                        'options' => ['id' => 'tab-edit'],
-                        'content' => $this->render('_details-edit', ['model' => $model, 'merchants_list'=>$merchants_list]),
-                        'visible' => $model->id != Yii::$app->user->id,
-                    ],
-
-                ];
-                echo TabsX::widget([
-                    'items' => $items,
-                    'bordered' => true,
-                    'position' => TabsX::POS_ABOVE,
-                    'encodeLabels' => false,
-                    'enableStickyTabs' => true,
-                ]);
-
-                ?>
+    <div class="col-lg-8 col-xl-9">
+        <section class="card h-100">
+            <div class="card-header flex-wrap gap-2">
+                <h3 class="card-title"><?= Html::encode($this->title) ?></h3>
+                <?php if (User::can(40)): ?>
+                    <div class="card-actions"><?= Html::a(Html::encode(Yii::t('app', 'Torna agli utenti')), ['index'], ['class' => 'btn btn-outline-secondary']) ?></div>
+                <?php endif; ?>
             </div>
-        </div>
-
+            <div class="card-body">
+                <?= Tabs::widget(['id' => 'user-profile-tabs', 'items' => $items,
+                    'options' => ['class' => 'nav-tabs mb-4'], 'encodeLabels' => true]) ?>
+            </div>
+        </section>
     </div>
 </div>

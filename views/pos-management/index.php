@@ -37,7 +37,7 @@ $this->params['breadcrumbs'][] = $this->title;
                 <th><?= Html::encode(Yii::t('app', 'Negozio - POS')) ?></th>
                 <th><?= Html::encode(Yii::t('app', 'Stato')) ?></th>
                 <th><?= Html::encode(Yii::t('app', 'Disponibilità')) ?></th>
-                <th class="w-1"></th>
+                <th class="w-1 text-end"><?= Html::encode(Yii::t('app', 'Azioni')) ?></th>
             </tr></thead>
             <tbody>
             <?php foreach ($terminals->getModels() as $t): ?>
@@ -46,7 +46,7 @@ $this->params['breadcrumbs'][] = $this->title;
                     <td><?= Html::encode($t['store'] . ' - ' . $t['name']) ?></td>
                     <td><?= $this->render('_status', ['enabled' => (int) $t['is_enabled'] === 1]) ?></td>
                     <td class="text-secondary"><?= Html::encode(Yii::t('app', 'Non verificata')) ?></td>
-                    <td class="text-nowrap">
+                    <td class="text-nowrap text-end">
                         <?= Html::a('<i class="fas fa-pen"></i>', ['terminal-update', 'id' => $t['public_id']], ['class' => 'btn btn-sm btn-outline-secondary', 'title' => Yii::t('app', 'Modifica')]) ?>
                         <?= (int) $t['is_enabled'] === 1
                             ? $this->render('_post', ['action' => ['terminal-disable', 'id' => $t['public_id']], 'label' => Yii::t('app', 'Disabilita'), 'class' => 'btn-outline-danger'])
@@ -72,7 +72,7 @@ $this->params['breadcrumbs'][] = $this->title;
                 <th><?= Html::encode(Yii::t('app', 'Operatore')) ?></th>
                 <th><?= Html::encode(Yii::t('app', 'Email')) ?></th>
                 <th><?= Html::encode(Yii::t('app', 'Stato')) ?></th>
-                <th class="w-1"></th>
+                <th class="w-1 text-end"><?= Html::encode(Yii::t('app', 'Azioni')) ?></th>
             </tr></thead>
             <tbody>
             <?php foreach ($operators->getModels() as $o): ?>
@@ -81,7 +81,7 @@ $this->params['breadcrumbs'][] = $this->title;
                     <td><?= Html::encode(trim($o['first_name'] . ' ' . $o['last_name'])) ?></td>
                     <td><?= Html::encode($o['email']) ?></td>
                     <td><?= $this->render('_status', ['enabled' => (int) $o['is_enabled'] === 1]) ?></td>
-                    <td><?= Html::a(Html::encode(Yii::t('app', 'Gestisci')), ['operator', 'id' => Crypt::encrypt($o['user_id'])], ['class' => 'btn btn-sm btn-outline-primary']) ?></td>
+                    <td class="text-nowrap text-end"><?= Html::a(Html::encode(Yii::t('app', 'Gestisci')), ['operator', 'id' => Crypt::encrypt($o['user_id'])], ['class' => 'btn btn-sm btn-outline-primary']) ?></td>
                 </tr>
             <?php endforeach; ?>
             <?php if (!$operators->getCount()): ?><tr><td colspan="<?= $admin ? 5 : 4 ?>" class="text-secondary"><?= Html::encode(Yii::t('app', 'Nessun operatore.')) ?></td></tr><?php endif; ?>
@@ -118,7 +118,7 @@ $this->params['breadcrumbs'][] = $this->title;
                 <th><?= Html::encode(Yii::t('app', 'Email')) ?></th>
                 <th><?= Html::encode(Yii::t('app', 'Stato')) ?></th>
                 <th><?= Html::encode(Yii::t('app', 'Scadenza')) ?></th>
-                <th class="w-1"></th>
+                <th class="w-1 text-end"><?= Html::encode(Yii::t('app', 'Azioni')) ?></th>
             </tr></thead>
             <tbody>
             <?php $now = time(); foreach ($invitations->getModels() as $i): ?>
@@ -128,7 +128,7 @@ $this->params['breadcrumbs'][] = $this->title;
                     <td><?= Html::encode($i['email']) ?></td>
                     <td><?= Html::encode(PosInvitations::status($i, $now)) ?></td>
                     <td><?= Html::encode(Yii::$app->formatter->asDatetime((int) $i['expires_at'], 'php:d/m/Y H:i')) ?></td>
-                    <td class="text-nowrap">
+                    <td class="text-nowrap text-end">
                         <?php if ($open): ?>
                             <?= $this->render('_post', ['action' => ['invitation-resend', 'id' => $id], 'label' => Yii::t('app', 'Reinvia'), 'class' => 'btn-outline-secondary']) ?>
                             <?= $this->render('_post', ['action' => ['invitation-revoke', 'id' => $id], 'label' => Yii::t('app', 'Annulla'), 'class' => 'btn-outline-danger']) ?>
