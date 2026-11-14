@@ -39,6 +39,7 @@ final class FakeHttp
     public function key(): Closure { return function (string $m, string $p, ?array $b, string $k) { $this->calls[] = [$m, $p, $b, 'key:' . $k]; return $this->next(); }; }
     public function basic(): Closure { return function (string $m, string $p, ?array $b, string $u, string $pw) { $this->calls[] = [$m, $p, $b, 'basic:' . $u . ':' . $pw]; return $this->next(); }; }
     private function next(): array {
+        if (Yii::$app->db->getTransaction() !== null) throw new RuntimeException('HTTP inside a database transaction');
         $reply = array_shift($this->queue) ?? throw new RuntimeException('Unexpected HTTP call');
         if ($reply instanceof Closure) $reply = $reply();
         if ($reply instanceof Throwable) throw $reply;
@@ -156,7 +157,7 @@ check(count($http->calls) === 1 && $http->calls[0][0] === 'GET' && $store->accou
 $admin->createCommand()->update('users', ['is_active' => 0], ['id' => $owner])->execute();
 $run->runOnce();
 $admin->createCommand()->update('users', ['is_active' => 1], ['id' => $owner])->execute();
-check($http->calls === [] && $job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'merchant_ineligible' && $store->account($merchant)['state'] === 'suspended', 'Disabled owner before HTTP: no call, job failed, account suspended');
+check($http->calls === [] && $job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'merchant_ineligible' && $store->account($merchant) === null, 'Disabled owner before work: no call or mapping, job failed');
 [$instance, $http, $store, $run, $id] = $scenario();
 $http->queue = [function () use ($admin, $owner, $r) { $admin->createCommand()->update('users', ['is_active' => 0], ['id' => $owner])->execute(); return $r(201, ['id' => 'user-late']); }];
 $run->runOnce();
@@ -183,6 +184,74 @@ check($http->calls === [] && $job($id)['state'] === 'retry_wait' && $job($id)['l
 $other->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->queryScalar();
 check((int) $worker->createCommand('SELECT IS_USED_LOCK(:l)', [':l' => $lock])->queryScalar() === 0, 'Worker never keeps the lock after runOnce');
 
+// --- Scope and local preparation are fenced before any mapping/GET.
+[$instance, $http, $store, $run, $id] = $scenario();
+$admin->createCommand()->update('btcpay_provisioning_jobs', ['entity_id' => $merchant + 1], ['id' => $id])->execute();
+$run->runOnce();
+check($job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'resource_scope_mismatch' && $store->account($merchant) === null && $http->calls === [], 'Mismatched job resource: no mapping or HTTP');
+[$instance, $http, $store, $run, $id] = $scenario();
+$admin->createCommand()->update('btcpay_provisioning_jobs', ['merchant_id' => 2147483647, 'entity_id' => 2147483647], ['id' => $id])->execute();
+$run->runOnce();
+check($job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'merchant_ineligible' && $store->account(2147483647) === null && $http->calls === [], 'Nonexistent merchant: controlled failure without FK insert or HTTP');
+[$instance, $http, $store, $run, $id] = $scenario();
+$tick = 0;
+$expiredClock = static function () use (&$tick, &$t): int { return ++$tick === 1 ? $t : $t + 61; };
+$run = new ProvisioningWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $expiredClock), $store, new MerchantAccountStep($http->key(), $http->basic()), $instance, $prov, $clock);
+$run->runOnce();
+check($store->account($merchant) === null && $http->calls === [] && $job($id)['state'] === 'running', 'Lease expired after claim: no local mapping or HTTP');
+
+[$instance, $http, $store, $run, $id] = $scenario();
+$saved = $store->ensureAccount($merchant);
+$store->storePassword($saved, bin2hex(random_bytes(32)));
+$saved = $store->updateAccount($saved, ['state' => 'user_created', 'remote_user_id' => 'resume-disabled', 'key_generations_used' => 1]);
+$store->storeKey($saved, 1, 'key-resume-not-a-real-secret');
+$store->updateAccount($saved, ['state' => 'key_saved']);
+$admin->createCommand()->update('users', ['is_active' => 0], ['id' => $owner])->execute();
+$run->runOnce();
+$admin->createCommand()->update('users', ['is_active' => 1], ['id' => $owner])->execute();
+check($http->calls === [] && $job($id)['state'] === 'failed' && $store->account($merchant)['state'] === 'suspended', 'Disabled owner with key_saved: verification GET never sent');
+
+[$instance, $http, $store, $run, $id] = $scenario();
+$saved = $store->ensureAccount($merchant);
+$store->storePassword($saved, bin2hex(random_bytes(32)));
+$saved = $store->updateAccount($saved, ['state' => 'user_created', 'remote_user_id' => 'resume-expired', 'key_generations_used' => 1]);
+$store->storeKey($saved, 1, 'key-resume-expired-fixture');
+$store->updateAccount($saved, ['state' => 'key_saved']);
+$getClock = static function () use ($admin, $id, &$t): int {
+    $version = (int) $admin->createCommand('SELECT version FROM btcpay_provisioning_jobs WHERE id=:id', [':id' => $id])->queryScalar();
+    return $version >= 2 ? $t + 61 : $t;
+};
+$run = new ProvisioningWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $getClock), $store, new MerchantAccountStep($http->key(), $http->basic()), $instance, $prov, $clock);
+$run->runOnce();
+check($http->calls === [] && $job($id)['state'] === 'running' && $store->account($merchant)['state'] === 'key_saved', 'Lease expires between initial preparation and GET: no verification request or promotion');
+
+[$instance, $http, $store, $run, $id] = $scenario();
+$saved = $store->ensureAccount($merchant);
+$store->storePassword($saved, bin2hex(random_bytes(32)));
+$saved = $store->updateAccount($saved, ['state' => 'user_created', 'remote_user_id' => 'resume-rate-limit', 'key_generations_used' => 1]);
+$store->storeKey($saved, 1, 'key-rate-limit-fixture-only');
+$store->updateAccount($saved, ['state' => 'key_saved']);
+$http->queue = [function () use ($admin, $owner, $r) {
+    $admin->createCommand()->update('users', ['is_active' => 0], ['id' => $owner])->execute();
+    return $r(429, null, '60');
+}];
+$run->runOnce();
+$admin->createCommand()->update('users', ['is_active' => 1], ['id' => $owner])->execute();
+check(count($http->calls) === 1 && $job($id)['state'] === 'failed' && $store->account($merchant)['state'] === 'suspended', 'Disabled during verification 429: retry outcome rechecks eligibility');
+
+// A native/callback failure must not propagate DB objects, closures or a previous exception.
+[$instance, $http, $store, $run, $id] = $scenario();
+$pending = $store->ensureAccount($merchant);
+$store->storePassword($pending, bin2hex(random_bytes(32)));
+$admin->createCommand()->update('btcpay_merchant_credentials', ['state' => 'pending'], ['account_id' => $pending['id'], 'kind' => 'onboarding_password'])->execute();
+$safe = false;
+try { $run->runOnce(); } catch (RuntimeException $e) {
+    $trace = print_r($e->getTrace(), true) . var_export($e->getTrace(), true);
+    $safe = $e->getMessage() === 'provisioning_worker_failed' && $e->getPrevious() === null && !str_contains($trace, $password)
+        && !str_contains($trace, $prov) && !str_contains($trace, $keyring['k1']) && !str_contains($trace, 'Closure Object');
+}
+check($safe && $http->calls === [] && $job($id)['state'] === 'running', 'Full callback failure trace is sanitized; failed checkpoint rolled back');
+
 // --- Connessione e segreti
 $app->set('db', $admin);
 $refused = false;
@@ -190,10 +259,10 @@ try { $run->runOnce(); } catch (LogicException $e) { $refused = $e->getMessage()
 check($refused, 'Eligibility must run on the worker connection (same transactions)');
 $app->set('db', $worker);
 $frames = '';
-// Coda e store su una connessione senza credenziali: nel trace restano solo gli argomenti propri del worker.
-$bare = new yii\db\Connection(['dsn' => env('DB_DSN')]);
+// Real credential-bearing dependencies, not a bare connection that would hide a leak.
+$bare = $worker;
 $fresh = new FakeHttp();
 try { new ProvisioningWorker($worker, new ProvisioningJobs($bare, $uuid()), new ProvisioningStore($bare, $instance, $keyring, 'k1'), new MerchantAccountStep($fresh->key(), $fresh->basic()), 'bad', $prov); }
 catch (InvalidArgumentException $e) { $frames = print_r($e->getTrace(), true); }
-check($frames !== '' && !str_contains($frames, $prov) && !str_contains($frames, $password), 'Provisioner key and DB connection hidden from traces');
+check($frames !== '' && !str_contains($frames, $prov) && !str_contains($frames, $password) && !str_contains($frames, $keyring['k1']), 'Full constructor trace hides nested DB, keyring, transport and provisioner');
 echo "PASS $checks BTCPay provisioning worker checks\n";
