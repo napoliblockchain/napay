@@ -77,7 +77,7 @@ check($byAdmin !== null && $jobs($byAdmin) === $expected($byAdmin), 'Admin activ
 $off = user('w4b-off');
 $offMerchant = $withInstance('', fn() => activate($off));
 check($offMerchant !== null && $role($off) === 30 && $jobs($offMerchant) === [], 'Feature off: merchant and role committed, no job');
-check(activate($off) === $offMerchant && $jobs($offMerchant) === $expected($offMerchant), 'Replay with the feature on enqueues the missing job once');
+check(activate($off) === $offMerchant && $jobs($offMerchant) === [], 'Replay after enabling the feature: same merchant, still no job (no implicit backfill)');
 
 // --- configurazione malformata: rollback di merchant, ruolo e lavoro
 $total = (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs');
@@ -121,8 +121,6 @@ $clean = static function (Throwable $e) use ($secret): bool {
     }
     return $seen > 0;
 };
-// Merchant qualificato senza lavoro (funzione spenta all'attivazione): l'attore inesistente produce l'errore FK 1452, non un duplicato.
-$noJob = $withInstance('', fn() => activate(user('w4b-fk')));
 $traces = [];
 $canary = user('w4b-canary');
 Yii::$app->user->setIdentity(Users::findOne($canary));
@@ -131,7 +129,8 @@ try { Activation::activate($canary, $canary, new Merchants(data())); } catch (yi
 putenv('BTCPAY_PROVISION_INSTANCE=' . $instance);
 $tx = $db->beginTransaction();
 try { Outbox::enqueueMerchant($db, 999999999, $pg); } catch (InvalidArgumentException $e) { $traces['scope'] = $e; }
-try { Outbox::enqueueMerchant($db, $noJob, 999999998); } catch (yii\db\IntegrityException $e) { $traces['integrity'] = (int) ($e->errorInfo[1] ?? 0) === 1452 ? $e : null; }
+// Merchant qualificato senza lavoro (attivato a funzione spenta): enqueueMerchant diretto nella TX, l'attore inesistente dà FK 1452.
+try { Outbox::enqueueMerchant($db, $offMerchant, 999999998); } catch (yii\db\IntegrityException $e) { $traces['integrity'] = (int) ($e->errorInfo[1] ?? 0) === 1452 ? $e : null; }
 $tx->rollBack();
 check(array_keys(array_filter($traces)) === ['activation-config', 'scope', 'integrity'], 'Canary errors raised (activation config, scope, SQL)');
 foreach ($traces as $case => $e) check($clean($e), "Full structured trace without Connection or password: $case");
