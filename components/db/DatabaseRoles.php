@@ -17,7 +17,7 @@ final class DatabaseRoles
         'btcpay_merchant_accounts', 'btcpay_merchant_credentials', 'btcpay_store_links',
         'btcpay_pos_links', 'btcpay_provisioning_jobs',
     ];
-    private const WEB_HISTORY = ['pos_terminal_openings'];
+    private const WEB_HISTORY = ['pos_terminal_openings', 'merchant_tts_wallets', 'pos_tts_payments'];
     private const WEB_READ = [
         'btcpay_merchant_accounts' => ['id', 'instance', 'merchant_id', 'state', 'last_error_code', 'updated_at'],
         'btcpay_store_links' => ['id', 'instance', 'merchant_id', 'store_id', 'state', 'last_error_code', 'updated_at'],
