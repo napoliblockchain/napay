@@ -18,7 +18,6 @@ $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Terminali POS'), 'ur
 $this->params['breadcrumbs'][] = $this->title;
 $enabled = (int) $operator['is_enabled'] === 1;
 ?>
-<?= $this->render('_flash') ?>
 <?php if (!$eligible): ?>
     <div class="alert alert-warning" role="status"><?= Html::encode(Yii::t('app', 'Account o merchant non idonei: si possono solo disabilitare profilo e negozi.')) ?></div>
 <?php endif; ?>

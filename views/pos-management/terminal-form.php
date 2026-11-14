@@ -12,7 +12,6 @@ $this->title = $terminal === null ? Yii::t('app', 'Nuovo terminale') : Yii::t('a
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Terminali POS'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<?= $this->render('_flash') ?>
 <div class="card">
     <div class="card-header"><h3 class="card-title"><?= Html::encode($this->title) ?></h3></div>
     <div class="card-body">

@@ -25,16 +25,6 @@ $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
     <div class="row">
         <div class="col-lg-8">
             <div class="invoices-view">
-                <?php if (Yii::$app->session->hasFlash('success')) : ?>
-                    <div class="alert alert-success">
-                        <?php echo Yii::$app->session->getFlash('success') ?>
-                    </div>
-                <?php endif; ?>
-                <?php if (Yii::$app->session->hasFlash('warning')) : ?>
-                    <div class="alert alert-warning">
-                        <?php echo Yii::$app->session->getFlash('warning') ?>
-                    </div>
-                <?php endif; ?>
                 <div class="card card-outline card-primary">
                     <div class="card-header">
                         <div class="d-flex flex-row">

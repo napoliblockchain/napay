@@ -2,72 +2,39 @@
 
 namespace app\widgets;
 
+use jambtc\ToastrWidget\assets\ToastrAsset;
 use Yii;
+use yii\helpers\Html;
+use yii\web\View;
 
 /**
- * Alert widget renders a message from session flash. All flash messages are displayed
- * in the sequence they were assigned using setFlash. You can set message as following:
- *
- * ```php
- * Yii::$app->session->setFlash('error', 'This is the message');
- * Yii::$app->session->setFlash('success', 'This is the message');
- * Yii::$app->session->setFlash('info', 'This is the message');
- * ```
- *
- * Multiple messages could be set as follows:
- *
- * ```php
- * Yii::$app->session->setFlash('error', ['Error 1', 'Error 2']);
- * ```
- *
- * @author Kartik Visweswaran <kartikv2@gmail.com>
- * @author Alexander Makarov <sam@rmcreative.ru>
+ * Messaggi flash di sessione come toast a comparsa (jambtc/yii2-toastr-widget: asset e opzioni del widget),
+ * non più div fissi. Differenze dal widget Toast v1.1.0: ogni messaggio è codificato HTML (toastr usa
+ * escapeHtml: false) e il JSON resta UTF-8 leggibile; tornare a Toast quando il pacchetto le includerà.
  */
 class Alert extends \yii\bootstrap5\Widget
 {
-    /**
-     * @var array the alert types configuration for the flash messages.
-     * This array is setup as $key => $value, where:
-     * - key: the name of the session flash variable
-     * - value: the bootstrap alert type (i.e. danger, success, info, warning)
-     */
-    public $alertTypes = [
-        'error'   => 'alert-danger',
-        'danger'  => 'alert-danger',
-        'success' => 'alert-success',
-        'info'    => 'alert-info',
-        'warning' => 'alert-warning'
-    ];
-    /**
-     * @var array the options for rendering the close button tag.
-     * Array will be passed to [[\yii\bootstrap\Alert::closeButton]].
-     */
-    public $closeButton = [];
+    /** Tipo flash Yii => metodo toastr (toastr non ha "danger"). */
+    private const TYPES = ['error' => 'error', 'danger' => 'error', 'success' => 'success', 'info' => 'info', 'warning' => 'warning'];
+    private const OPTIONS = ['closeButton' => true, 'progressBar' => true, 'positionClass' => 'toast-bottom-right',
+        'timeOut' => '15000', 'extendedTimeOut' => '2000', 'showMethod' => 'fadeIn', 'hideMethod' => 'fadeOut'];
 
-
-    /**
-     * {@inheritdoc}
-     */
     public function run()
     {
         $session = Yii::$app->session;
-        $appendClass = isset($this->options['class']) ? ' ' . $this->options['class'] : '';
-
-        foreach (array_keys($this->alertTypes) as $type) {
-            $flash = $session->getFlash($type);
-
-            foreach ((array) $flash as $i => $message) {
-                echo \yii\bootstrap5\Alert::widget([
-                    'body' => $message,
-                    'closeButton' => $this->closeButton,
-                    'options' => array_merge($this->options, [
-                        'id' => $this->getId() . '-' . $type . '-' . $i,
-                        'class' => $this->alertTypes[$type] . $appendClass,
-                    ]),
-                ]);
+        $calls = [];
+        foreach (self::TYPES as $type => $method) {
+            if (!$session->hasFlash($type)) continue;
+            foreach ((array) $session->getFlash($type) as $message) {
+                if (!is_scalar($message) || (string) $message === '') continue;
+                $calls[] = 'toastr.' . $method . '(' . json_encode(Html::encode((string) $message), JSON_UNESCAPED_UNICODE | JSON_THROW_ON_ERROR) . ');';
             }
-
             $session->removeFlash($type);
         }
+        if ($calls !== []) {
+            ToastrAsset::register($this->getView());
+            $this->getView()->registerJs('toastr.options = ' . json_encode(self::OPTIONS, JSON_THROW_ON_ERROR) . ";\n" . implode("\n", $calls), View::POS_READY);
+        }
+        return '';
     }
 }

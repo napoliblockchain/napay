@@ -19,7 +19,6 @@ use app\components\pos\management\PosInvitations;
 $this->title = Yii::t('app', 'Terminali POS');
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<?= $this->render('_flash') ?>
 <div class="card mb-3">
     <div class="card-header">
         <h3 class="card-title"><?= Html::encode(Yii::t('app', 'Terminali')) ?></h3>
