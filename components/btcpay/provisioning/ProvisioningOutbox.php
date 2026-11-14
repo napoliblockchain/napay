@@ -70,7 +70,8 @@ final class ProvisioningOutbox
             if ((int) ($e->errorInfo[1] ?? 0) !== 1062) throw $e;
         }
         // Replay: il lavoro esistente deve avere lo stesso scope, mai adottarne uno di un altro merchant.
-        $existing = $db->createCommand('SELECT merchant_id FROM {{%' . self::TABLE . '}} WHERE kind=:kind AND instance=:instance AND entity_id=:entity AND generation=1',
+        // Lettura corrente (FOR SHARE): uno snapshot REPEATABLE READ precedente non vedrebbe il lavoro appena committato altrove.
+        $existing = $db->createCommand('SELECT merchant_id FROM {{%' . self::TABLE . '}} WHERE kind=:kind AND instance=:instance AND entity_id=:entity AND generation=1 FOR SHARE',
             [':kind' => $kind, ':instance' => $instance, ':entity' => $entityId])->queryScalar();
         if ($existing === false || (int) $existing !== $merchantId) throw new \UnexpectedValueException('job_scope_conflict');
         return true;
