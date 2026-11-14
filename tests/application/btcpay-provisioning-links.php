@@ -39,6 +39,9 @@ $storeA = $newStore($merchant, 'W3c negozio A'); $storeA2 = $newStore($merchant,
 $terminal = new app\models\PosTerminals(['merchant_id' => $merchant, 'store_id' => $storeA, 'name' => 'W3c cassa']);
 if (!$terminal->save()) exit(1);
 $terminalA = (int) $terminal->id;
+$terminal = new app\models\PosTerminals(['merchant_id' => $other, 'store_id' => $storeB, 'name' => 'W3c cassa B']);
+if (!$terminal->save()) exit(1);
+$terminalB = (int) $terminal->id;
 $app->set('db', $worker);
 check(app\components\identity\AccountEligibility::merchantForManager($owner) === $merchant, 'Fixture merchant qualified, read through the worker grants');
 
@@ -128,6 +131,9 @@ $t -= 3600;
 $id = $enqueue($instance, 'store_link', $storeB);
 $run->runOnce();
 check($job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'scope_mismatch' && $http->calls === [] && $store->storeLink($storeB) === null, 'Store of another merchant: failed, no mapping, no HTTP');
+$id = $enqueue($instance, 'pos_link', $terminalB);
+$run->runOnce();
+check($job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'scope_mismatch' && $http->calls === [] && $store->posLink($terminalB) === null, 'Terminal of another merchant: failed, no mapping, no HTTP');
 $id = $enqueue($instance, 'pos_link', 999999999);
 $run->runOnce();
 check($job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'scope_mismatch' && $http->calls === [], 'Missing terminal: failed, no HTTP');
