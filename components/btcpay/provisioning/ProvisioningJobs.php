@@ -27,7 +27,7 @@ final class ProvisioningJobs
 
     private readonly \Closure $clock;
 
-    public function __construct(#[\SensitiveParameter] private readonly Connection $db, private readonly string $owner, private readonly int $leaseSeconds = 60, ?\Closure $clock = null)
+    public function __construct(#[\SensitiveParameter] private readonly Connection $db, private readonly string $owner, private readonly int $leaseSeconds = 60, #[\SensitiveParameter] ?\Closure $clock = null)
     {
         if (preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $owner) !== 1) throw new \InvalidArgumentException('invalid_owner');
         if ($leaseSeconds < 1 || $leaseSeconds > 3600) throw new \InvalidArgumentException('invalid_lease');
@@ -84,6 +84,14 @@ final class ProvisioningJobs
             if ($transaction->isActive) $transaction->rollBack();
             throw $error;
         }
+    }
+
+    /** Guarded local preparation/read snapshot; no HTTP marker, no transaction owned by the caller. */
+    public function prepare(int $id, int $version, #[\SensitiveParameter] callable $mutate): ?int
+    {
+        $now = $this->now();
+        return $this->cas($id, $version, ['running'], true, "state = 'running', lease_until = :until",
+            [':until' => $now + $this->leaseSeconds], $now, $mutate);
     }
 
     /** Checkpoint prima della chiamata remota: running senza marker -> in_flight, lease rinnovata. */
