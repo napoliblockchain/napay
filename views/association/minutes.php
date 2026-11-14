@@ -8,7 +8,7 @@ use app\components\Crypt;
 
 $this->title = Yii::t('app', 'Verbali');
 $this->params['breadcrumbs'][] = $this->title;
-$writable = empty($this->params['associationReadOnly']);
+$writable = \app\components\User::isAdministrator() && empty($this->params['associationReadOnly']);
 ?>
 <?= $this->render('_readonly') ?>
 <div class="card">
