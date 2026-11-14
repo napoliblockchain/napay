@@ -3,7 +3,7 @@
 use yii\db\Migration;
 
 /**
- * Registro attività come in Aura (TIP-020): tipo di evento, utente facoltativo (azioni anonime senza id fittizio),
+ * Registro attività (TIP-020): tipo di evento, utente facoltativo (azioni anonime senza id fittizio),
  * IP fino a 45 caratteri (IPv6). Solo aggiunte/allargamenti: i dati esistenti non cambiano.
  */
 class m261111_110000_audit_logs extends Migration
