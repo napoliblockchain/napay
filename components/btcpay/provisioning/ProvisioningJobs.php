@@ -86,6 +86,64 @@ final class ProvisioningJobs
         }
     }
 
+    /** Take a due link reconciliation without enabling the normal POST/checkpoint transitions. */
+    public function claimReconciliation(string $instance, array $kinds): ?array
+    {
+        if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1 || $kinds === []) throw new \InvalidArgumentException('invalid_reconciliation');
+        foreach ($kinds as $kind) if (!is_string($kind) || !in_array($kind, ['store_link', 'pos_link'], true)) throw new \InvalidArgumentException('invalid_reconciliation');
+        $this->guard();
+        $now = $this->now();
+        $params = [':instance' => $instance, ':now' => $now];
+        $in = [];
+        foreach (array_values(array_unique($kinds)) as $n => $kind) { $in[] = ':k' . $n; $params[':k' . $n] = $kind; }
+        $transaction = $this->db->beginTransaction(Transaction::READ_COMMITTED);
+        try {
+            for ($i = 0; $i < self::SCAN; ++$i) {
+                $job = $this->db->createCommand('SELECT id,kind,instance,merchant_id,entity_id,generation,attempts,version,in_flight_op FROM ' . self::TABLE
+                    . " WHERE instance=:instance AND kind IN (" . implode(',', $in) . ") AND state='reconcile_required' AND next_attempt_at<=:now"
+                    . ' AND (lease_until IS NULL OR lease_until<=:now)'
+                    . " AND (in_flight_op IS NULL OR (kind='store_link' AND in_flight_op='create_store') OR (kind='pos_link' AND in_flight_op='create_pos_app'))"
+                    . ' ORDER BY next_attempt_at,id LIMIT 1 FOR UPDATE SKIP LOCKED', $params)->queryOne();
+                if ($job === false) break;
+                $where = ' WHERE id=:id AND version=:version';
+                $identity = [':id' => $job['id'], ':version' => $job['version'], ':now' => $now];
+                if ((int) $job['attempts'] >= self::MAX_ATTEMPTS) {
+                    $this->db->createCommand('UPDATE ' . self::TABLE . " SET state='failed',lease_owner=NULL,lease_until=NULL,last_error_code='attempts_exhausted',version=version+1,updated_at=:now" . $where, $identity)->execute();
+                    continue;
+                }
+                $this->db->createCommand('UPDATE ' . self::TABLE . ' SET lease_owner=:owner,lease_until=:until,attempts=attempts+1,version=version+1,updated_at=:now' . $where,
+                    $identity + [':owner' => $this->owner, ':until' => $now + $this->leaseSeconds])->execute();
+                $transaction->commit();
+                return ['id' => (int) $job['id'], 'kind' => $job['kind'], 'instance' => $job['instance'], 'merchant_id' => (int) $job['merchant_id'],
+                    'entity_id' => (int) $job['entity_id'], 'generation' => (int) $job['generation'], 'attempts' => (int) $job['attempts'] + 1,
+                    'version' => (int) $job['version'] + 1, 'lease_until' => $now + $this->leaseSeconds, 'reconciling' => true, 'in_flight_op' => $job['in_flight_op']];
+            }
+            $transaction->commit();
+            return null;
+        } catch (\Throwable $error) {
+            if ($transaction->isActive) $transaction->rollBack();
+            throw $error;
+        }
+    }
+
+    /** Fenced snapshot/mutation for a GET-only reconciliation; never clears its uncertainty marker. */
+    public function prepareReconciliation(int $id, int $version, #[\SensitiveParameter] callable $mutate): ?int
+    {
+        $now = $this->now();
+        return $this->cas($id, $version, ['reconcile_required'], false, 'lease_until=:until',
+            [':until' => $now + $this->leaseSeconds], $now, $mutate);
+    }
+
+    /** Schedule another GET, or defer to an administrator. A retry never becomes POST-capable running. */
+    public function retryReconciliation(int $id, int $version, string $code, int $nextAttemptAt, bool $deferred = false, #[\SensitiveParameter] ?callable $mutate = null): ?int
+    {
+        $now = $this->now();
+        if ($nextAttemptAt <= $now) throw new \InvalidArgumentException('invalid_next_attempt');
+        return $this->cas($id, $version, ['reconcile_required'], false,
+            'state=:state,last_error_code=:code,next_attempt_at=:next' . self::CLEAR_LEASE,
+            [':state' => $deferred ? 'deferred' : 'reconcile_required', ':code' => self::code($code), ':next' => $nextAttemptAt], $now, $mutate);
+    }
+
     /** Guarded local preparation/read snapshot; no HTTP marker, no transaction owned by the caller. */
     public function prepare(int $id, int $version, #[\SensitiveParameter] callable $mutate): ?int
     {
@@ -117,7 +175,8 @@ final class ProvisioningJobs
     /** Esito remoto positivo (o lavoro concluso senza chiamata): done, lease e marker azzerati. */
     public function succeed(int $id, int $version, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
-        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'done', last_error_code = NULL" . self::CLEAR_LEASE . self::CLEAR_FLIGHT, [], $this->now(), $mutate);
+        $states = $mutate === null ? ['running', 'in_flight'] : ['running', 'in_flight', 'reconcile_required'];
+        return $this->cas($id, $version, $states, false, "state = 'done', last_error_code = NULL" . self::CLEAR_LEASE . self::CLEAR_FLIGHT, [], $this->now(), $mutate);
     }
 
     /** Errore definitivo con esito remoto noto: failed, lease e marker azzerati. */
@@ -129,7 +188,7 @@ final class ProvisioningJobs
     /** Esito remoto ignoto o ambiguo: reconcile_required, marker conservati. */
     public function reconcile(int $id, int $version, string $code, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
-        return $this->cas($id, $version, ['running', 'in_flight'], false, "state = 'reconcile_required', last_error_code = :code" . self::CLEAR_LEASE, [':code' => self::code($code)], $this->now(), $mutate);
+        return $this->cas($id, $version, ['running', 'in_flight', 'reconcile_required'], false, "state = 'reconcile_required', last_error_code = :code" . self::CLEAR_LEASE, [':code' => self::code($code)], $this->now(), $mutate);
     }
 
     /** In volo -> running solo con una risposta remota che prova la mancata esecuzione (REMOTE_NOT_EXECUTED). */
