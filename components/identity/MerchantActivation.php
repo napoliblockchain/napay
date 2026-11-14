@@ -33,8 +33,7 @@ final class MerchantActivation
             }
             $existing = AccountEligibility::merchantForManager($ownerId);
             if ($existing !== null) {
-                // Replay idempotente: il lavoro BTCPay del merchant esistente non viene mai duplicato.
-                ProvisioningOutbox::enqueueMerchant($db, $existing, $actorId);
+                // Replay locale: nessun nuovo lavoro BTCPay (un eventuale backfill è un'azione esplicita separata).
                 $tx->commit();
                 return $existing;
             }
