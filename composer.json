@@ -30,7 +30,8 @@
         "phpoffice/phpspreadsheet": "^1.21",
         "guzzlehttp/guzzle": "^7.0",
         "bizley/migration": "^4.0",
-        "jambtc/yii2-toastr-widget": "^1.2"
+        "jambtc/yii2-toastr-widget": "^1.2",
+        "kornrunner/keccak": "^1.1"
     },
     "require-dev": {
         "yiisoft/yii2-debug": "~2.1.0",
