@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "feeb2a6a4118bad964aa0962496efe02",
+    "content-hash": "726c23b7f127708275932ae79085a3c7",
     "packages": [
         {
             "name": "almasaeed2010/adminlte",
@@ -1070,6 +1070,54 @@
                 "source": "https://github.com/hail812/yii2-adminlte3/tree/v1.1.9"
             },
             "time": "2023-10-23T05:58:30+00:00"
+        },
+        {
+            "name": "jambtc/yii2-toastr-widget",
+            "version": "v1.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/jambtc/yii2-toastr-widget.git",
+                "reference": "2826a28d2daaea746dbacb3846ea7525f488dd33"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/jambtc/yii2-toastr-widget/zipball/2826a28d2daaea746dbacb3846ea7525f488dd33",
+                "reference": "2826a28d2daaea746dbacb3846ea7525f488dd33",
+                "shasum": ""
+            },
+            "require": {
+                "npm-asset/toastr": "^2.1.4",
+                "php": ">=7.4",
+                "yiisoft/yii2": "~2.0.0"
+            },
+            "type": "yii2-extension",
+            "autoload": {
+                "psr-4": {
+                    "jambtc\\ToastrWidget\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "jambtc",
+                    "email": "jambtc@gmail.com"
+                }
+            ],
+            "description": "Un widget Yii2 per flash messages usando Toastr",
+            "keywords": [
+                "notifications",
+                "toastr",
+                "widget",
+                "yii2"
+            ],
+            "support": {
+                "issues": "https://github.com/jambtc/yii2-toastr-widget/issues",
+                "source": "https://github.com/jambtc/yii2-toastr-widget/tree/v1.1.0"
+            },
+            "time": "2026-10-15T06:26:09+00:00"
         },
         {
             "name": "kartik-v/bootstrap-fileinput",
@@ -3266,6 +3314,32 @@
             "license": [
                 "MIT"
             ]
+        },
+        {
+            "name": "npm-asset/jquery",
+            "version": "4.0.0",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/jquery/-/jquery-4.0.0.tgz",
+                "shasum": "95c33ac29005ff72ec444c5ba1cf457e61404fbb"
+            },
+            "type": "npm-asset",
+            "license": [
+                "MIT"
+            ]
+        },
+        {
+            "name": "npm-asset/toastr",
+            "version": "2.1.4",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/toastr/-/toastr-2.1.4.tgz",
+                "shasum": "8b43be64fb9d0c414871446f2db8e8ca4e95f181"
+            },
+            "require": {
+                "npm-asset/jquery": ">=1.12.0"
+            },
+            "type": "npm-asset"
         },
         {
             "name": "paragonie/random_compat",
