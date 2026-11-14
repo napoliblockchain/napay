@@ -77,6 +77,17 @@ final class TerminalOpenings
         return self::publicOpening($opening, self::terminalPublicId((int) $opening['terminal_id']));
     }
 
+    /**
+     * SIP-021 fase 3: apertura propria della sessione, attiva, nello scope del titolare e con prova di istanza e
+     * generazione. Altrui = 404, propria non più valida = 409. Lettura senza lock: chi scrive la riconferma sotto lock.
+     */
+    public static function requireUsable(PosOperatorSessions $session, string $openingId, string $instanceId, string $generation): array
+    {
+        $opening = self::own($session, $openingId);
+        if (!self::proof($opening, $instanceId, $generation) || !self::usable($opening)) throw new OpeningException(OpeningException::INVALID);
+        return $opening;
+    }
+
     /** Registra il contatto (solo informativo per il manager); mai riattiva un'apertura chiusa. */
     public static function heartbeat(PosOperatorSessions $session, string $openingId, string $instanceId, string $generation): void
     {
