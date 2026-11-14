@@ -74,7 +74,8 @@ try {
     check($guest['status'] === 302 && str_contains($guest['headers'], '/site/login'), 'Guest redirected to login');
     foreach (['user', 'merchant'] as $r) {
         check(login($r) === 302, 'Login ' . $r);
-        foreach (['members', 'payments', 'minutes', 'tables'] as $page) check(request('/association/' . $page)['status'] === 403, "Non-admin $r forbidden: $page");
+        foreach (['members', 'payments', 'tables'] as $page) check(request('/association/' . $page)['status'] === 403, "Non-admin $r forbidden: $page");
+        check(request('/association/minutes')['status'] === ($r === 'user' ? 200 : 403), "Minutes require positive member evidence: $r");
     }
     check(login('admin') === 302, 'Admin login');
     $members = request('/association/members');
