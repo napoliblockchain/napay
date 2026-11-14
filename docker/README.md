@@ -13,8 +13,7 @@ Il pin non sostituisce una scansione vulnerabilita dell'immagine e delle dipende
 
 ## Configurazione unica `.env`
 
-`config/env.php` segue il pattern di Aura (`/var/www/levitas/aura/config/env.php`):
-legge `.env` nella root; le variabili gia presenti nel processo Docker/CI hanno
+`config/env.php` legge `.env` nella root; le variabili gia presenti nel processo Docker/CI hanno
 precedenza. Nessun `secrets.php` viene caricato. Web e console usano lo stesso
 bootstrap. Default: `APP_ENV=prod`, `APP_DEBUG=false`; valori non validi e
 configurazioni obbligatorie mancanti bloccano l'avvio.
@@ -253,7 +252,7 @@ reset password con posta reale, SSO, CRUD o integrazioni finanziarie.
 
 `tests/application/dependencies.php` verifica autoload, metadati Yii, estensioni,
 XLSX e PDF con dati fittizi senza rete o DB. I test UI/schema/bootstrap esistenti
-possono ora usare il vendor Napay, senza appoggiarsi a quello Aura.
+possono ora usare il vendor Napay, senza appoggiarsi a vendor esterni.
 
 Esito locale 2026-10-23: build web/bootstrap riuscite; validate/platform/audit
 Composer puliti con e senza dipendenze dev; 23 configurazione, 21 dipendenze,

@@ -36,5 +36,5 @@ tema, stato del form, widget e modale; salva screenshot nella sottocartella
 installato in un ambiente di test separato.
 
 Questi test non sostituiscono smoke login/CRUD/API con il lock e il database di
-test di Napay. Per l'intervento iniziale e stato montato il vendor Aura solo nel
+test di Napay. Per l'intervento iniziale e stato montato un vendor esterno solo nel
 container di test. Il vendor operativo Napay e rimasto invariato.

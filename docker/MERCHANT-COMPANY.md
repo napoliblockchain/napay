@@ -1,6 +1,5 @@
 # Aziende e pagina Azienda del merchant
 
-Riferimento funzionale: Aura `docs/sip/SIP-071-dati-azienda-amministratore.md`.
 Napay riusa `Merchants`, relativo controller e form: nessuna tabella nuova,
 nessun secondo modello Company, nessun import Yii1.
 
@@ -30,8 +29,8 @@ server: richieste costruite manualmente, anche con valori array, non la cambiano
 Il proprietario originario viene inoltre ripristinato prima della validazione.
 La creazione mantiene il proprio scenario con partita IVA iniziale.
 
-Non viene aggiunto upload logo: il modello/schema merchant non ha il campo logo
-presente in Aura. I flussi creazione/eliminazione/export e i negozi richiedono
+Non viene aggiunto upload logo: il modello/schema merchant non ha un campo logo.
+I flussi creazione/eliminazione/export e i negozi richiedono
 ulteriore audit; questo intervento non certifica l'intero CRUD come sicuro.
 
 ## Verifiche

@@ -8,7 +8,7 @@ use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 
 /**
- * Gestore errori che registra nel registro di sicurezza CSRF non valido e 403 (come in Aura).
+ * Gestore errori che registra nel registro di sicurezza CSRF non valido e 403.
  */
 class ErrorHandler extends \yii\web\ErrorHandler
 {

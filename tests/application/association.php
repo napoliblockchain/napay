@@ -127,7 +127,7 @@ try {
     check(request('/association/minute-file?id=tampered')['status'] === 404 && $noFile > 0, 'Missing PDF -> 404');
     $tables = request('/association/tables');
     check($tables['status'] === 200 && str_contains($tables['body'], 'Quota annuale') && str_contains($tables['body'], 'solo registrazione manuale'), 'Association tables');
-    // pager unico dell'applicazione (come in Aura): ogni griglia lo usa senza configurazione
+    // pager unico dell'applicazione: ogni griglia lo usa senza configurazione
     check(Yii::createObject(yii\widgets\LinkPager::class, [['pagination' => new yii\data\Pagination()]]) instanceof app\components\web\LinkPager, 'Grid pager resolves to the application pager');
     $app->request->setUrl('/association/members');
     // rendering CLI: niente pubblicazione asset (il pager non ne dipende)

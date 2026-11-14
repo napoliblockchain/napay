@@ -9,7 +9,7 @@ use yii\web\ForbiddenHttpException;
 
 /**
  * AccessControl che registra gli accessi negati (pagine o action non consentite al profilo:
- * anche i tentativi di accesso "verticale" a funzioni riservate), come in Aura.
+ * anche i tentativi di accesso "verticale" a funzioni riservate).
  * Sostituisce yii\filters\AccessControl in tutti i controller tramite il container (config/web.php).
  */
 class AuditedAccessControl extends AccessControl

@@ -13,7 +13,7 @@ NAPAY_TEST_DATASET=/percorso/dataset-v2 sh tests/docker/runtime.sh
 
 Prerequisiti: immagini locali `napay/napay:dev` e `napay/bootstrap:dev`, vendor
 Napay installato con `sh docker/dependencies.sh`, dataset v2 revisionato fuori
-repository. Nessun vendor Aura richiesto. Dataset letto solo dal job bootstrap.
+repository. Nessun vendor esterno richiesto. Dataset letto solo dal job bootstrap.
 
 `fixture.php` richiede CLI, conferma `isolated-fixture` e DB esattamente
 `napay_test_runtime`; verifica bootstrap prima di aggiungere utenti fittizi

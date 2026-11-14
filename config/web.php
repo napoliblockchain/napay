@@ -8,7 +8,7 @@ $config = [
     'name' => 'Napay',
     'language' => 'it-IT', // Specifies which language the application is targeted to
     'basePath' => dirname(__DIR__),
-    // registro attività automatico (components/audit, come in Aura)
+    // registro attività automatico (components/audit)
     'bootstrap' => ['log', \app\components\audit\AuditBootstrap::class],
     'aliases' => [
         '@bower' => '@vendor/bower-asset',
