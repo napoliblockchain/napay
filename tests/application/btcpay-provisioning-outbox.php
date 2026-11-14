@@ -156,6 +156,20 @@ $replay = $inTx(function () use ($db, $s2, $merchantA, $managerA) {
 check($replay === true && count($jobs('store_link', $s2)) === 1 && scalar('SELECT description FROM stores WHERE id=:id', [':id' => $s2]) === 'W4a negozio replay',
     'Replay: duplicate 1062 absorbed, no second job, the caller transaction still commits');
 refuses(fn() => $inTx(fn() => Outbox::enqueueStore($db, $s2, $merchantB, $managerA)), InvalidArgumentException::class, 'scope_mismatch', 'Store of another merchant refused');
+// Replay concorrente: A apre uno snapshot REPEATABLE READ, B accoda e committa, A accoda -> replay vero, non job_scope_conflict.
+$sRace = $store($merchantA, 'W4a negozio due connessioni');
+$b = new yii\db\Connection(['dsn' => $db->dsn, 'username' => $db->username, 'password' => $db->password, 'charset' => 'utf8mb4']);
+$txA = $db->beginTransaction(yii\db\Transaction::REPEATABLE_READ);
+try {
+    $snapshot = (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs WHERE entity_id=:e', [':e' => $sRace]);
+    $txB = $b->beginTransaction();
+    Outbox::enqueueStore($b, $sRace, $merchantA, $managerA);
+    $txB->commit();
+    check($snapshot === 0 && (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs WHERE entity_id=:e', [':e' => $sRace]) === 0, 'Connection A snapshot does not see the job committed by B');
+    check(Outbox::enqueueStore($db, $sRace, $merchantA, $managerA) === true, 'A enqueue after B commit: true replay through a current read');
+    $txA->commit();
+} finally { if ($txA->isActive) $txA->rollBack(); $b->close(); }
+check(count($jobs('store_link', $sRace)) === 1, 'Two connections: exactly one job');
 refuses(fn() => $inTx(fn() => Outbox::enqueueStore($db, 999999999, $merchantA, $managerA)), InvalidArgumentException::class, 'scope_mismatch', 'Missing store refused');
 $before = $total();
 refuses(fn() => $inTx(function () use ($db, $store, $merchantA, $managerA) {
