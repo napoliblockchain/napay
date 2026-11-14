@@ -49,6 +49,15 @@ le vecchie configurazioni nei test, non e il contratto del nuovo launcher.
 Il preflight controlla la password web risolta da Compose (non il testo
 grezzo prima dell'interpolazione), senza stampare il modello o i valori.
 
+Per il worker BTCPay esiste un ambiente separato, modello pubblico
+`docker/btcpay-worker.env.example`: non riusare questo env applicativo,
+che contiene chiavi web e credenziali con altro scopo. Il comando dedicato
+`php yii-btcpay btcpay-provision/run --once` verifica privilegi ristretti
+e gestisce per ora soltanto account merchant; non e un daemon o un deploy.
+Web outbox: `BTCPAY_PROVISION_INSTANCE` vuota = nessun accodamento; valorizzarla
+solo nel rollout approvato. E il digest pubblico dell'origine worker, non
+una chiave. Non deriva dalle impostazioni BTCPay legacy/quote associative.
+
 Il compose riceve il file esterno a runtime, senza build args DB. Espone soltanto
 HTTP diagnostico su `127.0.0.1:18120`, parametrizzabile con `NAPAY_HTTP_PORT`.
 L'accesso normale HTTPS passa dal gateway Caddy della piattaforma; niente
