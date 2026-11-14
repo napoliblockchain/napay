@@ -16,6 +16,21 @@ $app->user->enableSession = false;
 $db = $app->db;
 if ($db->createCommand('SELECT DATABASE()')->queryScalar() !== 'napay_test_runtime') exit(1);
 
+/** Gara C4+API: login operatore reale (POST /api/pos/v1/sessions) che attende gli stessi lock del disable. */
+if (($argv[1] ?? '') === '--race-login') {
+    fwrite(STDOUT, "ready\n");
+    $curl = curl_init('http://127.0.0.1/api/pos/v1/sessions');
+    curl_setopt_array($curl, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 30, CURLOPT_PROXY => '', CURLOPT_POST => true,
+        CURLOPT_HTTPHEADER => ['X-POS-Client-Key: ' . getenv('NAPAY_TEST_POS_CLIENT_KEY'), 'Content-Type: application/json', 'Accept: application/json'],
+        CURLOPT_POSTFIELDS => json_encode(['email' => $argv[2], 'password' => 'fixture-password-only'])]);
+    $body = curl_exec($curl);
+    $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE);
+    curl_close($curl);
+    $token = is_string($body) ? (json_decode($body, true)['access_token'] ?? '') : '';
+    fwrite(STDOUT, $status . ' ' . (is_string($token) ? $token : '') . "\n");
+    exit(0);
+}
+
 /** C4-RV1/RV2: scrittura che attende il lock del merchant tenuto da un'altra connessione. */
 if (($argv[1] ?? '') === '--race-op') {
     try {
@@ -297,6 +312,60 @@ check($code === 0 && scalar('SELECT revoked_reason FROM pos_operator_sessions WH
     && $active($opA1) === 0, 'RV2: session committed after snapshot is revoked by disable');
 PosManagement::setOperatorEnabled($scopeA, $opA1, true);
 check($active($opA1) === 0, 'RV2: re-enable never revives revoked sessions');
+
+// --- D3 C4+API: disable C4 e login API reale in due processi, entrambi gli ordini della gara
+function spawnRace(array $args): array {
+    $process = proc_open(array_merge([PHP_BINARY, __FILE__], array_map('strval', $args)), [0 => ['pipe', 'r'], 1 => ['pipe', 'w'], 2 => ['file', '/dev/null', 'a']], $pipes);
+    if (!is_resource($process)) throw new RuntimeException('Race fixture unavailable.');
+    stream_set_timeout($pipes[1], 40);
+    if (fgets($pipes[1]) !== "ready\n") throw new RuntimeException('Race fixture did not initialize.');
+    return [$process, $pipes];
+}
+function finishRace(array $child): array {
+    [$process, $pipes] = $child;
+    fclose($pipes[0]);
+    $output = trim((string) stream_get_contents($pipes[1]));
+    fclose($pipes[1]);
+    return [proc_close($process), $output];
+}
+/** Avvia i figli in ordine mentre la connessione di test tiene il lock del merchant, poi lo rilascia. */
+function raceInOrder(int $merchantId, array $first, array $second): array {
+    global $db;
+    $transaction = $db->beginTransaction();
+    $db->createCommand('SELECT id FROM merchants WHERE id=:m FOR UPDATE', [':m' => $merchantId])->queryScalar();
+    try {
+        $a = spawnRace($first); usleep(1500000);
+        $b = spawnRace($second); usleep(1500000);
+    } finally { $transaction->commit(); }
+    return [finishRace($a), finishRace($b)];
+}
+function catalogStatus(string $token): int {
+    $curl = curl_init('http://127.0.0.1/api/pos/v1/terminals');
+    curl_setopt_array($curl, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 20, CURLOPT_PROXY => '',
+        CURLOPT_HTTPHEADER => ['X-POS-Client-Key: ' . getenv('NAPAY_TEST_POS_CLIENT_KEY'), 'Authorization: Bearer ' . $token, 'Accept: application/json']]);
+    curl_exec($curl); $status = (int) curl_getinfo($curl, CURLINFO_RESPONSE_CODE); curl_close($curl);
+    return $status;
+}
+$opEmail = 'c4-op-a1@example.invalid';
+$sessions = fn() => (int) scalar('SELECT COUNT(*) FROM pos_operator_sessions WHERE user_id=:u', [':u' => $opA1]);
+check((int) scalar('SELECT is_enabled FROM pos_operators WHERE user_id=:u', [':u' => $opA1]) === 1, 'D3 race fixture: operator enabled before races');
+// ordine 1: il disable C4 ottiene il lock per primo, il login trova il profilo disabilitato
+$before = $sessions();
+[[$disableCode], [, $login]] = raceInOrder($merchantA, ['--race-op', $managerA, 'operator-disable', $opA1], ['--race-login', $opEmail]);
+check($disableCode === 0 && strtok($login, ' ') === '401' && $sessions() === $before && $active($opA1) === 0,
+    sprintf('D3 C4+API, disable first: concurrent login refused, no session inserted (disable %d, login %s, new sessions %d, active %d)',
+        $disableCode, strtok($login, ' '), $sessions() - $before, $active($opA1)));
+PosManagement::setOperatorEnabled($scopeA, $opA1, true);
+// ordine 2: il login ottiene il lock per primo, il disable C4 revoca la sessione appena committata
+[[, $login], [$disableCode]] = raceInOrder($merchantA, ['--race-login', $opEmail], ['--race-op', $managerA, 'operator-disable', $opA1]);
+[$loginStatus, $token] = array_pad(explode(' ', $login, 2), 2, '');
+check($loginStatus === '201' && str_starts_with($token, 'napos_') && $disableCode === 0
+    && scalar('SELECT revoked_reason FROM pos_operator_sessions WHERE token_sha256=:t', [':t' => hash('sha256', $token)]) === 'operator_disabled',
+    'D3 C4+API, login first: session committed by login is revoked by disable');
+check(catalogStatus($token) === 401, 'D3 C4+API: revoked bearer rejected by the catalog API');
+PosManagement::setOperatorEnabled($scopeA, $opA1, true);
+check(catalogStatus($token) === 401 && $active($opA1) === 0, 'D3 C4+API: re-enable does not revive the old bearer');
+unset($token);
 
 // --- admin e registro
 check(login('admin@example.invalid') === 302, 'Admin logged in');
