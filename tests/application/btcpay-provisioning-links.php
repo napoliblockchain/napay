@@ -277,4 +277,112 @@ $bad = null;
 try { new ProvisioningLinkWorker($worker, new ProvisioningJobs($worker, $uuid()), $store, new StoreLinkStep($http->key()), new PosLinkStep($http->key()), 'bad'); }
 catch (InvalidArgumentException $e) { $bad = $e; }
 check($bad !== null && $clean($bad), 'Constructor trace hides connection, store and keys');
+// ===== W3e: riconciliazione GET-only (reconcileOnce), mai POST
+$jobFull = static fn(int $id): array => $admin->createCommand('SELECT state, next_attempt_at, in_flight_op, last_error_code, lease_owner FROM btcpay_provisioning_jobs WHERE id=:id', [':id' => $id])->queryOne();
+$posts = static fn(FakeHttp $h): int => count(array_filter($h->calls, fn($c) => $c[0] === 'POST'));
+/** Scenario con un POST store dall'esito ignoto: lavoro e mapping in riconciliazione con il marker. */
+$uncertainStore = static function () use ($scenario, $enqueue, $storeA) {
+    [$instance, $http, $store, $run] = $scenario();
+    $id = $enqueue($instance, 'store_link', $storeA);
+    $http->queue = [new Http(Http::OUTCOME_UNKNOWN)];
+    $run->runOnce();
+    return [$instance, $http, $store, $run, $id];
+};
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+check($run->runOnce() === false, 'runOnce never takes a reconcile_required job');
+$http->queue = [$r(200, [['id' => 'st-r1', 'name' => 'Negozio ' . $storeA . ' ' . $marker($store, 'store_link', $storeA)]])];
+check($run->reconcileOnce() === true, 'reconcileOnce takes the uncertain store job');
+check($jobFull($id)['state'] === 'done' && $jobFull($id)['in_flight_op'] === null && $store->storeLink($storeA)['state'] === 'synced' && $store->storeLink($storeA)['remote_store_id'] === 'st-r1'
+    && end($http->calls)[0] === 'GET' && $posts($http) === 1, 'Single marker adopted through GET: link synced, job done, no new POST');
+check($run->reconcileOnce() === false, 'No reconciliation left: false');
+
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$http->queue = [$r(200, [])];
+$run->reconcileOnce();
+$j = $jobFull($id);
+check($j['state'] === 'reconcile_required' && $j['in_flight_op'] === 'create_store' && (int) $j['next_attempt_at'] > $t && $j['lease_owner'] === null && $posts($http) === 1,
+    'Zero markers: GET rescheduled with backoff, marker kept, no POST');
+check($run->reconcileOnce() === false, 'Rescheduled GET not taken before its time');
+$t += 4000;
+$http->queue = [$r(200, [['id' => 'st-a', 'name' => 'A ' . $marker($store, 'store_link', $storeA)], ['id' => 'st-b', 'name' => 'B ' . $marker($store, 'store_link', $storeA)]])];
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'deferred' && $jobFull($id)['last_error_code'] === 'store_ambiguous' && $store->storeLink($storeA)['remote_store_id'] === null, 'Multiple markers: deferred to the admin, nothing adopted');
+$t += 90000;
+check($run->reconcileOnce() === false && $posts($http) === 1, 'Deferred reconciliation never claimed automatically');
+$t -= 94000;
+
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$http->queue = [$r(429, null, '300')];
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'reconcile_required' && (int) $jobFull($id)['next_attempt_at'] >= $t + 300 && $jobFull($id)['last_error_code'] === 'rate_limited', '429 on GET: next GET at Retry-After');
+
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$http->queue = [$r(401)];
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'deferred' && $store->storeLink($storeA)['state'] === 'failed' && $store->account($merchant)['state'] === 'reconcile_required', '401 on GET: link failed, account under review, job deferred');
+
+// POS: solo PointOfSale con il marker
+[$instance, $http, $store, $run] = $scenario();
+$syncStore($store, $storeA, 'st-r2');
+$id = $enqueue($instance, 'pos_link', $terminalA);
+$http->queue = [new Http(Http::OUTCOME_UNKNOWN)];
+$run->runOnce();
+$token = $marker($store, 'pos_link', $terminalA);
+$http->queue = [$r(200, [['id' => 'app-c', 'appType' => 'Crowdfund', 'appName' => 'Cassa ' . $token]])];
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'reconcile_required' && $jobFull($id)['last_error_code'] === 'app_not_found' && $store->posLink($terminalA)['remote_app_id'] === null, 'POS reconciliation ignores another app type with the marker');
+$t += 4000;
+$http->queue = [$r(200, [['id' => 'app-c', 'appType' => 'Crowdfund', 'appName' => 'Cassa ' . $token], ['id' => 'app-p', 'appType' => 'PointOfSale', 'appName' => 'Cassa ' . $token]])];
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'done' && $store->posLink($terminalA)['remote_app_id'] === 'app-p' && end($http->calls)[1] === '/api/v1/stores/st-r2/apps' && $posts($http) === 1, 'Single PointOfSale adopted by GET only');
+$t -= 4000;
+
+// Idoneità: prima e durante la GET
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$admin->createCommand()->update('users', ['is_active' => 0], ['id' => $owner])->execute();
+$calls = count($http->calls);
+$run->reconcileOnce();
+$admin->createCommand()->update('users', ['is_active' => 1], ['id' => $owner])->execute();
+check($jobFull($id)['state'] === 'deferred' && $jobFull($id)['last_error_code'] === 'merchant_ineligible' && count($http->calls) === $calls && $jobFull($id)['in_flight_op'] === 'create_store',
+    'Disabled owner before GET: no call, deferred, marker kept');
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$http->queue = [function () use ($admin, $owner, $r, $store, $storeA, $marker) {
+    $admin->createCommand()->update('users', ['is_active' => 0], ['id' => $owner])->execute();
+    return $r(200, [['id' => 'st-late', 'name' => 'Negozio ' . $storeA . ' ' . $marker($store, 'store_link', $storeA)]]);
+}];
+$run->reconcileOnce();
+$admin->createCommand()->update('users', ['is_active' => 1], ['id' => $owner])->execute();
+check($jobFull($id)['state'] === 'deferred' && $store->storeLink($storeA)['remote_store_id'] === null && $store->storeLink($storeA)['state'] === 'reconcile_required', 'Disabled during GET: ID not adopted, deferred');
+
+// Lease scaduta durante la GET, risorsa occupata, dipendenza e mapping mancanti
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$http->queue = [function () use (&$t, $r, $store, $storeA, $marker) { $t += 61; return $r(200, [['id' => 'st-x', 'name' => 'Negozio ' . $storeA . ' ' . $marker($store, 'store_link', $storeA)]]); }];
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'reconcile_required' && $store->storeLink($storeA)['remote_store_id'] === null, 'Lease expired during GET: late result has no effect');
+$t -= 61;
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$holder = $connect();
+$lock = 'napay-btcpay-' . substr(hash('sha256', $instance . '|store_link|' . $storeA), 0, 40);
+$holder->createCommand('SELECT GET_LOCK(:l, 0)', [':l' => $lock])->queryScalar();
+$calls = count($http->calls);
+$run->reconcileOnce();
+$holder->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->queryScalar();
+check($jobFull($id)['state'] === 'reconcile_required' && $jobFull($id)['last_error_code'] === 'resource_busy' && count($http->calls) === $calls, 'Resource busy: reconciliation retried later, no call');
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$store->updateAccount($store->account($merchant), ['state' => 'reconcile_required']);
+$calls = count($http->calls);
+$run->reconcileOnce();
+check($jobFull($id)['state'] === 'reconcile_required' && $jobFull($id)['last_error_code'] === 'account_not_ready' && count($http->calls) === $calls, 'Account not synced: GET postponed, no call');
+[$instance, $http, $store, $run] = $scenario();
+$admin->createCommand()->insert('btcpay_provisioning_jobs', ['kind' => 'store_link', 'instance' => $instance, 'merchant_id' => $merchant, 'entity_id' => $storeA2,
+    'state' => 'reconcile_required', 'created_at' => $t, 'updated_at' => $t])->execute();
+$missing = (int) $admin->lastInsertID;
+$run->reconcileOnce();
+check($jobFull($missing)['state'] === 'deferred' && $jobFull($missing)['last_error_code'] === 'link_missing' && $store->storeLink($storeA2) === null && $http->calls === [],
+    'Reconciliation without a mapping: deferred, mapping never created, no call');
+$failure = null;
+[$instance, $http, $store, $run, $id] = $uncertainStore();
+$http->queue = [new LogicException('transport bug with ' . $apiKey)];
+try { $run->reconcileOnce(); } catch (RuntimeException $e) { $failure = $e; }
+check($failure !== null && $failure->getMessage() === 'provisioning_link_worker_failed' && $failure->getPrevious() === null && $clean($failure), 'reconcileOnce failure sanitized like runOnce');
 echo "PASS $checks BTCPay provisioning link worker checks\n";
