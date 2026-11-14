@@ -19,7 +19,9 @@ use yii\db\Connection;
  *   (anche di una generazione precedente) = solo GET di riconciliazione, che adotta il marker esatto se unico.
  * - Ogni esito: CAS W3a con mapping atomico e nuovo ricontrollo di scope; un esito tardivo non idoneo non adotta ID e,
  *   dopo un POST, conserva l'incertezza (riconciliazione con marker). Nomi remoti generici: ID locale + marker.
- * Nessun loop, daemon o console; la presa automatica delle riconciliazioni non è di questo micro-step.
+ * W3e: reconcileOnce() prende un lavoro reconcile_required (API W3d) e fa SOLO GET: adotta il marker unico o
+ *   riprogramma la GET (deferred per l'admin quando ripetere non serve); non crea mai mapping, account o marker.
+ * Nessun loop o daemon: un lavoro per chiamata.
  */
 final class ProvisioningLinkWorker
 {
@@ -50,25 +52,60 @@ final class ProvisioningLinkWorker
         }
     }
 
+    /** W3e: una riconciliazione GET-only dei link; false se non c'era alcuna riconciliazione dovuta. */
+    public function reconcileOnce(): bool
+    {
+        if (Yii::$app->db !== $this->db) throw new \LogicException('worker_connection_mismatch');
+        try {
+            return $this->reconcileOne();
+        } catch (\Throwable $error) {
+            throw new \RuntimeException('provisioning_link_worker_failed');
+        }
+    }
+
     private function processOne(): bool
     {
         $job = $this->jobs->claim($this->instance, array_keys(self::KINDS));
         if ($job === null) return false;
-        if (!isset(self::KINDS[$job['kind']]) || $job['entity_id'] < 1 || $job['merchant_id'] < 1) {
+        if (!$this->validJob($job)) {
             $this->jobs->fail($job['id'], $job['version'], 'resource_scope_mismatch');
             return true;
         }
-        $lock = 'napay-btcpay-' . substr(hash('sha256', $this->instance . '|' . $job['kind'] . '|' . $job['entity_id']), 0, 40);
-        if ((int) $this->db->createCommand('SELECT GET_LOCK(:l, 0)', [':l' => $lock])->queryScalar() !== 1) {
-            $this->jobs->retryLater($job['id'], $job['version'], 'resource_busy', $this->now() + self::LOCK_WAIT);
+        $this->locked($job, fn() => $this->link($job), fn() => $this->jobs->retryLater($job['id'], $job['version'], 'resource_busy', $this->now() + self::LOCK_WAIT));
+        return true;
+    }
+
+    private function reconcileOne(): bool
+    {
+        $job = $this->jobs->claimReconciliation($this->instance, array_keys(self::KINDS));
+        if ($job === null) return false;
+        if (!$this->validJob($job)) {
+            $this->jobs->retryReconciliation($job['id'], $job['version'], 'resource_scope_mismatch', $this->now() + self::LOCK_WAIT, true);
             return true;
         }
+        $this->locked($job, fn() => $this->reconcileLink($job),
+            fn() => $this->jobs->retryReconciliation($job['id'], $job['version'], 'resource_busy', $this->now() + self::LOCK_WAIT));
+        return true;
+    }
+
+    private function validJob(array $job): bool
+    {
+        return isset(self::KINDS[$job['kind']]) && $job['entity_id'] >= 1 && $job['merchant_id'] >= 1;
+    }
+
+    /** Lock di risorsa (istanza+tipo+entità) attraverso l'HTTP, sempre rilasciato; occupato = $busy senza chiamate. */
+    private function locked(array $job, #[\SensitiveParameter] callable $work, #[\SensitiveParameter] callable $busy): void
+    {
+        $lock = 'napay-btcpay-' . substr(hash('sha256', $this->instance . '|' . $job['kind'] . '|' . $job['entity_id']), 0, 40);
+        if ((int) $this->db->createCommand('SELECT GET_LOCK(:l, 0)', [':l' => $lock])->queryScalar() !== 1) {
+            $busy();
+            return;
+        }
         try {
-            $this->link($job);
+            $work();
         } finally {
             $this->db->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->queryScalar();
         }
-        return true;
     }
 
     private function link(array $job): void
@@ -76,7 +113,7 @@ final class ProvisioningLinkWorker
         $snapshot = null; $key = null;
         // Preparazione fenced: scope prima di qualunque mapping, poi dipendenze, mapping e lettura della chiave.
         $version = $this->outcome($job, $job['version'], fn(#[\SensitiveParameter] $m) => $this->jobs->prepare($job['id'], $job['version'], $m),
-            function () use ($job, &$snapshot, &$key) { [$snapshot, $key] = $this->snapshot($job); });
+            function () use ($job, &$snapshot, &$key) { [$snapshot, $key] = $this->snapshot($job, true); });
         if ($version === null) return;
         if ($snapshot['waiting'] !== null) { $this->later($job, $version, StepOutcome::pending($snapshot['waiting']), false); return; }
         $step = $job['kind'] === 'store_link' ? $this->storeStep : $this->posStep;
@@ -97,6 +134,46 @@ final class ProvisioningLinkWorker
         $result = $step->create($snapshot, $key);
         unset($key);
         $this->apply($job, $checkpoint, $result, true);
+    }
+
+    /** W3e: solo GET sul mapping esistente; nessun POST, qualunque sia l'esito. */
+    private function reconcileLink(array $job): void
+    {
+        $snapshot = null; $key = null;
+        $version = $this->outcome($job, $job['version'], fn(#[\SensitiveParameter] $m) => $this->jobs->prepareReconciliation($job['id'], $job['version'], $m),
+            function () use ($job, &$snapshot, &$key) { [$snapshot, $key] = $this->snapshot($job, false); }, false, true);
+        if ($version === null) return;
+        if ($snapshot['waiting'] !== null) { $this->retryGet($job, $version, $snapshot['waiting'], null, $snapshot['waiting'] === 'link_missing'); return; }
+        $step = $job['kind'] === 'store_link' ? $this->storeStep : $this->posStep;
+        $result = $step->reconcile(['in_flight' => true] + $snapshot, $key);
+        unset($key);
+        $code = (string) $result->code;
+        switch ($result->kind) {
+            case StepOutcome::DONE:
+                $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->succeed($job['id'], $version, $m), fn() => $this->adopt($job, $result), false, true);
+                return;
+            case StepOutcome::RETRY:
+            case StepOutcome::PENDING:
+                $this->retryGet($job, $version, $code, $result->retryAfter, false);
+                return;
+            case StepOutcome::FAILED:
+                // 401/403: link bloccato e account in revisione; richiesta non inviata: si riprova; link già chiuso: admin.
+                if ($code === 'request_not_sent') { $this->retryGet($job, $version, $code, null, false); return; }
+                $this->retryGet($job, $version, $code, null, true, $code === 'merchant_key_denied' ? fn() => $this->failed($job, $code) : null);
+                return;
+            default:
+                // Marker assente o lettura non disponibile: nuova GET più tardi; multiplo o malformato: decide l'admin.
+                $again = str_ends_with($code, '_not_found') || str_ends_with($code, '_lookup_unavailable');
+                $this->retryGet($job, $version, $code, null, !$again, fn() => $this->uncertain($job, $code));
+        }
+    }
+
+    /** Nuova GET programmata con RetryPolicy (deferred oltre soglia o se forzato); marker e incertezza conservati. */
+    private function retryGet(array $job, int $version, string $code, ?string $retryAfter, bool $defer, #[\SensitiveParameter] ?callable $mapping = null): void
+    {
+        $decision = $this->retry->decide($retryAfter, max(1, $job['attempts']), $this->now());
+        $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->retryReconciliation($job['id'], $version, $code,
+            $decision['next_attempt_at'], $defer || $decision['deferred'], $m), $mapping, false, true);
     }
 
     /** Applica l'esito del passo: CAS W3a con mapping atomico; scope ricontrollato in ogni transazione. */
@@ -141,7 +218,7 @@ final class ProvisioningLinkWorker
      * Esito CAS con mapping atomico e scope ricontrollato. Scope non più valido: nessun ID adottato; dopo un POST
      * il lavoro va in riconciliazione con i marker (incertezza conservata), altrimenti fallisce. Nuova versione o null.
      */
-    private function outcome(array $job, int $version, #[\SensitiveParameter] callable $cas, #[\SensitiveParameter] ?callable $mapping, bool $inFlight = false): ?int
+    private function outcome(array $job, int $version, #[\SensitiveParameter] callable $cas, #[\SensitiveParameter] ?callable $mapping, bool $inFlight = false, bool $reconciling = false): ?int
     {
         try {
             return $cas(function (#[\SensitiveParameter] Connection $ignoredConnection) use ($job, $mapping) {
@@ -150,7 +227,10 @@ final class ProvisioningLinkWorker
             });
         } catch (LinkIneligible $error) {
             $code = $error->getMessage();
-            if ($inFlight) {
+            if ($reconciling) {
+                // Riconciliazione: nessuna adozione, marker conservato, decide l'admin.
+                $this->jobs->retryReconciliation($job['id'], $version, $code, $this->now() + self::LOCK_WAIT, true);
+            } elseif ($inFlight) {
                 $this->jobs->reconcile($job['id'], $version, $code, function (#[\SensitiveParameter] Connection $ignoredConnection) use ($job, $code) { $this->uncertain($job, $code); });
             } else {
                 $this->jobs->fail($job['id'], $version, $code);
@@ -161,9 +241,10 @@ final class ProvisioningLinkWorker
 
     /**
      * Snapshot nella transazione di preparazione. Dipendenze: account synced con chiave current; per il POS anche
-     * lo store del negozio synced. Mancanti = attesa, nessun mapping nuovo. Restituisce [snapshot, chiave].
+     * lo store del negozio synced. Mancanti = attesa, nessun mapping nuovo. $create=false (riconciliazione): il mapping
+     * deve esistere già, mai creato. Restituisce [snapshot, chiave].
      */
-    private function snapshot(array $job): array
+    private function snapshot(array $job, bool $create): array
     {
         $wait = static fn(string $code): array => [['waiting' => $code], null];
         $account = $this->store->account($job['merchant_id']);
@@ -171,14 +252,17 @@ final class ProvisioningLinkWorker
         $current = $this->store->currentKey($account);
         if ($current === null) return $wait('account_not_ready');
         if ($job['kind'] === 'store_link') {
-            $link = $this->store->ensureStoreLink($account, $job['entity_id']);
+            $link = $create ? $this->store->ensureStoreLink($account, $job['entity_id']) : $this->store->storeLink($job['entity_id']);
+            if ($link === null) return $wait('link_missing');
+            if ($link['merchant_id'] !== $job['merchant_id']) throw new LinkIneligible('scope_mismatch');
             $snapshot = ['store_name' => 'Negozio ' . $job['entity_id'], 'remote_store_id' => $link['remote_store_id']];
         } else {
             $terminal = $this->terminal($job['entity_id']);
             $storeLink = $this->store->storeLink($terminal['store_id']);
             if ($storeLink === null || $storeLink['merchant_id'] !== $job['merchant_id'] || $storeLink['state'] !== 'synced' || $storeLink['remote_store_id'] === null) return $wait('store_not_ready');
-            $link = $this->store->ensurePosLink($storeLink, $job['entity_id']);
-            if ($link['store_id'] !== $terminal['store_id']) throw new LinkIneligible('scope_mismatch');
+            $link = $create ? $this->store->ensurePosLink($storeLink, $job['entity_id']) : $this->store->posLink($job['entity_id']);
+            if ($link === null) return $wait('link_missing');
+            if ($link['merchant_id'] !== $job['merchant_id'] || $link['store_id'] !== $terminal['store_id']) throw new LinkIneligible('scope_mismatch');
             $snapshot = ['terminal_name' => 'Cassa ' . $job['entity_id'], 'remote_store_id' => $storeLink['remote_store_id'], 'remote_app_id' => $link['remote_app_id']];
         }
         return [$snapshot + ['waiting' => null, 'state' => $link['state'], 'marker' => $link['marker'], 'account_state' => $account['state'],
