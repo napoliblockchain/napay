@@ -1,6 +1,7 @@
 <?php
 
 use yii\helpers\Html;
+use app\components\Crypt;
 
 /* @var $this yii\web\View */
 /* @var $quote array app\components\association\MembershipFee::quote() */
@@ -72,7 +73,7 @@ $pendingBitcoin = array_filter($payments, fn($p) => $p->status === 'pending' && 
             </div>
             <div class="table-responsive">
                 <table class="table table-vcenter card-table">
-                    <thead><tr><th><?= Yii::t('app', 'Data') ?></th><th><?= Yii::t('app', 'Quota') ?></th><th class="text-end"><?= Yii::t('app', 'Importo') ?></th><th><?= Yii::t('app', 'Metodo') ?></th><th><?= Yii::t('app', 'Stato') ?></th><th><?= Yii::t('app', 'Scadenza') ?></th></tr></thead>
+                    <thead><tr><th><?= Yii::t('app', 'Data') ?></th><th><?= Yii::t('app', 'Quota') ?></th><th class="text-end"><?= Yii::t('app', 'Importo') ?></th><th><?= Yii::t('app', 'Metodo') ?></th><th><?= Yii::t('app', 'Stato') ?></th><th><?= Yii::t('app', 'Scadenza') ?></th><th class="text-end"><?= Yii::t('app', 'Azioni') ?></th></tr></thead>
                     <tbody>
                     <?php foreach ($payments as $p): ?>
                         <tr>
@@ -82,9 +83,14 @@ $pendingBitcoin = array_filter($payments, fn($p) => $p->status === 'pending' && 
                             <td><?= Html::encode($p->method->description ?? '') ?></td>
                             <td><?= $this->render('/association/_status', ['status' => $p->status, 'label' => $p->statusLabel()]) ?></td>
                             <td><?= $f->asDate($p->expires_on, 'php:d/m/Y') ?></td>
+                            <td class="text-end text-nowrap">
+                                <?php if ($p->status === 'paid'): ?>
+                                    <?= Html::a('<i class="fas fa-receipt me-1"></i>' . Html::encode(Yii::t('app', 'Ricevuta')), ['/association/receipt', 'id' => Crypt::encrypt($p->id)], ['class' => 'btn btn-sm btn-outline-primary']) ?>
+                                <?php endif; ?>
+                            </td>
                         </tr>
                     <?php endforeach; ?>
-                    <?php if (!$payments): ?><tr><td colspan="6" class="text-secondary"><?= Yii::t('app', 'Nessun pagamento.') ?></td></tr><?php endif; ?>
+                    <?php if (!$payments): ?><tr><td colspan="7" class="text-secondary"><?= Yii::t('app', 'Nessun pagamento.') ?></td></tr><?php endif; ?>
                     </tbody>
                 </table>
             </div>

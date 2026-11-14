@@ -16,6 +16,7 @@ use yii\helpers\Json;
 
 use app\components\Crypt;
 use app\components\User;
+use app\components\identity\AccountEligibility;
 use app\components\legacy\LegacyImporter;
 use app\models\AssemblyMinutes;
 use app\models\AssociationRoles;
@@ -58,6 +59,12 @@ class AssociationController extends Controller
                     [
                         'allow' => true,
                         'roles' => ['@'],
+                        'actions' => ['minutes', 'minute-file', 'receipt'],
+                        'matchCallback' => static fn() => AccountEligibility::isMemberAccount((int) Yii::$app->user->id),
+                    ],
+                    [
+                        'allow' => true,
+                        'roles' => ['@'],
                         'matchCallback' => function ($rule, $action) {
                             return User::isAdministrator();
                         },
@@ -69,6 +76,9 @@ class AssociationController extends Controller
 
     public function beforeAction($action)
     {
+        if (in_array($action->id, ['minutes', 'minute-file', 'receipt'], true)) {
+            Yii::$app->response->headers->set('Cache-Control', 'private, no-store');
+        }
         $this->view->params['associationReadOnly'] = LegacyImporter::active();
         return parent::beforeAction($action);
     }
@@ -168,7 +178,11 @@ class AssociationController extends Controller
     /** Ricevuta stampabile (Stampa del browser -> PDF) */
     public function actionReceipt($id)
     {
-        $payment = MembershipPayments::find()->where(['id' => $this->decodeId($id)])->with(['user', 'fee', 'method', 'profile'])->one();
+        $query = MembershipPayments::find()->where(['id' => $this->decodeId($id)]);
+        if (!User::isAdministrator()) {
+            $query->andWhere(['user_id' => (int) Yii::$app->user->id, 'status' => 'paid']);
+        }
+        $payment = $query->with(['user', 'fee', 'method', 'profile'])->one();
         if ($payment === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
         $codes = ['gdpr_titolare', 'gdpr_address', 'gdpr_cap', 'gdpr_city', 'gdpr_vat'];
         return $this->render('receipt', [

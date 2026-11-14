@@ -17,6 +17,7 @@ $items = [
     ['label'=>Yii::t('app', 'Dashboard'), 'url'=>['site/index'], 'icon'=>'tachometer-alt'],
     ['label'=>Yii::t('app', 'La mia area'), 'icon'=>'user', 'items'=>[
         ['label'=>Yii::t('app', 'Paga quota'), 'url'=>['pay-fee/index'], 'icon'=>'hand-holding-heart', 'visible'=>$member, 'active'=>$on('pay-fee')],
+        ['label'=>Yii::t('app', 'Verbali'), 'url'=>['association/minutes'], 'icon'=>'file-alt', 'visible'=>$member && !$admin, 'active'=>$on('association', ['minutes','minute-file'])],
     ]],
     ['label'=>Yii::t('app', 'Associazione'), 'icon'=>'users', 'visible'=>$admin, 'items'=>[
         ['label'=>Yii::t('app', 'Soci'), 'url'=>['association/members'], 'active'=>$on('association', ['members','member','member-update'])],

@@ -9,7 +9,9 @@ use app\assets\AssociationAsset;
 
 AssociationAsset::register($this);
 $this->title = Yii::t('app', 'Ricevuta {n}', ['n' => $payment->receiptLabel()]);
-$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Quote associative'), 'url' => ['payments']];
+$admin = \app\components\User::isAdministrator();
+$back = $admin ? ['member', 'id' => \app\components\Crypt::encrypt($payment->user_id)] : ['/pay-fee/index'];
+$this->params['breadcrumbs'][] = ['label' => Yii::t('app', $admin ? 'Quote associative' : 'Paga quota'), 'url' => $admin ? ['payments'] : ['/pay-fee/index']];
 $this->params['breadcrumbs'][] = $this->title;
 $f = Yii::$app->formatter;
 $user = $payment->user;
@@ -17,7 +19,7 @@ $profile = $payment->profile;
 $a = fn($code) => $association[$code] ?? '';
 ?>
 <div class="d-flex mb-3 d-print-none">
-    <?= Html::a('<i class="fas fa-arrow-left me-1"></i>' . Yii::t('app', 'Indietro'), ['member', 'id' => \app\components\Crypt::encrypt($payment->user_id)], ['class' => 'btn btn-outline-secondary']) ?>
+    <?= Html::a('<i class="fas fa-arrow-left me-1"></i>' . Yii::t('app', 'Indietro'), $back, ['class' => 'btn btn-outline-secondary']) ?>
     <?= Html::button('<i class="fas fa-print me-1"></i>' . Yii::t('app', 'Stampa'), ['class' => 'btn btn-primary ms-auto', 'data-napay-print' => 1]) ?>
 </div>
 <div class="card card-lg">
