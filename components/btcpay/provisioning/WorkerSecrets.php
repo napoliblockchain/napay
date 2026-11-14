@@ -21,22 +21,42 @@ final class WorkerSecrets
             if ($provisionerFile === $keyringFile) throw new \UnexpectedValueException();
             $provisioner = DatabaseSecret::read($provisionerFile);
             if (preg_match('/^[\x21-\x7e]{32,256}$/D', $provisioner) !== 1) throw new \UnexpectedValueException();
-            if (preg_match('#^/run/secrets/[A-Za-z0-9_-]+$#D', $keyringFile) !== 1) throw new \UnexpectedValueException();
-            $stat = @lstat($keyringFile);
-            if ($stat === false || ($stat['mode'] & 0170000) !== 0100000 || ($stat['mode'] & 077) !== 0
-                || $stat['size'] < 1 || $stat['size'] > 8192 || !is_readable($keyringFile)) throw new \UnexpectedValueException();
-            $raw = @file_get_contents($keyringFile, false, null, 0, 8193);
-            if (!is_string($raw) || strlen($raw) > 8192) throw new \UnexpectedValueException();
-            return self::parse($provisioner, $raw);
+            return self::parse($provisioner, self::readKeyring($keyringFile));
         } catch (\Throwable $error) {
             // Discard internal traces: JSON/native function arguments can contain the whole keyring.
             throw new \RuntimeException('invalid_btcpay_worker_secrets');
         }
     }
 
-    public function provisionerKey(): string { return $this->provisioner->getValue(); }
+    /** W3e: executor link e riconciliazione: solo il keyring, la chiave del provisioner non viene mai letta. */
+    public static function keyringOnly(string $keyringFile): self
+    {
+        try {
+            return self::parse('', self::readKeyring($keyringFile));
+        } catch (\Throwable $error) {
+            throw new \RuntimeException('invalid_btcpay_worker_secrets');
+        }
+    }
+
+    public function provisionerKey(): string
+    {
+        $key = $this->provisioner->getValue();
+        if ($key === '') throw new \LogicException('provisioner_key_not_loaded');
+        return $key;
+    }
     /** @return array<string,string> raw 32-byte KEKs for CredentialEnvelope only */
     public function keyring(): array { return $this->ring->getValue(); }
+
+    private static function readKeyring(string $keyringFile): string
+    {
+        if (preg_match('#^/run/secrets/[A-Za-z0-9_-]+$#D', $keyringFile) !== 1) throw new \UnexpectedValueException();
+        $stat = @lstat($keyringFile);
+        if ($stat === false || ($stat['mode'] & 0170000) !== 0100000 || ($stat['mode'] & 077) !== 0
+            || $stat['size'] < 1 || $stat['size'] > 8192 || !is_readable($keyringFile)) throw new \UnexpectedValueException();
+        $raw = @file_get_contents($keyringFile, false, null, 0, 8193);
+        if (!is_string($raw) || strlen($raw) > 8192) throw new \UnexpectedValueException();
+        return $raw;
+    }
 
     private static function parse(#[\SensitiveParameter] string $provisioner, #[\SensitiveParameter] string $raw): self
     {
