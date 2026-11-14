@@ -1,13 +1,15 @@
 <?php
 namespace app\components\btcpay\provisioning;
 
+use Yii;
+use app\components\identity\AccountEligibility;
 use yii\base\InvalidConfigException;
 use yii\db\Connection;
 use yii\db\IntegrityException;
 
 /**
- * SIP-022 B1 W4a: accodamento web dei lavori `store_link` / `pos_link` (generazione 1) nella STESSA transazione
- * che crea negozio o terminale: rollback del chiamante = nessun lavoro. Solo le colonne WEB_ENQUEUE concesse al
+ * SIP-022 B1 W4a/W4b: accodamento web dei lavori `merchant_account` / `store_link` / `pos_link` (generazione 1) nella
+ * STESSA transazione che attiva il merchant o crea negozio o terminale: rollback del chiamante = nessun lavoro. Solo le colonne WEB_ENQUEUE concesse al
  * web (INSERT esplicito: nessun UPDATE, nessun INSERT IGNORE); il duplicato 1062 dello stesso scope è un replay
  * idempotente, qualunque altro errore risale. Nessuna chiave, credenziale o chiamata HTTP nel web.
  * BTCPAY_PROVISION_INSTANCE (digest pubblico SHA-256 dell'origine del worker): vuota = funzione non attiva,
@@ -17,6 +19,24 @@ use yii\db\IntegrityException;
 final class ProvisioningOutbox
 {
     private const TABLE = 'btcpay_provisioning_jobs';
+
+    /**
+     * Merchant appena attivato (gestore PG promosso): lavoro merchant_account con entity_id = merchant_id.
+     * Scope: righe merchant e titolare bloccate in lettura, merchantForManager(titolare) deve restituire proprio
+     * questo merchant (attivo, ruolo merchant, PG, merchant unico), letto sulla stessa connessione della transazione.
+     */
+    public static function enqueueMerchant(#[\SensitiveParameter] Connection $db, int $merchantId, int $actorId): bool
+    {
+        self::ids($merchantId, $actorId);
+        $instance = self::open($db);
+        if ($instance === null) return false;
+        if (Yii::$app->db !== $db) throw new \LogicException('connection_mismatch');
+        $owner = $db->createCommand('SELECT user_id FROM {{%merchants}} WHERE id=:id FOR SHARE', [':id' => $merchantId])->queryScalar();
+        if ($owner === false || $owner === null
+            || $db->createCommand('SELECT id FROM {{%users}} WHERE id=:id FOR SHARE', [':id' => (int) $owner])->queryScalar() === false
+            || AccountEligibility::merchantForManager((int) $owner) !== $merchantId) throw new \InvalidArgumentException('scope_mismatch');
+        return self::insert($db, 'merchant_account', $instance, $merchantId, $merchantId, $actorId);
+    }
 
     /** Negozio appena creato: lavoro store_link. false se la funzione non è attiva, true se il lavoro esiste. */
     public static function enqueueStore(#[\SensitiveParameter] Connection $db, int $storeId, int $merchantId, int $actorId): bool
