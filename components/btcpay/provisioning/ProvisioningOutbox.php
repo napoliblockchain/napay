@@ -12,13 +12,14 @@ use yii\db\IntegrityException;
  * idempotente, qualunque altro errore risale. Nessuna chiave, credenziale o chiamata HTTP nel web.
  * BTCPAY_PROVISION_INSTANCE (digest pubblico SHA-256 dell'origine del worker): vuota = funzione non attiva,
  * nessun lavoro; non vuota e malformata = eccezione (la transazione del chiamante va annullata).
+ * La Connection (contiene la password del DB) è sempre un parametro sensibile: mai negli argomenti delle trace.
  */
 final class ProvisioningOutbox
 {
     private const TABLE = 'btcpay_provisioning_jobs';
 
     /** Negozio appena creato: lavoro store_link. false se la funzione non è attiva, true se il lavoro esiste. */
-    public static function enqueueStore(Connection $db, int $storeId, int $merchantId, int $actorId): bool
+    public static function enqueueStore(#[\SensitiveParameter] Connection $db, int $storeId, int $merchantId, int $actorId): bool
     {
         self::ids($storeId, $merchantId, $actorId);
         $instance = self::open($db);
@@ -29,7 +30,7 @@ final class ProvisioningOutbox
     }
 
     /** Terminale appena creato: lavoro pos_link, con terminale, negozio e merchant coerenti. */
-    public static function enqueueTerminal(Connection $db, int $terminalId, int $storeId, int $merchantId, int $actorId): bool
+    public static function enqueueTerminal(#[\SensitiveParameter] Connection $db, int $terminalId, int $storeId, int $merchantId, int $actorId): bool
     {
         self::ids($terminalId, $storeId, $merchantId, $actorId);
         $instance = self::open($db);
@@ -51,13 +52,13 @@ final class ProvisioningOutbox
     }
 
     /** Transazione del chiamante obbligatoria anche a funzione spenta: l'errore d'uso emerge sempre. */
-    private static function open(Connection $db): ?string
+    private static function open(#[\SensitiveParameter] Connection $db): ?string
     {
         if ($db->getTransaction() === null) throw new \LogicException('transaction_required');
         return self::instance();
     }
 
-    private static function insert(Connection $db, string $kind, string $instance, int $merchantId, int $entityId, int $actorId): bool
+    private static function insert(#[\SensitiveParameter] Connection $db, string $kind, string $instance, int $merchantId, int $entityId, int $actorId): bool
     {
         $now = time();
         try {
