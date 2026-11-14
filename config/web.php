@@ -84,6 +84,7 @@ $config = [
                 'api/pos/v1/openings/<opening_id:[^/]+>/heartbeat' => 'posapi/openings/heartbeat',
                 'api/pos/v1/openings/<opening_id:[^/]+>/release' => 'posapi/openings/release',
                 // SIP-021 fase 3: pagamenti TTS dell'apertura; stesse regole di validazione.
+                'GET api/pos/v1/openings/<opening_id:[^/]+>/payments' => 'posapi/payments/index',
                 'api/pos/v1/openings/<opening_id:[^/]+>/payments' => 'posapi/payments/create',
                 'api/pos/v1/payments/<payment_id:[^/]+>/cancel' => 'posapi/payments/cancel',
                 'api/pos/v1/payments/<payment_id:[^/]+>' => 'posapi/payments/view',

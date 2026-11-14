@@ -224,6 +224,17 @@ if ($phase === 'setup') {
     check(code(api('POST', 'payments/' . $created['cancel']['id'] . '/cancel', $u, ['instance_id' => $oA['instance_id'], 'generation' => '7'])) === 'opening_invalid', 'Cancel needs the opening proof');
     $r = api('POST', 'payments/' . $created['cancel']['id'] . '/cancel', $u, $proof);
     check($r['status'] === 200 && $r['json']['state'] === 'cancelled' && payment($created['cancel']['id'])['closed_at'] !== null, 'Pending payment cancelled by its opening');
+    // --- Storico del terminale: più recenti prima, mai QR, riferimento o destinatario
+    $r = api('GET', 'openings/' . $oA['id'] . '/payments', $u);
+    $list = $r['json']['payments'] ?? [];
+    check($r['status'] === 200 && array_keys($r['json']) === ['payments'] && count($list) === 7 && array_column($list, 'id') === array_reverse(array_column($created, 'id'))
+        && array_keys($list[0]) === ['id', 'amount', 'currency', 'state', 'created_at', 'paid_at', 'tx_hash', 'own'] && noLeak($r), 'History: seven payments of the terminal, newest first, exact projection');
+    check($list[0]['state'] === 'cancelled' && $list[6]['amount'] === '12.34' && $list[6]['own'] === true && !str_contains($r['body'], payment($created['ok']['id'])['reference']) && !str_contains($r['body'], $wallet),
+        'History items: state and amount, own flag, no reference or destination');
+    check(code(api('GET', 'openings/' . $oA['id'] . '/payments', $b)) === 'not_found' && code(api('GET', 'openings/' . $oA['id'] . '/payments', $u2)) === 'not_found',
+        'History of an opening of another session or merchant: 404');
+    check(code(api('GET', 'openings/' . $oA['id'] . '/payments?terminal=1', $u)) === 'validation_failed' && code(api('GET', 'openings/not-a-uuid/payments', $u)) === 'not_found',
+        'History: no extra parameters, malformed opening 404');
     // "late": la richiesta risulta già scaduta quando arriva il transfer
     $db->createCommand('UPDATE pos_tts_payments SET created_at=created_at-1000, expires_at=created_at+1 WHERE public_id=:p', [':p' => $created['late']['id']])->execute();
     $other = TtsAddress::normalize('0x' . bin2hex(random_bytes(20)));
@@ -277,6 +288,13 @@ if ($phase === 'verify') {
     $r = pay($u, $oA, 300);
     check($r['status'] === 409 && code($r) === 'opening_invalid', 'Revoked opening cannot create payments');
     check($view('ok')['json']['state'] === 'paid', 'Existing payments stay readable after revocation');
+    check(code(api('GET', 'openings/' . $oA['id'] . '/payments', $u)) === 'opening_invalid', 'History needs a usable opening');
+    $u2 = apiLogin('tt-op-u@example.invalid');
+    $o2 = api('POST', 'terminals/' . $state['terminal'] . '/openings', $u2, ['instance_id' => uuid()], uuid())['json'];
+    $r = api('GET', 'openings/' . $o2['id'] . '/payments', $u2);
+    $byId = array_column($r['json']['payments'] ?? [], null, 'id');
+    check($r['status'] === 200 && count($byId) === 7 && $byId[$p['ok']['id']]['state'] === 'paid' && $byId[$p['ok']['id']]['tx_hash'] === $tx['ok']
+        && $byId[$p['late']['id']]['state'] === 'expired' && $byId[$p['ok']['id']]['own'] === false, 'Next opening of the terminal sees its history, not owned');
     $db->createCommand("UPDATE pos_tts_payments SET created_at=created_at-2000, expires_at=created_at+10 WHERE public_id IN (:a,:b)", [':a' => $p['wrong_amount']['id'], ':b' => $p['no_ref']['id']])->execute();
     check((int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='pending' AND expires_at < UNIX_TIMESTAMP()") === 2, 'Two pending payments left past expiry for the one-shot sweep');
     printf("PASS %d TTS payment verify checks\n", $checks);

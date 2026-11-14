@@ -72,8 +72,7 @@ final class TerminalOpenings
     /** Sola verifica: non acquisisce né riprende. */
     public static function view(PosOperatorSessions $session, string $openingId): array
     {
-        $opening = self::own($session, $openingId);
-        if (!self::usable($opening)) throw new OpeningException(OpeningException::INVALID);
+        $opening = self::requireActive($session, $openingId);
         return self::publicOpening($opening, self::terminalPublicId((int) $opening['terminal_id']));
     }
 
@@ -89,6 +88,14 @@ final class TerminalOpenings
     }
 
     /** Registra il contatto (solo informativo per il manager); mai riattiva un'apertura chiusa. */
+    /** SIP-021 fase 3: apertura propria della sessione e ancora utilizzabile, senza prova di istanza (sola lettura). */
+    public static function requireActive(PosOperatorSessions $session, string $openingId): array
+    {
+        $opening = self::own($session, $openingId);
+        if (!self::usable($opening)) throw new OpeningException(OpeningException::INVALID);
+        return $opening;
+    }
+
     public static function heartbeat(PosOperatorSessions $session, string $openingId, string $instanceId, string $generation): void
     {
         $opening = self::own($session, $openingId);

@@ -32,7 +32,7 @@ class PaymentsController extends \yii\rest\Controller
     {
         return [
             'contentNegotiator' => ['class' => ContentNegotiator::class, 'formats' => ['application/json' => Response::FORMAT_JSON]],
-            'verbs' => ['class' => VerbFilter::class, 'actions' => ['create' => ['POST'], 'view' => ['GET'], 'cancel' => ['POST']]],
+            'verbs' => ['class' => VerbFilter::class, 'actions' => ['index' => ['GET'], 'create' => ['POST'], 'view' => ['GET'], 'cancel' => ['POST']]],
         ];
     }
 
@@ -48,6 +48,16 @@ class PaymentsController extends \yii\rest\Controller
             if ($status === 201) Log::save('posapi', 'payments', "Richiesta di pagamento TTS {$payment['id']} di {$payment['amount']} (apertura {$opening_id}, sessione #{$session->id})");
             Yii::$app->response->statusCode = $status;
             return $payment;
+        });
+    }
+
+    public function actionIndex(string $opening_id)
+    {
+        return $this->guard(function (PosOperatorSessions $session, string $token) use ($opening_id) {
+            if (Yii::$app->request->getRawBody() !== '' || Yii::$app->request->getQueryParams() !== ['opening_id' => $opening_id]) return $this->error(400, 'validation_failed');
+            if (preg_match(TerminalOpenings::UUID, $opening_id) !== 1) return $this->error(404, 'not_found');
+            if (($wait = PosApi::throttle('payments|view|' . hash('sha256', $token), [60, 60])) > 0) return $this->limited($wait);
+            return TtsPayments::history($session, $opening_id);
         });
     }
 

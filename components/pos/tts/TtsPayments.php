@@ -23,6 +23,10 @@ final class TtsPayments
     public const MAX_CENTS = 100000;
     public const TTL = 900;
     public const MEMO_PREFIX = 'napay:';
+    public const HISTORY_LIMIT = 50;
+    public const HISTORY_DAYS = 30;
+    /** verifiche sulla chain al massimo per lettura dello storico */
+    private const HISTORY_SETTLE = 5;
     private const TABLE = '{{%pos_tts_payments}}';
     /** selettore di transfer(address,uint256) */
     private const TRANSFER_SELECTOR = 'a9059cbb';
@@ -78,6 +82,27 @@ final class TtsPayments
         $payment = self::own($session, $paymentId);
         if ($payment['state'] === 'pending') $payment = self::settle($payment);
         return self::publicPayment($payment, self::openingPublicId((int) $payment['opening_id']));
+    }
+
+    /**
+     * Storico del terminale dell'apertura propria della sessione: ultime richieste degli ultimi giorni, più recenti
+     * prima. Le poche ancora in attesa vengono verificate (errori di chain = stato invariato). Mai QR o riferimento.
+     * @return array{payments: list<array>}
+     */
+    public static function history(PosOperatorSessions $session, string $openingId): array
+    {
+        $opening = TerminalOpenings::requireActive($session, $openingId);
+        $rows = Yii::$app->db->createCommand('SELECT * FROM ' . self::TABLE . ' WHERE terminal_id=:t AND created_at >= :since ORDER BY id DESC LIMIT ' . self::HISTORY_LIMIT,
+            [':t' => (int) $opening['terminal_id'], ':since' => time() - self::HISTORY_DAYS * 86400])->queryAll();
+        $settle = self::HISTORY_SETTLE;
+        $payments = [];
+        foreach ($rows as $row) {
+            if ($row['state'] === 'pending' && $settle-- > 0) $row = self::settle($row);
+            $payments[] = ['id' => $row['public_id'], 'amount' => self::amount((int) $row['amount_cents']), 'currency' => 'TTS', 'state' => $row['state'],
+                'created_at' => (int) $row['created_at'], 'paid_at' => $row['paid_at'] === null ? null : (int) $row['paid_at'], 'tx_hash' => $row['tx_hash'],
+                'own' => (int) $row['session_id'] === (int) $session->id];
+        }
+        return ['payments' => $payments];
     }
 
     /** Annullamento dalla stessa apertura, solo se ancora in attesa dopo l'ultima verifica sulla chain. */
@@ -218,11 +243,16 @@ final class TtsPayments
     /** Proiezione pubblica: mai sessione, operatore o ID interni. QR nel formato letto dal wallet. */
     private static function publicPayment(array $row, string $openingId): array
     {
-        $amount = intdiv((int) $row['amount_cents'], 100) . '.' . str_pad((string) ((int) $row['amount_cents'] % 100), 2, '0', STR_PAD_LEFT);
+        $amount = self::amount((int) $row['amount_cents']);
         return ['id' => $row['public_id'], 'opening_id' => $openingId, 'amount' => $amount, 'currency' => 'TTS', 'state' => $row['state'],
             'to_address' => $row['to_address'], 'expires_at' => (int) $row['expires_at'],
             'qr' => $row['to_address'] . '&amount=' . $amount . '&message=' . self::MEMO_PREFIX . $row['reference'],
             'tx_hash' => $row['tx_hash'], 'paid_at' => $row['paid_at'] === null ? null : (int) $row['paid_at']];
+    }
+
+    private static function amount(int $cents): string
+    {
+        return intdiv($cents, 100) . '.' . str_pad((string) ($cents % 100), 2, '0', STR_PAD_LEFT);
     }
 
     private static function uuid(): string
