@@ -106,6 +106,40 @@ foreach (['xyz', strtoupper($instance), $instance . "\n", substr($instance, 1)] 
     check((int) scalar('SELECT COUNT(*) FROM stores WHERE id=:id', [':id' => $id]) === 0, 'Store rolled back with the malformed instance');
 }
 
+// --- trace COMPLETA senza la Connection (contiene la password): chiamate dirette, nessuna closure del test nello stack
+ini_set('zend.exception_ignore_args', '0');
+$secret = (string) $db->password;
+check(strlen($secret) >= 16, 'Canary: web DB password available to compare');
+/** Ogni argomento di ogni frame, anche delle eccezioni precedenti: nessuna Connection, nessuna password. */
+$clean = static function (Throwable $e) use ($secret): bool {
+    $seen = 0;
+    for (; $e !== null; $e = $e->getPrevious()) {
+        foreach ($e->getTrace() as $frame) {
+            foreach ($frame['args'] ?? [] as $arg) {
+                ++$seen;
+                if ($arg instanceof yii\db\Connection) return false;
+            }
+        }
+        if (str_contains(print_r($e->getTrace(), true), $secret) || str_contains($e->getMessage(), $secret)) return false;
+    }
+    return $seen > 0;
+};
+$canaryStore = $store($merchantA, 'W4a negozio canary');
+$traces = [];
+putenv('BTCPAY_PROVISION_INSTANCE=not-a-digest');
+$tx = $db->beginTransaction();
+try { Outbox::enqueueStore($db, $canaryStore, $merchantA, $managerA); } catch (yii\base\InvalidConfigException $e) { $traces['config'] = $e; }
+try { Outbox::enqueueTerminal($db, 999999999, $canaryStore, $merchantA, $managerA); } catch (yii\base\InvalidConfigException $e) { $traces['config-terminal'] = $e; }
+$tx->rollBack();
+putenv('BTCPAY_PROVISION_INSTANCE=' . $instance);
+try { Outbox::enqueueStore($db, $canaryStore, $merchantA, $managerA); } catch (LogicException $e) { $traces['transaction'] = $e; }
+$tx = $db->beginTransaction();
+try { Outbox::enqueueStore($db, $canaryStore, $merchantB, $managerA); } catch (InvalidArgumentException $e) { $traces['scope'] = $e; }
+try { Outbox::enqueueStore($db, $canaryStore, $merchantA, 999999999); } catch (yii\db\IntegrityException $e) { $traces['integrity'] = $e; }
+$tx->rollBack();
+check(array_keys($traces) === ['config', 'config-terminal', 'transaction', 'scope', 'integrity'], 'Canary errors raised (config, transaction, scope, SQL integrity)');
+foreach ($traces as $case => $e) check($clean($e), "Full structured trace without Connection or password: $case");
+
 // --- accodamento, replay idempotente, scope
 $s2 = $inTx(function () use ($db, $store, $merchantA, $managerA) {
     $id = $store($merchantA, 'W4a negozio accodato');
