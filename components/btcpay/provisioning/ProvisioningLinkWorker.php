@@ -226,7 +226,13 @@ final class ProvisioningLinkWorker
         if ($owner === false || $owner === null) throw new LinkIneligible('merchant_ineligible');
         $this->db->createCommand('SELECT id FROM {{%users}} WHERE id=:u FOR SHARE', [':u' => (int) $owner])->queryScalar();
         if (AccountEligibility::merchantForManager((int) $owner) !== $merchant) throw new LinkIneligible('merchant_ineligible');
-        $storeId = $job['kind'] === 'store_link' ? $job['entity_id'] : $this->terminal($job['entity_id'])['store_id'];
+        if ($job['kind'] === 'store_link') {
+            $storeId = $job['entity_id'];
+        } else {
+            $terminal = $this->terminal($job['entity_id']);
+            if ($terminal['merchant_id'] !== $merchant) throw new LinkIneligible('scope_mismatch');
+            $storeId = $terminal['store_id'];
+        }
         $storeMerchant = $this->db->createCommand('SELECT merchant_id FROM {{%stores}} WHERE id=:s FOR SHARE', [':s' => $storeId])->queryScalar();
         if ($storeMerchant === false || (int) $storeMerchant !== $merchant) throw new LinkIneligible('scope_mismatch');
     }
