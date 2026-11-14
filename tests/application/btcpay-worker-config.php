@@ -37,6 +37,13 @@ check(!str_contains($dump, $key) && !str_contains($dump, $provisioner) && !str_c
 $two = $valid; $two['current'] = 'k2'; $two['keys']['k2'] = base64_encode(random_bytes(32)); $write($two);
 $loaded = WorkerSecrets::fromFiles('/run/secrets/provisioner', '/run/secrets/ring');
 check($loaded->current === 'k2' && count($loaded->keyring()) === 2 && $loaded->keyring()['k1'] === $key, 'Multiple KEK versions retain old decryption keys without rotation');
+$ringOnly = WorkerSecrets::keyringOnly('/run/secrets/ring');
+$notLoaded = false;
+try { $ringOnly->provisionerKey(); } catch (LogicException $e) { $notLoaded = $e->getMessage() === 'provisioner_key_not_loaded'; }
+check($ringOnly->current === 'k2' && $ringOnly->keyring() === $loaded->keyring() && $notLoaded, 'W3e: keyring-only load never exposes a provisioner key');
+$ringRefused = false;
+try { WorkerSecrets::keyringOnly('/run/secrets/../secrets/ring'); } catch (RuntimeException $e) { $ringRefused = $e->getMessage() === 'invalid_btcpay_worker_secrets' && $e->getPrevious() === null; }
+check($ringRefused, 'W3e: keyring-only load applies the same path checks, without traces');
 $write($valid);
 $reject = static function (string $label, string $file = '/run/secrets/ring', string $prov = '/run/secrets/provisioner') use ($key, $provisioner): void {
     $ok = false;

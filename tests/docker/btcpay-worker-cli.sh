@@ -79,11 +79,19 @@ private_output() {
 compose run --rm --no-deps worker-cli btcpay-provision/run --once > "$work/cli.out" 2>&1
 grep -qx idle "$work/cli.out"; private_output
 pass 'Dedicated CLI reaches idle with real restricted worker grants and no web keys'
+for route in links reconcile; do
+    compose run --rm --no-deps -e BTCPAY_PROVISIONER_KEY_FILE=/run/secrets/missing worker-cli "btcpay-provision/$route" --once > "$work/cli.out" 2>&1
+    grep -qx idle "$work/cli.out"; private_output
+    pass "W3e: $route reaches idle without reading the provisioner key"
+done
+if compose run --rm --no-deps worker-cli btcpay-provision/links > "$work/cli.out" 2>&1; then exit 1; fi
+grep -qx 'Usage: php yii-btcpay btcpay-provision/{run|links|reconcile} --once' "$work/cli.out"; private_output
+pass 'W3e: links without --once refused before bootstrap'
 if compose run --rm --no-deps worker-cli migrate/up --once > "$work/cli.out" 2>&1; then exit 1; fi
-grep -qx 'Usage: php yii-btcpay btcpay-provision/run --once' "$work/cli.out"; private_output
+grep -qx 'Usage: php yii-btcpay btcpay-provision/{run|links|reconcile} --once' "$work/cli.out"; private_output
 pass 'Unrelated commands refused before bootstrap'
 if compose run --rm --no-deps worker-cli btcpay-provision/run > "$work/cli.out" 2>&1; then exit 1; fi
-grep -qx 'Usage: php yii-btcpay btcpay-provision/run --once' "$work/cli.out"; private_output
+grep -qx 'Usage: php yii-btcpay btcpay-provision/{run|links|reconcile} --once' "$work/cli.out"; private_output
 pass 'No daemon or implicit loop without --once'
 refuse() {
     if compose run --rm --no-deps -e "$1" worker-cli btcpay-provision/run --once > "$work/cli.out" 2>&1; then exit 1; fi
