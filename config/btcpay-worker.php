@@ -22,6 +22,7 @@ try {
         'basePath' => dirname(__DIR__),
         'runtimePath' => $runtime,
         'controllerNamespace' => 'app\\commands\\btcpay',
+        'controllerMap' => ['btcpay-provision' => 'app\\commands\\BtcpayProvisionController'],
         'bootstrap' => ['log'],
         'components' => [
             'db' => $db,

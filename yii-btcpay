@@ -1,0 +1,24 @@
+#!/usr/bin/env php
+<?php
+// Do not load the application .env/params or permit unrelated console commands.
+ini_set('display_errors', '0');
+define('YII_ENABLE_ERROR_HANDLER', false);
+set_error_handler(static function (int $severity, #[SensitiveParameter] string $message): bool {
+    if ((error_reporting() & $severity) === 0) return false;
+    throw new ErrorException('worker_runtime_error', 0, $severity);
+});
+if (($argc === 2 && $argv[1] === '--help') || $argc !== 3 || $argv[1] !== 'btcpay-provision/run' || $argv[2] !== '--once') {
+    fwrite(STDERR, "Usage: php yii-btcpay btcpay-provision/run --once\n");
+    exit($argc === 2 && $argv[1] === '--help' ? 0 : 2);
+}
+try {
+    $config = require __DIR__ . '/config/btcpay-worker.php';
+    require __DIR__ . '/vendor/autoload.php';
+    require __DIR__ . '/vendor/yiisoft/yii2/Yii.php';
+    $application = new yii\console\Application($config);
+    exit($application->run());
+} catch (Throwable $error) {
+    // Never export native SQL/HTTP/JSON exceptions or their arguments to console/container logs.
+    fwrite(STDERR, "BTCPay worker failed.\n");
+    exit(1);
+}
