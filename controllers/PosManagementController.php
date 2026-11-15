@@ -317,36 +317,18 @@ class PosManagementController extends Controller
 
     private function scopedStore($store): int
     {
-        $query = Stores::find()->where(['id' => $this->decodeId($store)]);
-        $this->scope->apply($query, 'merchant_id');
-        $id = $query->select('id')->scalar();
-        if ($id === false) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
-        return (int) $id;
+        $id = $this->scope->storeId($store);
+        if ($id === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        return $id;
     }
 
-    /** Negozi in scope: chiave = ID cifrato, etichetta con il merchant per l'admin. */
     private function storeOptions(): array
     {
-        $query = (new Query())->select(['s.id', 's.description', 'merchant' => 'm.description'])
-            ->from(['s' => Stores::tableName()])
-            ->innerJoin(['m' => Merchants::tableName()], 'm.id=s.merchant_id')
-            ->orderBy(['m.description' => SORT_ASC, 's.description' => SORT_ASC, 's.id' => SORT_ASC]);
-        $this->scope->apply($query, 's.merchant_id');
-        $options = [];
-        foreach ($query->all() as $row) {
-            $options[Crypt::encrypt($row['id'])] = $this->scope->isAdmin() ? $row['merchant'] . ' - ' . $row['description'] : $row['description'];
-        }
-        return $options;
+        return $this->scope->storeOptions();
     }
 
     private function decodeId($id): int
     {
-        if (!is_string($id) || $id === '' || strlen($id) > 512) return 0;
-        try {
-            $plain = Crypt::decrypt($id);
-        } catch (\Throwable $error) {
-            return 0;
-        }
-        return ctype_digit($plain) ? (int) $plain : 0;
+        return Scope::decodeId($id);
     }
 }

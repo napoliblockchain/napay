@@ -171,7 +171,10 @@ if ($phase === 'setup') {
     $r = saveWallet(strtolower($wallet));
     check($r['status'] === 302 && scalar('SELECT address FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantA]) === $wallet
         && (int) scalar('SELECT updated_by FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantA]) === $managerA, 'Lowercase address stored in EIP-55 form with author');
-    check(str_contains(web('/merchant-wallet/index')['body'], $wallet), 'Saved address shown to the manager');
+    $page = web('/merchant-wallet/index')['body'];
+    check(str_contains($page, $wallet) && str_contains($page, 'data-copy-target') && !str_contains($page, 'TtsWalletForm[address]')
+        && str_contains($page, '/merchant-wallet/delete'), 'Saved address shown read-only with copy, edit and delete');
+    check(str_contains(web('/merchant-wallet/index?edit=1')['body'], 'TtsWalletForm[address]'), 'Edit shows the form again');
     check(logged('Wallet TTS del merchant ' . $merchantA) === 1, 'Wallet change audited');
     check((int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantB]) === 0, 'Manager A cannot touch merchant B');
 
@@ -297,6 +300,39 @@ if ($phase === 'verify') {
         && $byId[$p['late']['id']]['state'] === 'expired' && $byId[$p['ok']['id']]['own'] === false, 'Next opening of the terminal sees its history, not owned');
     $db->createCommand("UPDATE pos_tts_payments SET created_at=created_at-2000, expires_at=created_at+10 WHERE public_id IN (:a,:b)", [':a' => $p['wrong_amount']['id'], ':b' => $p['no_ref']['id']])->execute();
     check((int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='pending' AND expires_at < UNIX_TIMESTAMP()") === 2, 'Two pending payments left past expiry for the one-shot sweep');
+    // --- pagina Incassi del backoffice (gestore A loggato)
+    $list = web('/pos-payments/index');
+    $ids = array_column($p, 'id');
+    $shown = array_filter($ids, static fn($id) => str_contains($list['body'], '/pos-payments/view?id=' . $id));
+    $refs = array_map(static fn($id) => payment($id)['reference'], $ids);
+    check($list['status'] === 200 && count($shown) === count($ids) && str_contains($list['body'], 'Cassa TTS A') && str_contains($list['body'], '12,34 TTS')
+        && !array_filter($refs, static fn($ref) => str_contains($list['body'], $ref)), 'Payments page lists the merchant payments, never the reference');
+    $paidOnly = web('/pos-payments/index?state=paid')['body'];
+    check(substr_count($paidOnly, '/pos-payments/view?id=') === (int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='paid'") && str_contains($paidOnly, '/pos-payments/view?id=' . $p['ok']['id'])
+        && !str_contains($paidOnly, '/pos-payments/view?id=' . $p['cancel']['id']), 'Status filter');
+    check(substr_count(web('/pos-payments/index?from=2000-01-01&to=2000-01-02')['body'], '/pos-payments/view?id=') === 0
+        && substr_count(web('/pos-payments/index?from=bad&state=nope')['body'], '/pos-payments/view?id=') === count($ids), 'Date filter; invalid filters ignored');
+    $detail = web('/pos-payments/view?id=' . $p['ok']['id']);
+    check($detail['status'] === 200 && str_contains($detail['body'], $tx['ok']) && str_contains($detail['body'], $state['wallet']) && !str_contains($detail['body'], payment($p['ok']['id'])['reference']),
+        'Payment detail with transaction and destination wallet');
+    $csv = web('/pos-payments/export?state=paid');
+    check($csv['status'] === 200 && str_contains(strtolower($csv['headers']), 'text/csv') && str_starts_with($csv['body'], "\xEF\xBB\xBF")
+        && count(array_filter(explode("\n", trim($csv['body'])))) === 1 + (int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='paid'")
+        && str_contains($csv['body'], $tx['ok']) && !array_filter($refs, static fn($ref) => str_contains($csv['body'], $ref)), 'CSV export with the same filters, no reference');
+    webLogin('tt-op-u@example.invalid');
+    check(web('/pos-payments/index')['status'] === 403, 'Operator cannot open the payments page');
+    webLogin('tt-manager-b@example.invalid');
+    check(substr_count(web('/pos-payments/index')['body'], '/pos-payments/view?id=') === 0 && web('/pos-payments/view?id=' . $p['ok']['id'])['status'] === 404
+        && web('/pos-payments/view?id=not-a-uuid')['status'] === 404, 'Other merchant sees none of these payments (404 on detail)');
+    webLogin($state['manager']);
+
+    // rimozione del wallet: nuove richieste rifiutate, quelle create tengono l'indirizzo congelato
+    $page = web('/merchant-wallet/index');
+    check(web('/merchant-wallet/delete', [])['status'] === 400 && web('/merchant-wallet/delete')['status'] === 405, 'Wallet removal needs POST with CSRF');
+    $r = web('/merchant-wallet/delete', ['_csrf' => csrf($page)]);
+    check($r['status'] === 302 && (int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets') === 0 && logged('rimosso (era ' . $state['wallet']) === 1
+        && payment($p['ok']['id'])['to_address'] === $state['wallet'], 'Manager removes the wallet: audited, existing payments keep their address');
+    check(str_contains(web('/merchant-wallet/index')['body'], 'TtsWalletForm[address]'), 'Without a wallet the page shows the form');
     printf("PASS %d TTS payment verify checks\n", $checks);
     exit(0);
 }
