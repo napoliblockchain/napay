@@ -12,7 +12,7 @@ use yii\db\AfterSaveEvent;
 use yii\db\BaseActiveRecord;
 
 /**
- * Registro automatico nel registro attività (come in Aura):
+ * Registro automatico nel registro attività:
  * - creazione, modifica, cancellazione delle entità principali (solo NOMI dei campi, mai i valori);
  * - esportazioni (Excel, ricevute, PDF).
  * Registrato in config/web.php ('bootstrap'). L'import legacy scrive via PDO: non passa da qui.

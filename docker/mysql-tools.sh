@@ -6,9 +6,9 @@ umask 077
 fail() { printf '%s\n' "$1" >&2; exit 1; }
 action=${1:-}
 case "$action" in
-    health|inventory|backup) [ "$#" -eq 1 ] || fail 'Unexpected arguments.' ;;
+    health|inventory|backup|role-accounts-free) [ "$#" -eq 1 ] || fail 'Unexpected arguments.' ;;
     restore) [ "$#" -eq 2 ] && [ "$2" = '--confirm-empty-target' ] || fail 'Restore requires --confirm-empty-target.' ;;
-    *) fail 'Usage: mysql-tools.sh health|inventory|backup|restore --confirm-empty-target' ;;
+    *) fail 'Usage: mysql-tools.sh health|inventory|backup|role-accounts-free|restore --confirm-empty-target' ;;
 esac
 
 database=${MYSQL_DATABASE:?Missing MYSQL_DATABASE}
@@ -28,6 +28,10 @@ unset password escaped
 query() { mysql --defaults-extra-file="$options" --batch --skip-column-names "$database" -e "$1"; }
 
 case "$action" in
+    role-accounts-free)
+        count=$(query "SELECT COUNT(*) FROM mysql.user WHERE User IN ('napay_migrator','napay_worker');")
+        [ "$count" = 0 ] || fail 'Role accounts already exist: recover original secret files; do not regenerate credentials.'
+        ;;
     health)
         # The image's initialization server is socket-only: wait for final server.
         mysql --defaults-extra-file="$options" --protocol=TCP --host=127.0.0.1 \

@@ -64,8 +64,9 @@ function login($email) {
 }
 function flash() {
     $page = request('/pos-management/index');
-    $n = xp($page)->query('//div[contains(@class,"alert")]');
-    return $n->length ? trim($n->item(0)->textContent) : '';
+    // Flash come toast (widgets/Alert -> toastr): testo JSON del primo messaggio, codificato HTML dal widget.
+    if (!preg_match('/toastr\.(?:success|error|info|warning)\(("(?:[^"\\\\]|\\\\.)*")\);/', $page['body'], $m)) return '';
+    return trim(html_entity_decode(json_decode($m[1]), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
 }
 function invite($email, array $extra = []) {
     $page = request('/pos-management/index');

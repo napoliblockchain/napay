@@ -3,13 +3,14 @@ namespace app\components\identity;
 
 use Yii;
 use app\components\Log;
+use app\components\btcpay\provisioning\ProvisioningOutbox;
 use app\components\User;
 use app\models\Merchants;
 use app\models\Privileges;
 use app\models\Users;
 use yii\db\Transaction;
 
-/** SIP-023 R3b: local activation only; no remote calls or payment readiness. */
+/** SIP-023 R3b: local activation only; no remote calls or payment readiness. SIP-022 W4b: BTCPay job queued in the same transaction. */
 final class MerchantActivation
 {
     public static function activate(int $actorId, int $ownerId, Merchants $merchant): ?int
@@ -32,6 +33,7 @@ final class MerchantActivation
             }
             $existing = AccountEligibility::merchantForManager($ownerId);
             if ($existing !== null) {
+                // Replay locale: nessun nuovo lavoro BTCPay (un eventuale backfill è un'azione esplicita separata).
                 $tx->commit();
                 return $existing;
             }
@@ -50,6 +52,8 @@ final class MerchantActivation
             if ($db->createCommand()->update(Users::tableName(), ['privilege_id'=>(int)$roles[0], 'is_merchant'=>1], ['id'=>$ownerId])->execute() !== 1) {
                 throw new \RuntimeException('Merchant activation failed.');
             }
+            // Lavoro BTCPay nella stessa transazione: config invalida o errore annullano anche merchant e ruolo.
+            ProvisioningOutbox::enqueueMerchant($db, (int) $merchant->id, $actorId);
             Log::event(sprintf('Merchant %d attivato per account %d', $merchant->id, $ownerId), Log::TYPE_DATA);
             $tx->commit();
             return (int) $merchant->id;

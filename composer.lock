@@ -4,7 +4,7 @@
         "Read more about it at https://getcomposer.org/doc/01-basic-usage.md#installing-dependencies",
         "This file is @generated automatically"
     ],
-    "content-hash": "feeb2a6a4118bad964aa0962496efe02",
+    "content-hash": "7526806ac8187e55c9f1c1faf4c4c1c8",
     "packages": [
         {
             "name": "almasaeed2010/adminlte",
@@ -1070,6 +1070,57 @@
                 "source": "https://github.com/hail812/yii2-adminlte3/tree/v1.1.9"
             },
             "time": "2023-10-23T05:58:30+00:00"
+        },
+        {
+            "name": "jambtc/yii2-toastr-widget",
+            "version": "v1.2.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/jambtc/yii2-toastr-widget.git",
+                "reference": "1e63727356ee270abbf62dd34873879cf7f20e2d"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/jambtc/yii2-toastr-widget/zipball/1e63727356ee270abbf62dd34873879cf7f20e2d",
+                "reference": "1e63727356ee270abbf62dd34873879cf7f20e2d",
+                "shasum": ""
+            },
+            "require": {
+                "npm-asset/toastr": "^2.1.4",
+                "php": ">=8.1",
+                "yiisoft/yii2": "~2.0.0"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^10.5"
+            },
+            "type": "yii2-extension",
+            "autoload": {
+                "psr-4": {
+                    "jambtc\\ToastrWidget\\": "src/"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "jambtc",
+                    "email": "jambtc@gmail.com"
+                }
+            ],
+            "description": "Un widget Yii2 per flash messages usando Toastr",
+            "keywords": [
+                "notifications",
+                "toastr",
+                "widget",
+                "yii2"
+            ],
+            "support": {
+                "issues": "https://github.com/jambtc/yii2-toastr-widget/issues",
+                "source": "https://github.com/jambtc/yii2-toastr-widget/tree/v1.2.0"
+            },
+            "time": "2026-11-13T12:56:54+00:00"
         },
         {
             "name": "kartik-v/bootstrap-fileinput",
@@ -2837,6 +2888,55 @@
             "time": "2019-09-03T03:11:11+00:00"
         },
         {
+            "name": "kornrunner/keccak",
+            "version": "1.1.0",
+            "source": {
+                "type": "git",
+                "url": "https://github.com/kornrunner/php-keccak.git",
+                "reference": "433749d28e117fb97baf9f2631b92b5d9ab3c890"
+            },
+            "dist": {
+                "type": "zip",
+                "url": "https://api.github.com/repos/kornrunner/php-keccak/zipball/433749d28e117fb97baf9f2631b92b5d9ab3c890",
+                "reference": "433749d28e117fb97baf9f2631b92b5d9ab3c890",
+                "shasum": ""
+            },
+            "require": {
+                "php": ">=7.3",
+                "symfony/polyfill-mbstring": "^1.8"
+            },
+            "require-dev": {
+                "phpunit/phpunit": "^8.2"
+            },
+            "type": "library",
+            "autoload": {
+                "psr-4": {
+                    "kornrunner\\": "src"
+                }
+            },
+            "notification-url": "https://packagist.org/downloads/",
+            "license": [
+                "MIT"
+            ],
+            "authors": [
+                {
+                    "name": "Boris Momcilovic",
+                    "homepage": "https://github.com/kornrunner/php-keccak"
+                }
+            ],
+            "description": "Pure PHP implementation of Keccak",
+            "keywords": [
+                "keccak",
+                "sha-3",
+                "sha3-256"
+            ],
+            "support": {
+                "issues": "https://github.com/kornrunner/php-keccak/issues",
+                "source": "https://github.com/kornrunner/php-keccak/tree/1.1.0"
+            },
+            "time": "2020-12-07T15:40:44+00:00"
+        },
+        {
             "name": "maennchen/zipstream-php",
             "version": "3.2.2",
             "source": {
@@ -3266,6 +3366,32 @@
             "license": [
                 "MIT"
             ]
+        },
+        {
+            "name": "npm-asset/jquery",
+            "version": "4.0.0",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/jquery/-/jquery-4.0.0.tgz",
+                "shasum": "95c33ac29005ff72ec444c5ba1cf457e61404fbb"
+            },
+            "type": "npm-asset",
+            "license": [
+                "MIT"
+            ]
+        },
+        {
+            "name": "npm-asset/toastr",
+            "version": "2.1.4",
+            "dist": {
+                "type": "tar",
+                "url": "https://registry.npmjs.org/toastr/-/toastr-2.1.4.tgz",
+                "shasum": "8b43be64fb9d0c414871446f2db8e8ca4e95f181"
+            },
+            "require": {
+                "npm-asset/jquery": ">=1.12.0"
+            },
+            "type": "npm-asset"
         },
         {
             "name": "paragonie/random_compat",
@@ -4278,16 +4404,16 @@
         },
         {
             "name": "symfony/mime",
-            "version": "v7.4.19",
+            "version": "v7.4.22",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/mime.git",
-                "reference": "f8ac7d0a800bcabbcd1f7de56594cf05e6cd5693"
+                "reference": "94a4c017435bc515f5ac80421a2c555fb9ca3676"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/mime/zipball/f8ac7d0a800bcabbcd1f7de56594cf05e6cd5693",
-                "reference": "f8ac7d0a800bcabbcd1f7de56594cf05e6cd5693",
+                "url": "https://api.github.com/repos/symfony/mime/zipball/94a4c017435bc515f5ac80421a2c555fb9ca3676",
+                "reference": "94a4c017435bc515f5ac80421a2c555fb9ca3676",
                 "shasum": ""
             },
             "require": {
@@ -4343,7 +4469,7 @@
                 "mime-type"
             ],
             "support": {
-                "source": "https://github.com/symfony/mime/tree/v7.4.19"
+                "source": "https://github.com/symfony/mime/tree/v7.4.22"
             },
             "funding": [
                 {
@@ -4363,7 +4489,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-09-04T10:45:44+00:00"
+            "time": "2026-10-28T17:57:58+00:00"
         },
         {
             "name": "symfony/polyfill-intl-idn",
@@ -8632,16 +8758,16 @@
         },
         {
             "name": "symfony/yaml",
-            "version": "v7.4.21",
+            "version": "v7.4.23",
             "source": {
                 "type": "git",
                 "url": "https://github.com/symfony/yaml.git",
-                "reference": "044907929c7999814378be22da34722c7a86bad4"
+                "reference": "1e601207ffe627a2e621faa9d661f1d32dcf1cec"
             },
             "dist": {
                 "type": "zip",
-                "url": "https://api.github.com/repos/symfony/yaml/zipball/044907929c7999814378be22da34722c7a86bad4",
-                "reference": "044907929c7999814378be22da34722c7a86bad4",
+                "url": "https://api.github.com/repos/symfony/yaml/zipball/1e601207ffe627a2e621faa9d661f1d32dcf1cec",
+                "reference": "1e601207ffe627a2e621faa9d661f1d32dcf1cec",
                 "shasum": ""
             },
             "require": {
@@ -8684,7 +8810,7 @@
             "description": "Loads and dumps YAML files",
             "homepage": "https://symfony.com",
             "support": {
-                "source": "https://github.com/symfony/yaml/tree/v7.4.21"
+                "source": "https://github.com/symfony/yaml/tree/v7.4.23"
             },
             "funding": [
                 {
@@ -8704,7 +8830,7 @@
                     "type": "tidelift"
                 }
             ],
-            "time": "2026-10-12T12:34:30+00:00"
+            "time": "2026-11-04T08:27:22+00:00"
         },
         {
             "name": "theseer/tokenizer",

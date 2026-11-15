@@ -10,6 +10,7 @@ use app\models\Webhooks;
 use app\models\search\StoresSearch;
 use yii\web\Controller;
 use yii\web\NotFoundHttpException;
+use yii\web\BadRequestHttpException;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
 use yii\helpers\ArrayHelper;
@@ -20,6 +21,7 @@ use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
 use app\components\BTCPayServer;
+use app\components\btcpay\provisioning\ProvisioningOutbox;
 
 use app\models\Settings;
 use app\models\Pos;
@@ -126,6 +128,9 @@ class StoresController extends Controller
     {
         $model = $this->findModel(Crypt::decrypt($id));
 
+        if (!$this->linked($model)) {
+            return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false]);
+        }
         $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
         $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
         // $client = $BTCPayServer->setStore();
@@ -145,7 +150,8 @@ class StoresController extends Controller
 
         return $this->render('view', [
             'model' => $model,
-            'rates' => $value
+            'rates' => $value,
+            'linked' => true,
         ]);
     }
 
@@ -168,217 +174,49 @@ class StoresController extends Controller
 
         $model = new Stores();
 
+        $data = Yii::$app->request->post('Stores');
+        // Solo valori scalari: un array resterebbe nel model e romperebbe il form al nuovo rendering.
+        if ($data !== null && (!is_array($data) || array_filter($data, static fn($value) => !is_scalar($value)) !== [])) {
+            throw new BadRequestHttpException(Yii::t('app', 'Richiesta non valida.'));
+        }
         if ($model->load(Yii::$app->request->post())) {
-            // echo '<pre>' . print_r($model->attributes, true) . '</pre>';;
-
-            // carico il merchant
-            $merchant = Merchants::findOne(['id' => $model->merchant_id]);
-
-            // aggiorno il negozio
-            $model->email = $merchant->email;
-            $model->phone = $merchant->phone;
-            $model->mobile = $merchant->mobile;
-            $model->addressStreet = $merchant->addressStreet;
-            $model->addressNumberHouse = $merchant->addressNumberHouse;
-            $model->addressCity = $merchant->addressCity;
-            $model->addressZip = $merchant->addressZip;
-            $model->addressProvince = $merchant->addressProvince;
-            $model->addressCountry = $merchant->addressCountry;
-
-            // echo '<pre>' . print_r($model->attributes, true) . '</pre>';
-            // exit;
-
-            // Begin a database transaction
-            $transaction = Yii::$app->db->beginTransaction();
-
-
-            try {
-                // carico i settings
-                $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-
-                if ($model->save()) {
-                    // echo "<pre>" . print_r($settings, true) . "</pre>";
-                    // exit;
-                    if (empty($settings->btcpayApiKey) || empty($settings->btcpayHost)) {
-                        $transaction->rollBack();
-                        Yii::$app->session->setFlash('warning', Yii::t('app', 'ERRORE: Chiavi API BTCPAY Server non disponibili'));
-                    } else {
-                        // PRIMA DI TUTTO GENERO IL MODEL DELLA CONFIGURAZINOE DEL NEGOZIO
-                        $storesettings = new Storesettings([
-                            'store_id' => $model->id,
-                            'bps_storeid' => null, // al momento
-                            'defaultCurrency' => 'EUR',
-                            'invoiceExpiration' => 900,
-                            'displayExpirationTimer' => 300,
-                            'monitoringExpiration' => 3600,
-                            'speedPolicy' => 'MediumSpeed', // -> 1 confirmation 'HighSpeed' 0,
-                            'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
-                            'paymentTolerance' => 0,
-                            'anyoneCanCreateInvoice' => 0,
-                            'requiresRefundEmail' => 1,
-                            'checkoutType' => 'V1',
-                            'receipt' => json_encode([
-                                'enabled' => 1,
-                                'showQR' => 1,
-                                'showPayments' => 1
-                            ]),
-                            'lightningAmountInSatoshi' => 0,
-                            'lightningPrivateRouteHints' => 0,
-                            'onChainWithLnInvoiceFallback' => 0,
-                            'redirectAutomatically' => 0,
-                            'showRecommendedFee' => 1,
-                            'recommendedFeeBlockTarget' => 1,
-                            'defaultLang' => 'it-IT',
-                            'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
-                            'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
-                            'htmlTitle' => Html::encode($model->description),
-                            'networkFeeMode' => 'Always',
-                            'payJoinEnabled' => 0,
-                            'lazyPaymentMethods' => 0,
-                            'defaultPaymentMethod' => 'BTC',
-                            // salvo i criteria in DB, ma non invio request tramite API
-                            'paymentMethodCriteria' => json_encode([
-                                0 => ['paymentMethod' => 'BTC', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
-                                1 => ['paymentMethod' => 'BTC-LightningNetwork', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
-                                2 => ['paymentMethod' => 'BTC-LNURLPAY', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
-                            ]),
-                            // 'derivationScheme' => null, //$settings->derivationScheme,
-                            // 'label' => null, //$settings->derivationLabel,
-                            // 'accountKeyPath' => null, //$settings->derivationAccountKeyPath,
-
-                        ]);
-
-                        if ($storesettings->save()) {
-                            $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-
-                            $bpsStore = $BTCPayServer->setStore();
-
-                            // echo "<pre>" . print_r($client, true) . "</pre>";exit;
-                            // $client = new \BTCPayServer\Client\Store(Yii::$app->params['btcpay.host'], Yii::$app->params['btcpay.apiKey']);
-
-                            try {
-                                $bpsStoreResult = $bpsStore->createStore(
-                                    $model->description,
-                                    $storesettings->website, //?string $website = null,
-                                    $storesettings->defaultCurrency, //string $defaultCurrency = 'USD',
-                                    $storesettings->invoiceExpiration, //int $invoiceExpiration = 900,
-                                    $storesettings->displayExpirationTimer, // int $displayExpirationTimer = 300,
-                                    $storesettings->monitoringExpiration, // int $monitoringExpiration = 3600,
-                                    $storesettings->speedPolicy, //string $speedPolicy = 'MediumSpeed',
-                                    $storesettings->lightningDescriptionTemplate, //?string $lightningDescriptionTemplate = null,
-                                    $storesettings->paymentTolerance, //int $paymentTolerance = 0,
-                                    $storesettings->anyoneCanCreateInvoice, //bool $anyoneCanCreateInvoice = false,
-                                    $storesettings->requiresRefundEmail, //bool $requiresRefundEmail = false,
-                                    $storesettings->checkoutType, //?string $checkoutType = 'V1',
-                                    json_decode($storesettings->receipt, true), //?array $receipt = null,
-                                    $storesettings->lightningAmountInSatoshi, //bool $lightningAmountInSatoshi = false,
-                                    $storesettings->lightningPrivateRouteHints, //bool $lightningPrivateRouteHints = false,
-                                    $storesettings->onChainWithLnInvoiceFallback, //bool $onChainWithLnInvoiceFallback = false,
-                                    $storesettings->redirectAutomatically, //bool $redirectAutomatically = false,
-                                    $storesettings->showRecommendedFee, //bool $showRecommendedFee = true,
-                                    $storesettings->recommendedFeeBlockTarget, //int $recommendedFeeBlockTarget = 1,
-                                    $storesettings->defaultLang, //string $defaultLang = 'en',
-                                    $storesettings->customLogo, //?string $customLogo = null,
-                                    $storesettings->customCSS, //?string $customCSS = null,
-                                    $storesettings->htmlTitle, //?string $htmlTitle = null,
-                                    $storesettings->networkFeeMode, //string $networkFeeMode = 'MultiplePaymentsOnly',
-                                    $storesettings->payJoinEnabled, //bool $payJoinEnabled = false,
-                                    $storesettings->lazyPaymentMethods, //bool $lazyPaymentMethods = false,
-                                    $storesettings->defaultPaymentMethod, //string $defaultPaymentMethod = 'BTC'
-                                    // json_decode($storesettings->paymentMethodCriteria), //?array $paymentMethodCriteria = null,
-                                );
-
-                                if (null !== $bpsStoreResult) {
-                                    $storesettings->bps_storeid = $bpsStoreResult->getId();
-                                    $storesettings->save();
-
-                                    /**
-                                     * Adesso creiamo il wallet ON-CHAIN 
-                                     */
-                                    // $paymentMethod = $BTCPayServer->setPaymentMethodOnChain();
-                                    // $paymentMethodResult = $paymentMethod->updatePaymentMethod($bpsStoreResult->getId(), 'BTC', [
-                                    //     'enabled' => true,
-                                    //     'derivationScheme' => $settings->derivationScheme . $settings->derivationAccountKeyPath,
-                                    //     'label' => $settings->derivationLabel,
-                                    // ]);
-
-                                    /**
-                                     * Adesso creiamo il wallet OFF-CHAIN 
-                                     */
-                                    // $clightningMethod = $BTCPayServer->setPaymentMethodLightningNetwork();
-                                    // $clightningMethodResult = $clightningMethod->updatePaymentMethod($bpsStoreResult->getId(), 'BTC', [
-                                    //     'enabled' => true,
-                                    //     'connectionString' => 'Internal Node'
-                                    // ]);
-
-                                    /**
-                                     * Adesso impostiamo i WebHooks 
-                                     */
-                                    // $webHook = $BTCPayServer->setWebhook();
-
-                                    // $webHookResult = $webHook->createWebhook(
-                                    //     $bpsStoreResult->getId(),
-                                    //     Url::to(['callback/index'], true),
-                                    //     null,
-                                    //     $settings->webhookSecret,
-                                    //     true,
-                                    //     true
-                                    // );
-
-
-                                    // if (null !== $paymentMethodResult && null !== $clightningMethodResult && null !== $webHookResult) {
-                                    // if (null !== $paymentMethodResult && null !== $webHookResult) {
-                                    //     $webHookModel = new Webhooks([
-                                    //         'store_id' => $model->id,
-                                    //         'bps_storeid' => $bpsStoreResult->getId(),
-                                    //         'webhookId' => $webHookResult->getId(),
-                                    //         'url' => $webHookResult->getUrl()
-                                    //     ]);
-                                    //     $webHookModel->save();
-
-                                        // Commit the transaction
-                                        $transaction->commit();
-                                        Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio creato correttamente'));
-
-                                        // Log message
-                                        $message_log = Yii::t('app', 'User {user} has created a new {item}: {itemname}', [
-                                            'user' => Yii::$app->user->identity->username,
-                                            'item' => Yii::$app->controller->id,
-                                            'itemname' => $model->description
-                                        ]);
-                                        Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-                                        // end log message
-
-                                        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
-                                    // } else {
-                                    //     Yii::$app->session->setFlash('warning', Yii::t('app', 'ERRORE BtcPay: Impossibile salvare il Payment Method'));
-                                    //     $transaction->rollBack();
-                                    // }
-                                } else {
-                                    Yii::$app->session->setFlash('warning', Yii::t('app', 'ERRORE BtcPay: Impossibile creare il negozio'));
-                                    $transaction->rollBack();
-                                }
-                            } catch (\Throwable $e) {
-                                // echo "Error: " . $e->getMessage();
-                                // echo "<pre>" . print_r($bpsStoreResult, true) . "</pre>";
-                                // exit;
-                                $transaction->rollBack();
-                                Yii::$app->session->setFlash('warning', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($e->getMessage(), true) . "</pre>"));
-                            }
-                        } else {
-                            $transaction->rollBack();
-                            Yii::$app->session->setFlash('warning', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($storesettings->getErrors(), true) . "</pre>"));
-                        }
-                    }
-                } else {
-                    $transaction->rollBack();
-                    Yii::$app->session->setFlash('warning', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($model->getErrors(), true) . "</pre>"));
+            // Il merchant crea negozi solo per sé: il merchant_id inviato dal browser non conta.
+            if (!User::isAdministrator()) $model->merchant_id = User::getMerchantId();
+            $model->description = trim((string) $model->description);
+            $merchant = Merchants::findOne(['id' => (int) $model->merchant_id]);
+            if ($model->description === '') {
+                $model->addError('description', Yii::t('app', 'Descrizione obbligatoria.'));
+            } elseif ($merchant === null) {
+                $model->addError('merchant_id', Yii::t('app', 'Merchant non valido.'));
+            } else {
+                foreach (['email', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse', 'addressCity', 'addressZip', 'addressProvince', 'addressCountry'] as $field) {
+                    $model->$field = $merchant->$field;
                 }
-
-            } catch (\Exception $e) {
-                // Roll back the transaction if an error occurred
-                $transaction->rollBack();
-                Yii::$app->session->setFlash('warning', $e->getMessage());
+                // Il negozio nasce solo in Napay; il collegamento a BTCPay (store e app POS) lo crea il provisioning
+                // SIP-022 B1 in modo asincrono, quindi BTCPay assente o lento non blocca più la creazione.
+                $transaction = Yii::$app->db->beginTransaction();
+                try {
+                    if ($model->save()) {
+                        $storesettings = $this->defaultSettings($model);
+                        if ($storesettings->save()) {
+                            // Lavoro BTCPay accodato nella stessa transazione (se il provisioning è attivo).
+                            ProvisioningOutbox::enqueueStore(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
+                            $transaction->commit();
+                            Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio creato. Pagamenti BTC da configurare: il collegamento a BTCPay verrà creato automaticamente.'));
+                            Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has created a new {item}: {itemname}', [
+                                'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
+                            ]));
+                            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+                        }
+                        Yii::$app->session->setFlash('warning', Yii::t('app', 'Impostazioni del negozio non salvate. Riprova.'));
+                    }
+                    $transaction->rollBack();
+                } catch (\Throwable $e) {
+                    if ($transaction->isActive) $transaction->rollBack();
+                    // solo la classe: messaggi e query possono contenere dati
+                    Yii::error('Store creation failed: ' . get_class($e), __METHOD__);
+                    Yii::$app->session->setFlash('warning', Yii::t('app', 'Negozio non creato. Riprova.'));
+                }
             }
         }
 
@@ -403,6 +241,7 @@ class StoresController extends Controller
         // echo "<pre>" . print_r($_POST, true) . "</pre>";exit;
 
         $model = $this->findModel(Crypt::decrypt($id));
+        if (!$this->linked($model)) return $this->notLinked($model);
         $store = $model->storesettings;
 
         if ($store->load(Yii::$app->request->post())){
@@ -511,6 +350,7 @@ class StoresController extends Controller
     public function actionUpdateRates($id)
     {
         $model = $this->findModel(Crypt::decrypt($id));
+        if (!$this->linked($model)) return $this->notLinked($model);
         $store = $model->storesettings;
 
         // echo "<pre>" . print_r($_POST, true) . "</pre>";exit;
@@ -586,6 +426,7 @@ class StoresController extends Controller
         // echo "<pre>" . print_r($_POST, true) . "</pre>";
 
         $model = $this->findModel(Crypt::decrypt($id));
+        if (!$this->linked($model)) return $this->notLinked($model);
         $store = $model->storesettings;
 
         if ($store->load(Yii::$app->request->post())) {
@@ -703,6 +544,7 @@ class StoresController extends Controller
     public function actionUpdateCriteria($id)
     {
         $model = $this->findModel(Crypt::decrypt($id));
+        if (!$this->linked($model)) return $this->notLinked($model);
         $store = $model->storesettings;
         
         if ($store->load(Yii::$app->request->post())) {
@@ -841,6 +683,7 @@ class StoresController extends Controller
     public function actionUpdateWebhook($id)
     {
         $store = $this->findModel(Crypt::decrypt($id));
+        if (!$this->linked($store)) return $this->notLinked($store);
         $webhookModel = $store->webhook;
 
         if ($webhookModel->load(Yii::$app->request->post())) {
@@ -931,7 +774,8 @@ class StoresController extends Controller
 
 
         // NON ELIMINO IL NEGOZIO SU BTCPAYWERVER
-        // MA LO RICHIAMO DELETED
+        // MA LO RICHIAMO DELETED (solo se il negozio è già collegato a BTCPay)
+        if ($this->linked($model)) {
         $store = $model->storesettings;
         $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
 
@@ -981,6 +825,7 @@ class StoresController extends Controller
             // IL POS DA BTCPAYSERVER VIENE RIMOSSO
             $removePos = $client->removePos($pos->possettings->sin);
 
+        }
         }
 
         // Log message
@@ -1196,9 +1041,71 @@ class StoresController extends Controller
      * @return Stores the loaded model
      * @throws NotFoundHttpException if the model cannot be found
      */
+    /** Impostazioni iniziali del negozio (quelle che il vecchio flusso inviava a BTCPay alla creazione). */
+    private function defaultSettings(Stores $model): Storesettings
+    {
+        return new Storesettings([
+            'store_id' => $model->id,
+            'bps_storeid' => null, // al momento
+            'defaultCurrency' => 'EUR',
+            'invoiceExpiration' => 900,
+            'displayExpirationTimer' => 300,
+            'monitoringExpiration' => 3600,
+            'speedPolicy' => 'MediumSpeed', // -> 1 confirmation 'HighSpeed' 0,
+            'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
+            'paymentTolerance' => 0,
+            'anyoneCanCreateInvoice' => 0,
+            'requiresRefundEmail' => 1,
+            'checkoutType' => 'V1',
+            'receipt' => json_encode([
+                'enabled' => 1,
+                'showQR' => 1,
+                'showPayments' => 1
+            ]),
+            'lightningAmountInSatoshi' => 0,
+            'lightningPrivateRouteHints' => 0,
+            'onChainWithLnInvoiceFallback' => 0,
+            'redirectAutomatically' => 0,
+            'showRecommendedFee' => 1,
+            'recommendedFeeBlockTarget' => 1,
+            'defaultLang' => 'it-IT',
+            'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
+            'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
+            'htmlTitle' => Html::encode($model->description),
+            'networkFeeMode' => 'Always',
+            'payJoinEnabled' => 0,
+            'lazyPaymentMethods' => 0,
+            'defaultPaymentMethod' => 'BTC',
+            // salvo i criteria in DB, ma non invio request tramite API
+            'paymentMethodCriteria' => json_encode([
+                0 => ['paymentMethod' => 'BTC', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
+                1 => ['paymentMethod' => 'BTC-LightningNetwork', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
+                2 => ['paymentMethod' => 'BTC-LNURLPAY', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
+            ]),
+            // 'derivationScheme' => null, //$settings->derivationScheme,
+            // 'label' => null, //$settings->derivationLabel,
+            // 'accountKeyPath' => null, //$settings->derivationAccountKeyPath,
+
+        ]);
+    }
+
+    /** Negozio già collegato a uno store BTCPay. Prima del provisioning le pagine BTCPay non contattano il server. */
+    private function linked(Stores $model): bool
+    {
+        return $model->storesettings !== null && !empty($model->storesettings->bps_storeid);
+    }
+
+    private function notLinked(Stores $model)
+    {
+        Yii::$app->session->setFlash('info', Yii::t('app', 'Negozio non ancora collegato a BTCPay: le impostazioni dei pagamenti BTC saranno disponibili dopo il collegamento automatico.'));
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+    }
+
     protected function findModel($id)
     {
-        if (($model = Stores::findOne($id)) !== null) {
+        // Fuori dallo scope = inesistente: solo l'admin vede i negozi di tutti i merchant.
+        $model = Stores::findOne($id);
+        if ($model !== null && (User::isAdministrator() || (int) $model->merchant_id === User::getMerchantId())) {
             return $model;
         }
 

@@ -6,6 +6,7 @@ use app\components\User;
 
 /* @var $this yii\web\View */
 /* @var $model app\models\Stores */
+/* @var $linked bool negozio già collegato a uno store BTCPay */
 
 $this->title = Yii::t('app', 'Negozio') . ': ' . $model->description;
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Stores'), 'url' => ['index']];
@@ -18,6 +19,11 @@ $this->params['breadcrumbs'][] = $this->title;
         <div class="col-lg-8">
             <div class="stores-view">
                 <?= app\widgets\Alert::widget() ?>
+                <?php if (empty($linked)) : ?>
+                    <div class="alert alert-info" role="status">
+                        <?= Html::encode(Yii::t('app', 'Pagamenti BTC da configurare: il collegamento a BTCPay verrà creato automaticamente. Negozio e terminali POS sono già utilizzabili.')) ?>
+                    </div>
+                <?php endif; ?>
                 <div class="card">
                     <div class="card-header">
                         <div class="d-flex flex-wrap align-items-center gap-2 w-100">

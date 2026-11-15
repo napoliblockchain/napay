@@ -88,6 +88,7 @@ ServiceWorkerAsset::register($this);
     <?= $this->render('footer-login') ?>
 
 
+    <?= \app\widgets\Alert::widget() ?>
     <?php $this->endBody() ?>
 </body>
 

@@ -6,7 +6,7 @@ use yii\base\Component;
 use yii\web\Request;
 
 /**
- * Registro attività (chi ha fatto cosa) nella tabella logs, come in Aura.
+ * Registro attività (chi ha fatto cosa) nella tabella logs.
  * Tipi: attività, dati (components/audit/AuditBootstrap), sicurezza, esportazioni.
  */
 class Log extends Component

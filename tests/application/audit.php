@@ -1,5 +1,5 @@
 <?php
-// Activity register (components/Log + components/audit, as in Aura) over real HTTP: disposable runtime DB only.
+// Activity register (components/Log + components/audit) over real HTTP: disposable runtime DB only.
 if (PHP_SAPI !== 'cli') { http_response_code(404); exit; }
 $root = dirname(__DIR__, 2);
 require $root . '/config/env.php';

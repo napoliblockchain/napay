@@ -8,7 +8,7 @@ $config = [
     'name' => 'Napay',
     'language' => 'it-IT', // Specifies which language the application is targeted to
     'basePath' => dirname(__DIR__),
-    // registro attività automatico (components/audit, come in Aura)
+    // registro attività automatico (components/audit)
     'bootstrap' => ['log', \app\components\audit\AuditBootstrap::class],
     'aliases' => [
         '@bower' => '@vendor/bower-asset',
@@ -79,6 +79,16 @@ $config = [
                 // API server-to-server POS: sessioni POST/DELETE, catalogo GET; altri metodi 405.
                 'api/pos/v1/sessions' => 'posapi/sessions/create',
                 'api/pos/v1/terminals' => 'posapi/terminals/index',
+                // SIP-021 fase 2: aperture esclusive; ID validati nel controller (404 JSON), altri metodi 405.
+                'api/pos/v1/terminals/<terminal_id:[^/]+>/openings' => 'posapi/openings/create',
+                'api/pos/v1/openings/<opening_id:[^/]+>/heartbeat' => 'posapi/openings/heartbeat',
+                'api/pos/v1/openings/<opening_id:[^/]+>/release' => 'posapi/openings/release',
+                // SIP-021 fase 3: pagamenti TTS dell'apertura; stesse regole di validazione.
+                'GET api/pos/v1/openings/<opening_id:[^/]+>/payments' => 'posapi/payments/index',
+                'api/pos/v1/openings/<opening_id:[^/]+>/payments' => 'posapi/payments/create',
+                'api/pos/v1/payments/<payment_id:[^/]+>/cancel' => 'posapi/payments/cancel',
+                'api/pos/v1/payments/<payment_id:[^/]+>' => 'posapi/payments/view',
+                'api/pos/v1/openings/<opening_id:[^/]+>' => 'posapi/openings/view',
                 // Regola per le API v1
                 'api/v1/<controller:\w+>/<action:\w+>' => 'api/v1/<controller>/<action>',
             ],

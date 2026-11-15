@@ -51,12 +51,12 @@ class C1ForeignSchemaCommand extends yii\db\Command {
         return $rows;
     }
 }
-$commandClass = $db->commandClass; $rejected = false;
+$commandMap = $db->commandMap; $rejected = false;
 try {
-    $db->commandClass = C1ForeignSchemaCommand::class;
+    $db->commandMap['mysql'] = C1ForeignSchemaCommand::class;
     $run();
 } catch (RuntimeException $e) { $rejected = true; }
-finally { $db->commandClass = $commandClass; }
+finally { $db->commandMap = $commandMap; }
 check($rejected, 'Foreign-schema FK metadata rejected (simulated metadata, real local schema)');
 // Simulate interruption after two complete CREATE TABLE statements.
 $db->createCommand('DROP TABLE pos_store_operators')->execute();
@@ -90,6 +90,18 @@ try { $run(); } catch (RuntimeException $e) { $rejected = true; }
 check($rejected, 'Reserved index name with wrong definition refused');
 $db->createCommand('DROP INDEX `uq-pos-stores-id-merchant` ON stores')->execute();
 $db->createCommand('ALTER TABLE stores RENAME INDEX c1_equivalent TO `uq-pos-stores-id-merchant`')->execute();
+$run();
+// SIP-022 B1b: the approved terminal index is accepted only as defined. It backs a B1 FK, so it is renamed, never dropped.
+check(count($db->createCommand("SHOW INDEX FROM pos_terminals WHERE Key_name='uq-btcpay-terminals-scope'")->queryAll()) === 3, 'Approved B1 terminal index accepted by C1 replay');
+$db->createCommand('ALTER TABLE pos_terminals RENAME INDEX `uq-btcpay-terminals-scope` TO b1_isolated')->execute();
+foreach (['UNIQUE INDEX `uq-btcpay-terminals-scope` (id, merchant_id, store_id)', 'INDEX `uq-btcpay-terminals-scope` (id, store_id, merchant_id)', 'UNIQUE INDEX `c1_unexpected` (id, store_id)'] as $drift) {
+    $db->createCommand('ALTER TABLE pos_terminals ADD ' . $drift)->execute();
+    $rejected = false;
+    try { $run(); } catch (RuntimeException $e) { $rejected = true; }
+    $db->createCommand('ALTER TABLE pos_terminals DROP INDEX `' . (str_contains($drift, 'c1_unexpected') ? 'c1_unexpected' : 'uq-btcpay-terminals-scope') . '`')->execute();
+    check($rejected, 'Terminal index drift refused: ' . strtok($drift, '('));
+}
+$db->createCommand('ALTER TABLE pos_terminals RENAME INDEX b1_isolated TO `uq-btcpay-terminals-scope`')->execute();
 $run();
 $users = $db->createCommand("SELECT username,id FROM users WHERE username IN ('runtime-user','runtime-other','runtime-disabled')")->queryAll();
 $ids = array_column($users, 'id', 'username');

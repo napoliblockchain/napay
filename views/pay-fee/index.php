@@ -15,11 +15,6 @@ $this->params['breadcrumbs'][] = $this->title;
 $f = Yii::$app->formatter;
 $pendingBitcoin = array_filter($payments, fn($p) => $p->status === 'pending' && $p->btcpay_invoice_id !== null);
 ?>
-<?php foreach (Yii::$app->session->getAllFlashes() as $type => $messages): ?>
-    <?php foreach ((array) $messages as $message): ?>
-        <div class="alert alert-<?= in_array($type, ['success', 'danger', 'warning', 'info'], true) ? $type : 'info' ?>" role="status"><?= Html::encode($message) ?></div>
-    <?php endforeach; ?>
-<?php endforeach; ?>
 <div class="row row-cards">
     <div class="col-lg-5">
         <div class="card">

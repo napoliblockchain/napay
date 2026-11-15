@@ -6,6 +6,7 @@ use yii\db\Migration;
 class m261112_130000_create_pos_catalog extends Migration
 {
     private const STORE_INDEX = 'uq-pos-stores-id-merchant';
+    private const B1_TERMINAL_INDEX = 'uq-btcpay-terminals-scope';
 
     public function up()
     {
@@ -99,6 +100,8 @@ class m261112_130000_create_pos_catalog extends Migration
                 || $column['COLLATION_NAME'] !== $collation) $this->incompatible();
         }
         $actual = $this->indexes($name); $expected = $definition['indexes'];
+        // SIP-022 B1b: unico indice esterno ammesso, solo con definizione esatta; ogni altra differenza resta incompatibile.
+        if ($name === 'pos_terminals' && ($actual[self::B1_TERMINAL_INDEX] ?? null) === ['unique'=>true, 'columns'=>['id','store_id','merchant_id']]) unset($actual[self::B1_TERMINAL_INDEX]);
         ksort($actual); ksort($expected);
         if ($actual !== $expected) $this->incompatible();
         $database = $this->db->createCommand('SELECT DATABASE()')->queryScalar();

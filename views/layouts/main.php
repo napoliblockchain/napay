@@ -41,6 +41,7 @@ $this->registerJsFile('@web/bundles/site/js/napay-theme-init.js', ['position' =>
     </div>
 </div>
 <?= $this->render('snackbar') ?>
+<?= \app\widgets\Alert::widget() ?>
 <?php $this->endBody() ?>
 </body>
 </html>

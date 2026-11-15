@@ -13,8 +13,7 @@ Il pin non sostituisce una scansione vulnerabilita dell'immagine e delle dipende
 
 ## Configurazione unica `.env`
 
-`config/env.php` segue il pattern di Aura (`/var/www/levitas/aura/config/env.php`):
-legge `.env` nella root; le variabili gia presenti nel processo Docker/CI hanno
+`config/env.php` legge `.env` nella root; le variabili gia presenti nel processo Docker/CI hanno
 precedenza. Nessun `secrets.php` viene caricato. Web e console usano lo stesso
 bootstrap. Default: `APP_ENV=prod`, `APP_DEBUG=false`; valori non validi e
 configurazioni obbligatorie mancanti bloccano l'avvio.
@@ -30,14 +29,35 @@ che i valori originali non vengano interpolati. Non stampare `compose config`
 completo nei log: contiene credenziali; usare `config --quiet` per validazione.
 
 ```sh
-cp .env.example .env
-chmod 600 .env
+umask 077
+env_file=/percorso/privato/napay.env
+cp .env.example "$env_file"
 # Impostare credenziali e chiavi prima dell'avvio.
 # Preparare secret esterno e volume come descritto in MYSQL-MIGRATION.md.
-./docker/up.sh .env
+bash docker/up.sh "$env_file" --check
+bash docker/up.sh "$env_file"
 ```
 
-Il compose locale legge `.env` a runtime, senza build args DB. Espone soltanto
+Il launcher richiede configurazione esterna 0600 e include obbligatoriamente
+`docker-compose.roles.yml`: web, migrator e worker usano account/password
+distinti. Secret migrator/worker in file privati esterni, percorsi nelle
+variabili `NAPAY_DB_MIGRATOR_SECRET_FILE` e `NAPAY_DB_WORKER_SECRET_FILE`.
+Root e migrator non sono disponibili al web. Non lasciare `.env` nella root
+del codice montata nei container. Il parser PHP mantiene compatibilita con
+le vecchie configurazioni nei test, non e il contratto del nuovo launcher.
+Il preflight controlla la password web risolta da Compose (non il testo
+grezzo prima dell'interpolazione), senza stampare il modello o i valori.
+
+Per il worker BTCPay esiste un ambiente separato, modello pubblico
+`docker/btcpay-worker.env.example`: non riusare questo env applicativo,
+che contiene chiavi web e credenziali con altro scopo. Il comando dedicato
+`php yii-btcpay btcpay-provision/run --once` verifica privilegi ristretti
+e gestisce per ora soltanto account merchant; non e un daemon o un deploy.
+Web outbox: `BTCPAY_PROVISION_INSTANCE` vuota = nessun accodamento; valorizzarla
+solo nel rollout approvato. E il digest pubblico dell'origine worker, non
+una chiave. Non deriva dalle impostazioni BTCPay legacy/quote associative.
+
+Il compose riceve il file esterno a runtime, senza build args DB. Espone soltanto
 HTTP diagnostico su `127.0.0.1:18120`, parametrizzabile con `NAPAY_HTTP_PORT`.
 L'accesso normale HTTPS passa dal gateway Caddy della piattaforma; niente
 certificati da configurare nell'applicazione. Non esporre la porta diagnostica
@@ -55,7 +75,7 @@ dal ciclo di vita dei container e non viene eliminato da `compose down -v`.
 La cancellazione manuale del volume o la perdita del disco distruggono i dati:
 servono comunque backup separati e restore provato.
 
-Root password: file esterno montato solo su MySQL tramite Compose secret.
+Root password: file esterno montato solo su MySQL e bootstrap tramite Compose secret.
 Credenziali applicative: `DB_USERNAME` / `DB_PASSWORD` in `.env`.
 Le variabili di inizializzazione MySQL valgono solo su volume vuoto: modificare
 `.env` non cambia gli account gia presenti. Non eliminare il volume per ruotare password.
@@ -152,8 +172,8 @@ Impostare `NAPAY_IMPORT_DIR` con directory privata esterna contenente
 col proprietario dei file. Non committare o stampare dataset/chiavi.
 
 ```sh
-./docker/up.sh .env --check
-./docker/up.sh .env
+bash docker/up.sh /percorso/privato/napay.env --check
+bash docker/up.sh /percorso/privato/napay.env
 ```
 
 Prima occorrono dipendenze runtime Napay installate dal lock con
@@ -232,7 +252,7 @@ reset password con posta reale, SSO, CRUD o integrazioni finanziarie.
 
 `tests/application/dependencies.php` verifica autoload, metadati Yii, estensioni,
 XLSX e PDF con dati fittizi senza rete o DB. I test UI/schema/bootstrap esistenti
-possono ora usare il vendor Napay, senza appoggiarsi a quello Aura.
+possono ora usare il vendor Napay, senza appoggiarsi a vendor esterni.
 
 Esito locale 2026-10-23: build web/bootstrap riuscite; validate/platform/audit
 Composer puliti con e senza dipendenze dev; 23 configurazione, 21 dipendenze,

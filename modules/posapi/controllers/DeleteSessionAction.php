@@ -5,6 +5,7 @@ namespace app\modules\posapi\controllers;
 use Yii;
 use app\components\Log;
 use app\components\pos\PosApi;
+use app\components\pos\TerminalOpenings;
 use app\models\PosOperatorSessions;
 
 /** SIP-021: idempotent, client-scoped revocation; never disclose token existence. */
@@ -26,10 +27,16 @@ class DeleteSessionAction extends \yii\base\Action
                 Yii::$app->response->headers->set('Retry-After', (string) $wait);
                 return $this->error(429, 'rate_limited', 'Too many attempts. Retry later.');
             }
-            $changed = PosOperatorSessions::updateAll(['revoked_at' => time(), 'revoked_reason' => 'logout'], [
-                'token_sha256' => hash('sha256', $match[1]), 'client_key_prefix' => $client, 'revoked_at' => null,
-            ]);
-            if ($changed > 0) Log::save('posapi', 'sessions', "Sessione POS revocata per logout (client $client)");
+            // SIP-021 fase 2: revoca della sessione e chiusura delle sue aperture nella stessa transazione.
+            $db = Yii::$app->db;
+            $closed = $db->transaction(static function () use ($db, $match, $client) {
+                $id = $db->createCommand('SELECT id FROM {{%pos_operator_sessions}} WHERE token_sha256=:t AND client_key_prefix=:c AND revoked_at IS NULL FOR UPDATE',
+                    [':t' => hash('sha256', $match[1]), ':c' => $client])->queryScalar();
+                if ($id === false) return null;
+                PosOperatorSessions::updateAll(['revoked_at' => time(), 'revoked_reason' => 'logout'], ['id' => (int) $id, 'revoked_at' => null]);
+                return TerminalOpenings::closeForSession($db, (int) $id);
+            }, \yii\db\Transaction::READ_COMMITTED);
+            if ($closed !== null) Log::save('posapi', 'sessions', "Sessione POS revocata per logout (client $client, aperture chiuse: $closed)");
             Yii::$app->response->statusCode = 204;
             Yii::$app->response->format = \yii\web\Response::FORMAT_RAW;
             return null;

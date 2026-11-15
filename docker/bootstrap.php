@@ -12,10 +12,15 @@ try {
     $config = napayBootstrapConfig();
     $timeout = filter_var(env('NAPAY_BOOTSTRAP_SECONDS', '1800'), FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 86400]]);
     if ($timeout === false) throw new RuntimeException('Invalid bootstrap budget.');
+    $roles = null;
+    if (env_bool('NAPAY_DB_ROLE_MODE', false)) {
+        if (env('NAPAY_DB_ROLE') !== 'bootstrap') throw new RuntimeException('Invalid bootstrap database role.');
+        foreach (['DatabaseSecret', 'DatabaseRoles', 'DatabaseRoleBootstrap'] as $class) require_once dirname(__DIR__) . '/components/db/' . $class . '.php';
+        $roles = app\components\db\DatabaseRoleBootstrap::prepare($config, dirname(__DIR__));
+    }
     $db = app\components\db\V2Bootstrap::connect($config['dsn'], $config['user'], $config['password'], $config['timeout']);
     $client = ['socket' => '/run/napay-mysql/mysqld.sock', 'user' => $config['user'], 'password' => $config['password']];
     $result = app\components\db\V2Bootstrap::run($db, dirname(__DIR__), '/import', $client, $timeout);
-    fwrite(STDOUT, 'Napay bootstrap: ' . $result . ".\n");
     // TIP-020: import automatico dell'associazione dal DB della vecchia app, a ogni avvio finché configurato
     if (app\components\legacy\LegacyImporter::active()) {
         $dsn = env_required('LEGACY_DB_DSN');
@@ -25,6 +30,11 @@ try {
         // solo conteggi: nessun dato personale nel log
         fwrite(STDOUT, 'Napay legacy import: ' . json_encode($report, JSON_THROW_ON_ERROR) . ".\n");
     }
+    if ($roles !== null) {
+        $roles->finish();
+        fwrite(STDOUT, "Napay database roles: restricted.\n");
+    }
+    fwrite(STDOUT, 'Napay bootstrap: ' . $result . ".\n");
 } catch (app\components\legacy\LegacyImportException $error) {
     fwrite(STDERR, 'Napay legacy import failed: ' . $error->getMessage() . " Application remains blocked.\n");
     exit(1);
