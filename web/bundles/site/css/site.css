@@ -156,3 +156,10 @@ a.desc:after {
     text-overflow: ellipsis;
     /* Aggiunge i puntini di sospensione (...) per indicare il testo troncato */
 }
+/* Toastr (messaggi flash): Tabler/Bootstrap usano la stessa classe .toast con sfondo chiaro, nascosta senza .show.
+   Il contenitore di toastr ripristina colori e visibilità; il testo resta bianco su fondo pieno. */
+#toast-container > .toast { display: block; border: 0; max-width: none; }
+#toast-container > .toast-success { background-color: #2f7d32; }
+#toast-container > .toast-error { background-color: #c62828; }
+#toast-container > .toast-info { background-color: #1565c0; }
+#toast-container > .toast-warning { background-color: #b45309; }
