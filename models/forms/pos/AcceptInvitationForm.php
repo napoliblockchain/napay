@@ -37,8 +37,8 @@ class AcceptInvitationForm extends Model
     public function attributeLabels()
     {
         return [
-            'first_name' => Yii::t('app', 'Nome'), 'last_name' => Yii::t('app', 'Cognome'),
-            'password' => Yii::t('app', 'Password'), 'repeat_password' => Yii::t('app', 'Ripeti password'),
+            'first_name' => Yii::t('app', 'First name'), 'last_name' => Yii::t('app', 'Last name'),
+            'password' => Yii::t('app', 'Password'), 'repeat_password' => Yii::t('app', 'Repeat password'),
         ];
     }
 }

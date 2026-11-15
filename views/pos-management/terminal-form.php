@@ -8,8 +8,8 @@ use yii\bootstrap5\ActiveForm;
 /* @var $stores array ID negozio cifrato => etichetta */
 /* @var $terminal array|null terminale in modifica */
 
-$this->title = $terminal === null ? Yii::t('app', 'Nuovo terminale') : Yii::t('app', 'Modifica terminale');
-$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Terminali POS'), 'url' => ['index']];
+$this->title = $terminal === null ? Yii::t('app', 'New terminal') : Yii::t('app', 'Edit terminal');
+$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'POS terminals'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
 <div class="card">
@@ -17,14 +17,14 @@ $this->params['breadcrumbs'][] = $this->title;
     <div class="card-body">
         <?php $f = ActiveForm::begin(['id' => 'terminal-form']); ?>
         <?php if ($terminal === null): ?>
-            <?= $f->field($form, 'store')->dropDownList($stores, ['prompt' => Yii::t('app', 'Seleziona il negozio')]) ?>
-            <div class="form-hint mb-3"><?= Html::encode(Yii::t('app', 'Il terminale nasce disabilitato.')) ?></div>
+            <?= $f->field($form, 'store')->dropDownList($stores, ['prompt' => Yii::t('app', 'Select the store')]) ?>
+            <div class="form-hint mb-3"><?= Html::encode(Yii::t('app', 'The terminal starts disabled.')) ?></div>
         <?php else: ?>
-            <div class="mb-3"><span class="form-label"><?= Html::encode(Yii::t('app', 'Negozio')) ?></span><div><?= Html::encode($terminal['store']) ?></div></div>
+            <div class="mb-3"><span class="form-label"><?= Html::encode(Yii::t('app', 'Store')) ?></span><div><?= Html::encode($terminal['store']) ?></div></div>
         <?php endif; ?>
         <?= $f->field($form, 'name')->textInput(['maxlength' => 256]) ?>
-        <?= Html::submitButton('<i class="fa fa-save me-1"></i>' . Html::encode(Yii::t('app', 'Salva')), ['class' => 'btn btn-success']) ?>
-        <?= Html::a(Html::encode(Yii::t('app', 'Annulla')), ['index'], ['class' => 'btn btn-link']) ?>
+        <?= Html::submitButton('<i class="fa fa-save me-1"></i>' . Html::encode(Yii::t('app', 'Save')), ['class' => 'btn btn-success']) ?>
+        <?= Html::a(Html::encode(Yii::t('app', 'Cancel')), ['index'], ['class' => 'btn btn-link']) ?>
         <?php ActiveForm::end(); ?>
     </div>
 </div>

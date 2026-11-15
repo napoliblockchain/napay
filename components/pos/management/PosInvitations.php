@@ -160,11 +160,11 @@ final class PosInvitations
     /** Stato mostrato al merchant. */
     public static function status(array $row, int $now): string
     {
-        if ($row['consumed_at'] !== null) return Yii::t('app', 'Accettato');
-        if ($row['revoked_at'] !== null) return Yii::t('app', 'Annullato');
-        if ((int) $row['expires_at'] <= $now) return Yii::t('app', 'Scaduto');
-        if ($row['sent_at'] === null && (int) $row['send_failures'] > 0) return Yii::t('app', 'Invio non riuscito');
-        return Yii::t('app', 'In attesa');
+        if ($row['consumed_at'] !== null) return Yii::t('app', 'Accepted');
+        if ($row['revoked_at'] !== null) return Yii::t('app', 'Cancelled');
+        if ((int) $row['expires_at'] <= $now) return Yii::t('app', 'Expired');
+        if ($row['sent_at'] === null && (int) $row['send_failures'] > 0) return Yii::t('app', 'Sending failed');
+        return Yii::t('app', 'Pending');
     }
 
     /** Controllo preliminare (senza lock) prima dei contatori; il ricontrollo autorevole resta sotto lock. */
@@ -227,7 +227,7 @@ final class PosInvitations
             $sent = Yii::$app->mailer->compose($views, $params)
                 ->setFrom([Yii::$app->params['adminEmail'] => Yii::$app->name])
                 ->setTo($email)
-                ->setSubject(Yii::$app->name . ' - ' . Yii::t('app', 'Invito operatore POS'))
+                ->setSubject(Yii::$app->name . ' - ' . Yii::t('app', 'POS operator invitation'))
                 ->send();
         } catch (\Throwable $error) {
             $sent = false;

@@ -149,8 +149,13 @@ foreach (['user@example.invalid' => 'Unclassified base account denied', 'c4-mana
 // --- gestore A: scope, creazione, XSS, CSRF, metodi
 check(login('merchant@example.invalid') === 302, 'Manager A logged in');
 $index = request('/pos-management/index');
-check($index['status'] === 200 && str_contains($index['body'], 'c4-op-a1@example.invalid') && !str_contains($index['body'], 'c4-op-b1@example.invalid')
+$operatorsTab = request('/pos-management/index?tab=operators');
+check($index['status'] === 200 && $operatorsTab['status'] === 200 && str_contains($operatorsTab['body'], 'c4-op-a1@example.invalid') && !str_contains($operatorsTab['body'], 'c4-op-b1@example.invalid')
     && !str_contains($index['body'], 'Cassa B') && !str_contains($index['body'], 'Cassa X'), 'Manager sees only own operators and terminals');
+check(str_contains($index['body'], '1. Invita operatori') && str_contains($index['body'], '2. Abilita operatori') && !str_contains($index['body'], 'c4-op-a1@example.invalid')
+    && str_contains($operatorsTab['body'], 'Chi ha accettato l&#039;invito') && !str_contains($operatorsTab['body'], 'Nuovo terminale'),
+    'Terminals, invitations and operators on separate tabs');
+check(str_contains(request('/pos-management/index?tab=bogus')['body'], 'Nuovo terminale'), 'Unknown tab falls back to terminals');
 check(str_contains($index['body'], 'href="/pos-management/index"') && !str_contains($index['body'], 'href="/pos/index"'), 'Qualified manager sidebar links to integrated POS backoffice');
 $form = request('/pos-management/terminal-create');
 $options = array_map(fn($n) => trim($n->textContent), nodes($form, '//select[@id="terminalform-store"]/option[@value!=""]'));
@@ -181,7 +186,7 @@ check($r['status'] === 302 && scalar('SELECT name FROM pos_terminals WHERE publi
     && (int) scalar('SELECT store_id FROM pos_terminals WHERE public_id=:p', [':p' => $uuid]) === $storeA1, 'Rename changes only the name');
 
 // --- profilo e grant (gestore A)
-$links = array_map(fn($n) => $n->nodeValue, nodes($index, '//a[contains(@href,"/pos-management/operator?")]/@href'));
+$links = array_map(fn($n) => $n->nodeValue, nodes(request('/pos-management/index?tab=operators'), '//a[contains(@href,"/pos-management/operator?")]/@href'));
 check(count($links) === 2, 'Operator list limited to own merchant');
 $pages = [];
 foreach ($links as $href) { $p = request($href); $pages[str_contains($p['body'], 'c4-op-a1@') ? 'a1' : 'conflict'] = [$href, $p]; }

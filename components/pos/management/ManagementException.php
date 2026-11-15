@@ -14,11 +14,11 @@ final class ManagementException extends \RuntimeException
     public function userMessage(): string
     {
         return match ($this->getMessage()) {
-            self::NOT_ALLOWED => \Yii::t('app', 'Operazione non consentita: merchant o account non idonei.'),
-            self::CONFLICT => \Yii::t('app', 'Elemento già presente.'),
-            self::INVALID => \Yii::t('app', 'Dati non validi.'),
-            self::RATE_LIMITED => \Yii::t('app', 'Troppe richieste: riprova più tardi.'),
-            default => \Yii::t('app', 'Operazione non riuscita. Riprova.'),
+            self::NOT_ALLOWED => \Yii::t('app', 'Operation not allowed: merchant or account not eligible.'),
+            self::CONFLICT => \Yii::t('app', 'Item already exists.'),
+            self::INVALID => \Yii::t('app', 'Invalid data.'),
+            self::RATE_LIMITED => \Yii::t('app', 'Too many requests: retry later.'),
+            default => \Yii::t('app', 'Operation failed. Please retry.'),
         };
     }
 }

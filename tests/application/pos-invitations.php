@@ -128,7 +128,8 @@ check($row && (int) $row['merchant_id'] === $merchantD && (int) $row['created_by
     && abs((int) $row['expires_at'] - (time() + 72 * 3600)) < 120 && $row['sent_at'] !== null, 'Invitation stored with normalized email, digest only, 72h expiry, sent');
 $token = tokenIn(mailTo('c4d-new@example.invalid'));
 check($token !== null && hash('sha256', $token) === $row['token_sha256'], 'Mail carries the only clear copy of the token');
-check(!str_contains(request('/pos-management/index')['body'], $token), 'Token never shown to the merchant');
+check(!str_contains(request('/pos-management/index?tab=invitations')['body'], $token) && str_contains(request('/pos-management/index?tab=invitations')['body'], 'c4d-new@example.invalid'),
+    'Token never shown to the merchant');
 // --- indirizzo gia registrato: stessa risposta, solo avviso senza link
 $knownFlash = invite('user@example.invalid');
 $notice = mailTo('user@example.invalid');
@@ -164,8 +165,8 @@ check((int) scalar('SELECT consumed_user_id FROM pos_operator_invitations WHERE 
 $users = (int) scalar('SELECT COUNT(*) FROM users');
 check(str_contains(acceptPage($token)['body'], 'non valido') && str_contains(acceptPost($token, $valid)['body'] ?? '', 'non valido')
     && (int) scalar('SELECT COUNT(*) FROM users') === $users, 'Used token rejected, no second account');
-check(login('c4d-manager-d@example.invalid') === 302 && str_contains(request('/pos-management/index')['body'], htmlspecialchars($evil . ' Operatore', ENT_QUOTES))
-    && !str_contains(request('/pos-management/index')['body'], $evil), 'Malicious operator name encoded in merchant list');
+check(login('c4d-manager-d@example.invalid') === 302 && str_contains(request('/pos-management/index?tab=operators')['body'], htmlspecialchars($evil . ' Operatore', ENT_QUOTES))
+    && !str_contains(request('/pos-management/index?tab=operators')['body'], $evil), 'Malicious operator name encoded in merchant list');
 
 // --- sostituzione, annullamento, scadenza
 invite('c4d-two@example.invalid'); $first = tokenIn(mailTo('c4d-two@example.invalid'));
@@ -205,7 +206,7 @@ $dId = (int) scalar("SELECT id FROM pos_operator_invitations WHERE email='c4d-si
 fails(fn() => PosInvitations::revoke($scopeE, $dId), Failure::NOT_FOUND, 'Other manager cannot revoke the invitation');
 fails(fn() => PosInvitations::resend($scopeE, $dId), Failure::NOT_FOUND, 'Other manager cannot resend the invitation');
 fails(fn() => PosInvitations::invite($scopeE, $merchantD, 'c4d-x@example.invalid'), Failure::NOT_FOUND, 'Manager cannot invite for another merchant');
-check(!str_contains(request('/pos-management/index')['body'], 'c4d-signed@example.invalid'), 'Other manager does not see the invitation');
+check(!str_contains(request('/pos-management/index?tab=invitations')['body'], 'c4d-signed@example.invalid'), 'Other manager does not see the invitation');
 fails(fn() => PosInvitations::invite(scopeOf($admin), $merchantX, 'c4d-x@example.invalid'), Failure::NOT_ALLOWED, 'No invitation for an unqualified merchant');
 check(scopeOf($uid) === null, 'Invited operator has no management scope');
 

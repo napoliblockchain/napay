@@ -29,6 +29,6 @@ class TerminalForm extends Model
 
     public function attributeLabels()
     {
-        return ['store' => Yii::t('app', 'Negozio'), 'name' => Yii::t('app', 'Nome POS')];
+        return ['store' => Yii::t('app', 'Store'), 'name' => Yii::t('app', 'POS name')];
     }
 }

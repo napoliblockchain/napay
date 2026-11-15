@@ -19,7 +19,7 @@ class InvitationForm extends Model
             ['email', 'string', 'max' => 254],
             ['email', function ($attribute) {
                 $email = PosInvitations::normalizeEmail($this->$attribute);
-                if ($email === null) $this->addError($attribute, Yii::t('app', 'Indirizzo email non valido.'));
+                if ($email === null) $this->addError($attribute, Yii::t('app', 'Invalid email address.'));
                 else $this->$attribute = $email;
             }],
             ['merchant', 'string', 'max' => 512],
@@ -28,6 +28,6 @@ class InvitationForm extends Model
 
     public function attributeLabels()
     {
-        return ['email' => Yii::t('app', 'Email del nuovo operatore'), 'merchant' => Yii::t('app', 'Merchant')];
+        return ['email' => Yii::t('app', 'New operator email'), 'merchant' => Yii::t('app', 'Merchant')];
     }
 }

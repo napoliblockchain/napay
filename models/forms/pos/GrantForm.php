@@ -20,6 +20,6 @@ class GrantForm extends Model
 
     public function attributeLabels()
     {
-        return ['store' => Yii::t('app', 'Negozio')];
+        return ['store' => Yii::t('app', 'Store')];
     }
 }

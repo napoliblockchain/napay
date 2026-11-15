@@ -75,8 +75,11 @@ class PosManagementController extends Controller
         return true;
     }
 
-    public function actionIndex(?string $store = null)
+    public const TABS = ['terminals', 'invitations', 'operators'];
+
+    public function actionIndex(?string $store = null, string $tab = 'terminals')
     {
+        if (!in_array($tab, self::TABS, true)) $tab = 'terminals';
         $storeId = $store === null ? null : $this->scopedStore($store);
         $terminals = (new Query())
             ->select(['t.id', 't.public_id', 't.name', 't.is_enabled', 'store' => 's.description', 'merchant' => 'm.description'])
@@ -113,6 +116,7 @@ class PosManagementController extends Controller
             'store' => $storeId === null ? null : $store,
             'terminals' => $terminalList,
             'operators' => new ActiveDataProvider(['query' => $operators, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'opage']]),
+            'tab' => $tab,
         ]);
     }
 
@@ -123,11 +127,11 @@ class PosManagementController extends Controller
             $storeId = $this->decodeId($form->store);
             try {
                 PosManagement::createTerminal($this->scope, $storeId, $form->name);
-                Yii::$app->session->setFlash('success', Yii::t('app', 'Terminale creato, disabilitato.'));
+                Yii::$app->session->setFlash('success', Yii::t('app', 'Terminal created, disabled.'));
                 return $this->redirect(['index']);
             } catch (ManagementException $e) {
                 // negozio fuori scope o inesistente: stesso esito di un dato non valido
-                $form->addError('store', $e->getMessage() === ManagementException::NOT_FOUND ? Yii::t('app', 'Negozio non valido.') : $e->userMessage());
+                $form->addError('store', $e->getMessage() === ManagementException::NOT_FOUND ? Yii::t('app', 'Invalid store.') : $e->userMessage());
             }
         }
         return $this->render('terminal-form', ['form' => $form, 'stores' => $this->storeOptions(), 'terminal' => null]);
@@ -139,19 +143,19 @@ class PosManagementController extends Controller
         $form = new TerminalForm(['scenario' => 'update', 'name' => $terminal['name']]);
         if ($form->load(Yii::$app->request->post()) && $form->validate()) {
             return $this->write(fn() => PosManagement::renameTerminal($this->scope, $terminal['public_id'], $form->name),
-                Yii::t('app', 'Terminale aggiornato.'), ['index']);
+                Yii::t('app', 'Terminal updated.'), ['index']);
         }
         return $this->render('terminal-form', ['form' => $form, 'stores' => [], 'terminal' => $terminal]);
     }
 
     public function actionTerminalEnable(string $id)
     {
-        return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, true), Yii::t('app', 'Terminale abilitato.'), ['index']);
+        return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, true), Yii::t('app', 'Terminal enabled.'), ['index']);
     }
 
     public function actionTerminalDisable(string $id)
     {
-        return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, false), Yii::t('app', 'Terminale disabilitato.'), ['index']);
+        return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, false), Yii::t('app', 'Terminal disabled.'), ['index']);
     }
 
     public function actionTerminalUnlock(string $id)
@@ -159,8 +163,8 @@ class PosManagementController extends Controller
         try {
             $unlocked = PosManagement::unlockTerminal($this->scope, $id);
             Yii::$app->session->setFlash($unlocked ? 'success' : 'info', $unlocked
-                ? Yii::t('app', 'Terminale sbloccato: la vecchia apertura non è più valida.')
-                : Yii::t('app', 'Il terminale era già libero.'));
+                ? Yii::t('app', 'Terminal unlocked: the previous opening is no longer valid.')
+                : Yii::t('app', 'The terminal was already free.'));
         } catch (ManagementException $e) {
             if ($e->getMessage() === ManagementException::NOT_FOUND) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
             Yii::$app->session->setFlash('danger', $e->userMessage());
@@ -206,14 +210,14 @@ class PosManagementController extends Controller
     {
         $userId = $this->decodeId($id);
         return $this->write(fn() => PosManagement::setOperatorEnabled($this->scope, $userId, true),
-            Yii::t('app', 'Operatore abilitato. Dovrà accedere di nuovo al POS.'), ['operator', 'id' => $id]);
+            Yii::t('app', 'Operator enabled. They must sign in to the POS again.'), ['operator', 'id' => $id]);
     }
 
     public function actionOperatorDisable(string $id)
     {
         $userId = $this->decodeId($id);
         return $this->write(fn() => PosManagement::setOperatorEnabled($this->scope, $userId, false),
-            Yii::t('app', 'Operatore disabilitato e disconnesso dal POS.'), ['operator', 'id' => $id]);
+            Yii::t('app', 'Operator disabled and signed out of the POS.'), ['operator', 'id' => $id]);
     }
 
     public function actionGrantCreate(string $id)
@@ -221,12 +225,12 @@ class PosManagementController extends Controller
         $userId = $this->decodeId($id);
         $form = new GrantForm();
         if (!$form->load(Yii::$app->request->post()) || !$form->validate()) {
-            Yii::$app->session->setFlash('danger', Yii::t('app', 'Dati non validi.'));
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'Invalid data.'));
             return $this->redirect(['operator', 'id' => $id]);
         }
         $storeId = $this->decodeId($form->store);
         return $this->write(fn() => PosManagement::createGrant($this->scope, $userId, $storeId),
-            Yii::t('app', 'Negozio assegnato, disabilitato.'), ['operator', 'id' => $id]);
+            Yii::t('app', 'Store assigned, disabled.'), ['operator', 'id' => $id]);
     }
 
     public function actionGrantEnable(string $id, string $store)
@@ -244,33 +248,33 @@ class PosManagementController extends Controller
         $userId = $this->decodeId($id);
         $storeId = $this->decodeId($store);
         return $this->write(fn() => PosManagement::setGrantEnabled($this->scope, $userId, $storeId, $enabled),
-            $enabled ? Yii::t('app', 'Negozio abilitato.') : Yii::t('app', 'Negozio disabilitato.'), ['operator', 'id' => $id]);
+            $enabled ? Yii::t('app', 'Store enabled.') : Yii::t('app', 'Store disabled.'), ['operator', 'id' => $id]);
     }
 
     public function actionInvitationCreate()
     {
         $form = new InvitationForm();
         if (!$form->load(Yii::$app->request->post()) || !$form->validate()) {
-            Yii::$app->session->setFlash('danger', $form->getFirstError('email') ?? Yii::t('app', 'Dati non validi.'));
-            return $this->redirect(['index']);
+            Yii::$app->session->setFlash('danger', $form->getFirstError('email') ?? Yii::t('app', 'Invalid data.'));
+            return $this->redirect(['index', 'tab' => 'invitations']);
         }
         // gestore: sempre il proprio merchant; admin: selettore cifrato, risolto e ricontrollato sotto lock
         $merchantId = $this->scope->isAdmin() ? $this->decodeId($form->merchant) : (int) $this->scope->merchantId;
         // stesso messaggio qualunque sia lo stato dell'indirizzo: nessuna enumerazione degli account
         return $this->write(fn() => PosInvitations::invite($this->scope, $merchantId, $form->email),
-            Yii::t('app', 'Invito registrato. Se l\'indirizzo può essere usato, riceverà le istruzioni via email.'), ['index']);
+            Yii::t('app', 'Invitation recorded. If the address can be used, it will receive the instructions by email.'), ['index', 'tab' => 'invitations']);
     }
 
     public function actionInvitationResend(string $id)
     {
         $invitationId = $this->decodeId($id);
-        return $this->write(fn() => PosInvitations::resend($this->scope, $invitationId), Yii::t('app', 'Invito reinviato con un nuovo link.'), ['index']);
+        return $this->write(fn() => PosInvitations::resend($this->scope, $invitationId), Yii::t('app', 'Invitation sent again with a new link.'), ['index', 'tab' => 'invitations']);
     }
 
     public function actionInvitationRevoke(string $id)
     {
         $invitationId = $this->decodeId($id);
-        return $this->write(fn() => PosInvitations::revoke($this->scope, $invitationId), Yii::t('app', 'Invito annullato.'), ['index']);
+        return $this->write(fn() => PosInvitations::revoke($this->scope, $invitationId), Yii::t('app', 'Invitation cancelled.'), ['index', 'tab' => 'invitations']);
     }
 
     /** Merchant in scope per l'admin: chiave = ID cifrato (solo selettore). */
