@@ -44,6 +44,8 @@ try {
         rejected(static fn() => $web->exec("DELETE FROM $table WHERE 1=0"), 'Web cannot delete from TTS table ' . $table);
         rejected(static fn() => $worker->query("SELECT $column FROM $table")->fetchAll(), 'BTCPay worker cannot read TTS table ' . $table);
     }
+    check((int) $web->query('SELECT COUNT(*) FROM istat_comuni')->fetchColumn() === 7894, 'Web reads the ISTAT municipalities');
+    rejected(static fn() => $web->exec("UPDATE istat_comuni SET sigla='XX' WHERE 1=0"), 'Web cannot change the ISTAT municipalities');
     $worker->query('SELECT account_id,kind FROM btcpay_merchant_credentials')->fetchAll(); check(true, 'Worker alone reads encrypted credentials');
     rejected(static fn() => $worker->query('SELECT dataset_sha256 FROM _napay_bootstrap')->fetchAll(), 'Worker marker columns are minimal');
     $stage = 'misconfigured grants';

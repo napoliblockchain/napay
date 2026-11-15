@@ -303,9 +303,10 @@ return [
     'e.g. Via Roma 1' => 'es. Via Roma 1',
     'The company email is the one used for registration.' => 'L\'email dell\'azienda è quella usata per la registrazione.',
     'Enter a 5-digit postal code.' => 'Inserisci un CAP di 5 cifre.',
-    'Enter a valid city name.' => 'Inserisci un nome di città valido.',
     'Enter street and house number.' => 'Inserisci via e numero civico.',
     'Enter a valid phone number.' => 'Inserisci un numero di telefono valido.',
     'Enter an Italian VAT number (11 digits).' => 'Inserisci una partita IVA italiana (11 cifre).',
     'VAT number check digit is not valid.' => 'La cifra di controllo della partita IVA non è valida.',
+    'Choose a municipality from the list.' => 'Scegli un comune dall\'elenco.',
+    'More municipalities have this name: choose the one with the province.' => 'Più comuni hanno questo nome: scegli quello con la provincia.',
 ];

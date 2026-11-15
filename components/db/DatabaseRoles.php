@@ -19,6 +19,7 @@ final class DatabaseRoles
     ];
     private const WEB_HISTORY = ['pos_terminal_openings', 'merchant_tts_wallets', 'pos_tts_payments'];
     private const WEB_READ = [
+        'istat_comuni' => ['codice', 'denominazione', 'provincia', 'sigla'],
         'btcpay_merchant_accounts' => ['id', 'instance', 'merchant_id', 'state', 'last_error_code', 'updated_at'],
         'btcpay_store_links' => ['id', 'instance', 'merchant_id', 'store_id', 'state', 'last_error_code', 'updated_at'],
         'btcpay_pos_links' => ['id', 'instance', 'merchant_id', 'store_id', 'terminal_id', 'state', 'last_error_code', 'updated_at'],

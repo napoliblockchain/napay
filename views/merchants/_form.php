@@ -1,6 +1,8 @@
 <?php
 
 use yii\helpers\Html;
+use yii\helpers\Url;
+use app\assets\MerchantCityAsset;
 use yii\widgets\ActiveForm;
 use app\components\User;
 
@@ -8,6 +10,7 @@ use app\components\User;
 /* @var $model app\models\Commercianti */
 /* @var $form yii\widgets\ActiveForm */
 
+MerchantCityAsset::register($this);
 ?>
 
 <div class="commercianti-form">
@@ -35,7 +38,14 @@ use app\components\User;
 
     <?= $form->field($model, 'addressStreet')->textInput(['maxlength' => true, 'placeholder' => Yii::t('app', 'e.g. Via Roma 1')]) ?>
     <?= $form->field($model, 'addressZip')->textInput(['maxlength' => 5, 'inputmode' => 'numeric']) ?>
-    <?= $form->field($model, 'addressCity')->textInput(['maxlength' => true]) ?>
+    <?php
+    // città mostrata con la sigla della provincia, come nei suggerimenti ISTAT
+    $city = $model->addressProvince !== '' && $model->addressProvince !== null && !$model->hasErrors('addressCity')
+        ? $model->addressCity . ' (' . $model->addressProvince . ')' : $model->addressCity;
+    ?>
+    <?= $form->field($model, 'addressCity')->textInput(['maxlength' => true, 'value' => $city, 'list' => 'napay-city-options', 'autocomplete' => 'off',
+        'data-cities-url' => Url::to(['/merchants/cities'])]) ?>
+    <datalist id="napay-city-options"></datalist>
 
     <?= $form->field($model, 'phone')->textInput(['maxlength' => true, 'inputmode' => 'tel'])->hint(Yii::t('app', 'Optional')) ?>
     <?= $form->field($model, 'mobile')->textInput(['maxlength' => true, 'inputmode' => 'tel'])->hint(Yii::t('app', 'Optional')) ?>

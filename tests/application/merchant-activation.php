@@ -58,6 +58,7 @@ $operator=user('r3b-operator',null);
 $existingMerchant=(int)scalar('SELECT id FROM merchants ORDER BY id LIMIT 1');
 $db->createCommand()->insert('pos_operators',['user_id'=>$operator,'merchant_id'=>$existingMerchant,'is_enabled'=>0,'created_at'=>time(),'updated_at'=>time()])->execute();
 check(http('/merchants/activate')['status']===302,'Guest activation requires login');
+check(http('/merchants/cities?q=nap')['status']===302,'Guest gets no city suggestions');
 foreach ([$pf,$inactive,$plain,$operator] as $id) denied(fn()=>activate($id),'Ineligible identity rejected by service');
 denied(fn()=>activate($pg,$pf),'Another basic account cannot activate this PG');
 login('r3b-pf@example.invalid');check(http('/merchants/activate')['status']===403,'PF denied by HTTP gate');
@@ -76,8 +77,11 @@ $r=http('/merchants/activate',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'=
 check($r['status']===302&&str_contains($r['headers'],'/merchants/company'),'PG activation redirects to its company');
 $id=Policy::merchantForManager($pg);check($id!==null,'PG now qualifies as its unique merchant manager');
 $row=$db->createCommand('SELECT email,addressCountry,addressProvince,addressNumberHouse,mobile FROM merchants WHERE id=:id',[':id'=>$id])->queryOne();
-check($row===['email'=>'r3b-pg@example.invalid','addressCountry'=>'IT','addressProvince'=>'','addressNumberHouse'=>'','mobile'=>''],
-    'Company email is the registration email, country IT, optional fields empty');
+check($row===['email'=>'r3b-pg@example.invalid','addressCountry'=>'IT','addressProvince'=>'NA','addressNumberHouse'=>'','mobile'=>''],
+    'Company email is the registration email, province from ISTAT, country IT, optional fields empty');
+$cities=json_decode(http('/merchants/cities?q=nap')['body'],true);
+check(is_array($cities)&&in_array('Napoli (NA)',$cities,true)&&count($cities)<=20,'City suggestions from the ISTAT list');
+check(json_decode(http('/merchants/cities?q=n')['body'],true)===[],'No suggestions under two characters');
 check((int)scalar('SELECT user_id FROM merchants WHERE id=:id',[':id'=>$id])===$pg,'Posted foreign owner ignored');
 check((int)scalar('SELECT is_merchant FROM users WHERE id=:id',[':id'=>$pg])===1,'Legacy merchant flag aligned atomically');
 check((int)scalar('SELECT COUNT(*) FROM merchants WHERE user_id=:id',[':id'=>$pf])===0,'Target PF has no merchant');
@@ -94,9 +98,13 @@ check(http('/merchants/create',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'
 check(http('/merchants/create',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'=>$new]])['status']===302&&Policy::merchantForManager($new)!==null,'Admin create uses the same qualified activation service');
 $bad=user('r3b-bad');check(activate($bad,null,['addressZip'=>'801'])===null&&Policy::canActivateMerchant($bad),'Invalid company data leaves PG eligible and unchanged');
 foreach (['VAT check digit'=>['vatNumber'=>'12345678901'], 'VAT length'=>['vatNumber'=>'1234567890'], 'postal code'=>['addressZip'=>'8010A'],
-    'city'=>['addressCity'=>'123'], 'street'=>['addressStreet'=>'12'], 'phone'=>['phone'=>'abc']] as $label=>$fields) {
+    'city'=>['addressCity'=>'123'], 'unknown city'=>['addressCity'=>'Atlantide'], 'ambiguous city'=>['addressCity'=>'Castro'],
+    'city with wrong province'=>['addressCity'=>'Napoli (MI)'], 'street'=>['addressStreet'=>'12'], 'phone'=>['phone'=>'abc']] as $label=>$fields) {
     check(activate($bad,null,$fields)===null&&Policy::canActivateMerchant($bad),'Activation refused: invalid '.$label);
 }
+$castro=user('r3b-castro');$cid=activate($castro,null,['addressCity'=>'castro (le)']);
+check($cid!==null&&$db->createCommand('SELECT addressCity,addressProvince FROM merchants WHERE id=:id',[':id'=>$cid])->queryOne()===['addressCity'=>'Castro','addressProvince'=>'LE'],
+    'Homonymous municipality resolved by province, official name stored');
 $role=(int)scalar('SELECT id FROM privileges WHERE level=30 ORDER BY id LIMIT 1');
 $db->createCommand()->insert('privileges',['level'=>30,'description'=>'R3b duplicate','codice_ruolo'=>'R3B_DUP'])->execute();$dup=(int)$db->lastInsertID;
 try{denied(fn()=>activate($bad),'Ambiguous merchant privilege catalog denied');}finally{$db->createCommand()->delete('privileges',['id'=>$dup])->execute();}

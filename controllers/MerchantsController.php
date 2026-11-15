@@ -18,6 +18,7 @@ use app\components\User;
 use app\components\Log;
 use app\components\identity\AccountEligibility;
 use app\components\identity\MerchantActivation;
+use app\components\geo\ItalianMunicipalities;
 use app\models\Users;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -41,11 +42,14 @@ class MerchantsController extends Controller
                     'company' => ['GET', 'POST'],
                     'create' => ['GET', 'POST'],
                     'activate' => ['GET', 'POST'],
+                    'cities' => ['GET'],
                 ],
             ],
             'access' => [
                 'class' => AccessControl::class,
                 'rules' => [
+                    // suggerimenti città (elenco pubblico ISTAT) per i form azienda
+                    ['actions'=>['cities'], 'allow'=>true, 'roles'=>['@']],
                     [
                         'actions'=>['activate'], 'allow'=>true, 'roles'=>['@'],
                         'matchCallback'=>static fn() => AccountEligibility::canActivateMerchant((int)Yii::$app->user->id)
@@ -160,6 +164,13 @@ class MerchantsController extends Controller
             }
         }
         return $this->render('activate', ['model'=>$model, 'users_list'=>[]]);
+    }
+
+    /** Suggerimenti del campo città: al massimo 20 comuni "Nome (SIGLA)". */
+    public function actionCities(string $q = '')
+    {
+        Yii::$app->response->format = \yii\web\Response::FORMAT_JSON;
+        return ItalianMunicipalities::suggest($q);
     }
 
     private function activateMerchant(Merchants $model, int $owner): ?int

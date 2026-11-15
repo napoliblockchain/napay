@@ -3,6 +3,7 @@
 namespace app\models;
 
 use Yii;
+use app\components\geo\ItalianMunicipalities;
 
 /**
  * This is the model class for table "merchants".
@@ -58,7 +59,7 @@ class Merchants extends \yii\db\ActiveRecord
             ['vatNumber', 'filter', 'filter'=>static fn($v) => preg_replace('/^IT/i', '', str_replace(' ', '', $v)), 'on'=>self::SCENARIO_ACTIVATION],
             ['vatNumber', 'validateItalianVat', 'on'=>self::SCENARIO_ACTIVATION],
             ['addressZip', 'match', 'pattern'=>'/^[0-9]{5}$/D', 'message'=>Yii::t('app', 'Enter a 5-digit postal code.'), 'on'=>$form],
-            ['addressCity', 'match', 'pattern'=>"/^\\p{L}[\\p{L}\\p{M}' .-]*$/Du", 'message'=>Yii::t('app', 'Enter a valid city name.'), 'on'=>$form],
+            ['addressCity', 'validateCity', 'on'=>$form],
             ['addressStreet', 'match', 'pattern'=>'/\\p{L}/u', 'message'=>Yii::t('app', 'Enter street and house number.'), 'on'=>$form],
             [['phone', 'mobile'], 'match', 'pattern'=>'/^\\+?[0-9][0-9 .\\/-]{5,28}$/D', 'message'=>Yii::t('app', 'Enter a valid phone number.'), 'on'=>$form],
             ['email', 'email'],
@@ -73,6 +74,20 @@ class Merchants extends \yii\db\ActiveRecord
             [['addressProvince', 'addressCountry'], 'string', 'max' => 10],
             [['user_id'], 'exist', 'skipOnError' => true, 'targetClass' => Users::class, 'targetAttribute' => ['user_id' => 'id']],
         ];
+    }
+
+    /** Città dall'elenco comuni ISTAT ("Comune" o "Comune (SIGLA)"): salva nome ufficiale e sigla della provincia. */
+    public function validateCity($attribute): void
+    {
+        $city = ItalianMunicipalities::resolve((string) $this->$attribute);
+        if ($city === null) {
+            $this->addError($attribute, Yii::t('app', 'Choose a municipality from the list.'));
+        } elseif (isset($city['ambiguous'])) {
+            $this->addError($attribute, Yii::t('app', 'More municipalities have this name: choose the one with the province.'));
+        } else {
+            $this->$attribute = $city['name'];
+            $this->addressProvince = $city['province'];
+        }
     }
 
     /** Partita IVA italiana: 11 cifre con cifra di controllo. */
