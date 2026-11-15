@@ -36,6 +36,9 @@ localCheck($config['networks']['btcpay_regtest_client']['external'] === true
     && $config['networks']['btcpay_regtest_client']['name'] === 'btcpay_regtest_client');
 localCheck(empty($egress['ports']) && $egress['read_only'] === true && $egress['cap_drop'] === ['ALL']);
 localCheck($services['web']['environment']['PAYMENT_PROXY'] === 'http://egress:3128');
+// senza launcher dell'orchestratore: pagamenti TTS spenti (tutte vuote) oppure configurazione completa
+$tts = array_map(fn($name) => (string) ($services['web']['environment'][$name] ?? ''), ['TTS_RPC_URL', 'TTS_CHAIN_ID', 'TTS_TOKEN_ADDRESS']);
+localCheck($tts === ['', '', ''] || ($tts[0] === 'http://wallet-besu:8545' && $tts[1] === '2118' && preg_match('/^0x[0-9a-fA-F]{40}$/D', $tts[2]) === 1));
 localCheck($config['volumes']['mysql_data']['external'] === true
     && $config['volumes']['mysql_data']['name'] === 'napay_browser_local_mysql_data');
 foreach (['web', 'bootstrap'] as $service) {

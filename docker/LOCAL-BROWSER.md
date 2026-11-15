@@ -87,9 +87,9 @@ Backend Apache senza porte pubblicate; rete browser interna `napay_local_browser
 separata da DB. Oltre a `napay-gateway`, la usa ora anche la preview POS v2;
 nessun accesso diretto del POS alla rete MySQL.
 Pagamenti TTS del POS (SIP-021 fase 3): rete interna `napay_local_chain` solo
-tra web e `wallet-besu`; `start-localhost.sh` scrive in `local.env` le sole righe
-`TTS_RPC_URL`, `TTS_CHAIN_ID` e `TTS_TOKEN_ADDRESS` (token letto dal deploy della
-chain di sviluppo). Senza queste righe i pagamenti TTS restano spenti.
+tra web e `wallet-besu`; `start-localhost.sh` passa `NAPAY_LOCAL_TTS_*` (token
+letto dal deploy della chain di sviluppo), mai scritti in `local.env`. Con
+`local.sh` da solo le variabili sono vuote e i pagamenti TTS restano spenti.
 Web e DB senza rete con uscita Internet: chiamate wallet/pagamenti/API non funzionano
 volutamente. Solo il gateway dispone anche della rete bridge necessaria a
 pubblicare le porte loopback Docker. Apache dichiara HTTPS solo nell'overlay locale.
