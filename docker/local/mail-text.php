@@ -16,19 +16,20 @@ function mailSplit(string $raw): array
     return [$headers, $body];
 }
 
-function mailPlain(array $headers, string $body, int $depth = 0): ?string
+/** Prima parte del tipo indicato (text/plain o text/html), decodificata; null se assente. */
+function mailPart(array $headers, string $body, string $wanted, int $depth = 0): ?string
 {
     $type = strtolower($headers['content-type'] ?? 'text/plain');
     if ($depth < 4 && str_starts_with($type, 'multipart/') && preg_match('/boundary="?([^";]+)"?/i', $headers['content-type'], $match)) {
         foreach (explode('--' . $match[1], $body) as $part) {
             [$partHeaders, $partBody] = mailSplit(ltrim($part, "\n"));
             if ($partHeaders === []) continue;
-            $text = mailPlain($partHeaders, $partBody, $depth + 1);
+            $text = mailPart($partHeaders, $partBody, $wanted, $depth + 1);
             if ($text !== null) return $text;
         }
         return null;
     }
-    if (!str_starts_with($type, 'text/plain')) return null;
+    if (!str_starts_with($type, $wanted)) return null;
     $encoding = strtolower(trim($headers['content-transfer-encoding'] ?? ''));
     if ($encoding === 'quoted-printable') return quoted_printable_decode($body);
     if ($encoding === 'base64') return (string) base64_decode($body);
@@ -39,8 +40,16 @@ foreach (glob(rtrim($argv[1], '/') . '/*.eml') as $file) {
     $target = substr($file, 0, -4) . '.txt';
     if (is_link($file) || file_exists($target) || filesize($file) > 1048576) continue;
     [$headers, $body] = mailSplit((string) file_get_contents($file));
-    $text = mailPlain($headers, $body);
-    if ($text === null) continue;
+    $text = mailPart($headers, $body, 'text/plain');
+    $html = mailPart($headers, $body, 'text/html');
+    if ($text === null && $html === null) continue;
+    $text ??= trim(html_entity_decode(strip_tags($html), ENT_QUOTES | ENT_HTML5, 'UTF-8'));
+    // link dei pulsanti HTML che la parte di testo non riporta
+    if ($html !== null && preg_match_all('~href="(https?://[^"]+)"~i', $html, $links)) {
+        $extra = array_values(array_filter(array_unique(array_map(static fn($link) => html_entity_decode($link, ENT_QUOTES | ENT_HTML5, 'UTF-8'), $links[1])),
+            static fn($link) => !str_contains($text, $link)));
+        if ($extra !== []) $text = rtrim($text, "\n") . "\n\nLink:\n" . implode("\n", $extra) . "\n";
+    }
     $out = '';
     foreach (['from' => 'From', 'to' => 'To', 'subject' => 'Subject', 'date' => 'Date'] as $key => $label) {
         $value = $headers[$key] ?? '';
