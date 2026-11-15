@@ -149,7 +149,10 @@ class SiteController extends Controller
         // }
         // $dataInvoices->sort->defaultOrder = ['id' => SORT_DESC];
 
+        // riepilogo incassi TTS e saldo del wallet (gestore e admin, stesso scope di Incassi)
+        $scope = \app\components\pos\management\Scope::current();
         return $this->render('index', [
+            'payments' => $scope === null ? null : \app\components\pos\tts\PaymentTotals::dashboard($scope),
             // 'dataMerchants' => $dataMerchants,
             // 'dataStores' => $dataStores,
             // 'dataPos' => $dataPos,

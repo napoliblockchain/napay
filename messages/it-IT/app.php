@@ -404,4 +404,10 @@ return [
     'POS' => 'POS',
     'Back' => 'Indietro',
     'POS payments' => 'Incassi',
+    'Collected' => 'Incassato',
+    'Collected today' => 'Incassato oggi',
+    'Collected this month' => 'Incassato nel mese',
+    'Pending payments' => 'Incassi in attesa',
+    'TTS wallet balance' => 'Saldo wallet TTS',
+    'Not available' => 'Non disponibile',
 ];

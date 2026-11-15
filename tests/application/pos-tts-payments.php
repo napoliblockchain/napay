@@ -319,6 +319,18 @@ if ($phase === 'verify') {
     check($csv['status'] === 200 && str_contains(strtolower($csv['headers']), 'text/csv') && str_starts_with($csv['body'], "\xEF\xBB\xBF")
         && count(array_filter(explode("\n", trim($csv['body'])))) === 1 + (int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='paid'")
         && str_contains($csv['body'], $tx['ok']) && !array_filter($refs, static fn($ref) => str_contains($csv['body'], $ref)), 'CSV export with the same filters, no reference');
+    $paidCents = (int) scalar("SELECT SUM(amount_cents) FROM pos_tts_payments WHERE state='paid'");
+    $euro = static fn(int $cents) => number_format($cents / 100, 2, ',', '.') . ' TTS';
+    check(preg_match('~data-total-paid>' . preg_quote($euro($paidCents), '~') . '<~', $list['body']) === 1
+        && preg_match('~data-total-paid>' . preg_quote($euro(0), '~') . '<~', web('/pos-payments/index?state=pending')['body']) === 1, 'Payments page totals follow the filters');
+    // dashboard: incassato oggi e saldo reale del wallet sulla chain (trasferimenti del test verso il wallet)
+    $toWallet = array_sum(array_map(static fn($t) => $t['to'] === $state['wallet'] ? $t['cents'] : 0, $state['plan']));
+    $home = web('/site/index')['body'];
+    check(preg_match('~data-dashboard="today"[\s\S]*?' . preg_quote($euro($paidCents), '~') . '~', $home) === 1
+        && preg_match('~data-dashboard="balance"[\s\S]*?' . preg_quote($euro($toWallet), '~') . '~', $home) === 1, 'Dashboard: collected today and on-chain wallet balance kept separate');
+    $sidebar = preg_match('~<aside class="navbar navbar-vertical[\s\S]*?</aside>~', $home, $aside) === 1 ? $aside[0] : '';
+    check(str_contains($home, 'data-napay-tts-wallet-link') && $sidebar !== '' && !str_contains($sidebar, '/merchant-wallet/index') && str_contains($sidebar, '/pos-payments/index'),
+        'TTS wallet in the profile menu, payments in the sidebar');
     webLogin('tt-op-u@example.invalid');
     check(web('/pos-payments/index')['status'] === 403, 'Operator cannot open the payments page');
     webLogin('tt-manager-b@example.invalid');

@@ -29,7 +29,6 @@ $items = [
         ['label'=>Yii::t('app', 'Aziende'), 'url'=>['merchants/index'], 'visible'=>$admin, 'active'=>$on('merchants')],
         ['label'=>Yii::t('app', 'Negozi'), 'url'=>['stores/index'], 'active'=>$on('stores')],
         ['label'=>Yii::t('app', 'Terminali POS'), 'url'=>['pos-management/index'], 'active'=>$on('pos-management')],
-        ['label'=>Yii::t('app', 'TTS wallet'), 'url'=>['merchant-wallet/index'], 'active'=>$on('merchant-wallet')],
         ['label'=>Yii::t('app', 'POS payments'), 'url'=>['pos-payments/index'], 'active'=>$on('pos-payments')],
     ]],
     ['label'=>Yii::t('app', 'Amministrazione'), 'icon'=>'cog', 'items'=>[

@@ -5,10 +5,13 @@ use app\components\User;
 use kartik\icons\Icon;
 use app\components\identity\AccountEligibility;
 use app\components\pos\management\Scope;
+use app\components\pos\tts\PaymentTotals;
+use yii\helpers\Html;
 
 /* @var $this yii\web\View */
 /* @var $searchModel app\models\search\UsersSearch */
 /* @var $dataProvider yii\data\ActiveDataProvider */
+/* @var $payments array|null riepilogo incassi (PaymentTotals::dashboard), null fuori dallo scope esercenti */
 
 Icon::map($this);
 
@@ -19,6 +22,32 @@ $member = AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
 ?>
 
 <div class="body-content">
+    <?php if ($payments !== null): ?>
+    <div class="row g-3 mt-2">
+        <?php foreach ([
+            ['today', Yii::t('app', 'Collected today'), PaymentTotals::format($payments['today']), 'bg-success'],
+            ['month', Yii::t('app', 'Collected this month'), PaymentTotals::format($payments['month']), 'bg-success'],
+            ['pending', Yii::t('app', 'Pending payments'), (string) $payments['pending'], 'bg-blue'],
+        ] as [$key, $label, $value, $color]): ?>
+            <div class="col-sm-6 col-lg-3">
+                <a href="<?= Url::to(['pos-payments/index']) ?>" class="card card-sm h-100 p-3 text-reset text-decoration-none" data-dashboard="<?= $key ?>">
+                    <span class="text-secondary"><span class="badge <?= $color ?> me-2"></span><?= Html::encode($label) ?></span>
+                    <span class="h2 mb-0 mt-1"><?= Html::encode($value) ?></span>
+                </a>
+            </div>
+        <?php endforeach; ?>
+        <?php if ($payments['wallet'] !== null): ?>
+            <!-- saldo reale sulla chain: comprende anche i trasferimenti fuori dal POS, quindi è separato dagli incassi -->
+            <div class="col-sm-6 col-lg-3">
+                <a href="<?= Url::to(['merchant-wallet/index']) ?>" class="card card-sm h-100 p-3 text-reset text-decoration-none border-primary" data-dashboard="balance">
+                    <span class="text-secondary"><span class="badge bg-primary me-2"></span><?= Html::encode(Yii::t('app', 'TTS wallet balance')) ?></span>
+                    <span class="h2 mb-0 mt-1"><?= Html::encode($payments['balance'] === null ? Yii::t('app', 'Not available') : PaymentTotals::format($payments['balance'])) ?></span>
+                    <span class="small text-secondary text-truncate font-monospace" title="<?= Html::encode($payments['wallet']) ?>"><?= Html::encode(substr($payments['wallet'], 0, 10) . '…' . substr($payments['wallet'], -8)) ?></span>
+                </a>
+            </div>
+        <?php endif; ?>
+    </div>
+    <?php endif; ?>
     <div class="row mt-2">
         <div class="col-lg-12 col-12">
             <div class="row g-3">

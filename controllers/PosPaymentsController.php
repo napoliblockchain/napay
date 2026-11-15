@@ -4,6 +4,7 @@ namespace app\controllers;
 
 use Yii;
 use app\components\pos\management\Scope;
+use app\components\pos\tts\PaymentTotals;
 use app\components\pos\tts\TtsPayments;
 use app\models\Merchants;
 use app\models\PosTerminals;
@@ -52,6 +53,7 @@ class PosPaymentsController extends Controller
     {
         [$query, $filters] = $this->filtered();
         return $this->render('index', [
+            'totals' => PaymentTotals::byState($query),
             'payments' => new ActiveDataProvider(['query' => $query, 'sort' => false, 'pagination' => ['pageSize' => 25]]),
             'filters' => $filters,
             'stores' => $this->scope->storeOptions(),

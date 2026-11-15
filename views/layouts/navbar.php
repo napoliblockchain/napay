@@ -36,6 +36,11 @@ use app\components\User;
                                 'class' => 'dropdown-item', 'data-napay-company-link' => true,
                             ]) ?>
                         <?php endif ?>
+                        <?php if (\app\components\pos\management\Scope::current() !== null): ?>
+                            <?= Html::a(Html::encode(Yii::t('app', 'TTS wallet')), ['/merchant-wallet/index'], [
+                                'class' => 'dropdown-item', 'data-napay-tts-wallet-link' => true,
+                            ]) ?>
+                        <?php endif ?>
                         <?php if (\app\components\identity\AccountEligibility::canActivateMerchant((int)Yii::$app->user->id)): ?>
                             <?= Html::a(Html::encode(Yii::t('app', 'Attiva merchant')), ['/merchants/activate'], [
                                 'class'=>'dropdown-item', 'data-napay-activate-merchant-link'=>true,

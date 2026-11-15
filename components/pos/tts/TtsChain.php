@@ -78,6 +78,14 @@ final class TtsChain
         return $out;
     }
 
+    /** Saldo del token (unità minime, centesimi TTS) di un indirizzo, come stringa decimale. */
+    public function balanceOf(string $address): string
+    {
+        $result = $this->call('eth_call', [['to' => $this->token, 'data' => '0x70a08231' . TtsAddress::word($address)], 'latest']);
+        if (!is_string($result) || preg_match('/^0x([0-9a-fA-F]{1,64})$/D', $result, $m) !== 1) throw new TtsChainException();
+        return gmp_strval(gmp_init($m[1], 16), 10);
+    }
+
     /** Dati della chiamata (input) di una transazione minata, esadecimali minuscoli senza 0x. */
     public function transactionInput(string $hash): string
     {

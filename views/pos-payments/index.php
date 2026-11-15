@@ -2,12 +2,14 @@
 
 use yii\helpers\Html;
 use app\widgets\TablerGridView as GridView;
+use app\components\pos\tts\PaymentTotals;
 
 /* @var $this yii\web\View */
 /* @var $payments yii\data\ActiveDataProvider */
 /* @var $filters array from, to, store (ID cifrato), state */
 /* @var $stores array ID negozio cifrato => etichetta */
 /* @var $admin bool */
+/* @var $totals array per stato: count, cents (stessi filtri dell'elenco) */
 
 $this->title = Yii::t('app', 'POS payments');
 $this->params['breadcrumbs'][] = $this->title;
@@ -57,6 +59,16 @@ if ($admin) array_unshift($columns, ['label' => Yii::t('app', 'Merchant'), 'valu
             <?= Html::a(Html::encode(Yii::t('app', 'Reset')), ['index'], ['class' => 'btn btn-outline-secondary']) ?>
         </div>
         <?= Html::endForm() ?>
+    </div>
+    <div class="card-body border-bottom">
+        <div class="row g-3">
+            <?php foreach (['paid' => ['text-success', 'Collected'], 'pending' => ['text-blue', 'Pending'], 'expired' => ['text-secondary', 'Expired'], 'cancelled' => ['text-danger', 'Cancelled']] as $state => [$color, $label]): ?>
+                <div class="col-6 col-md-3">
+                    <div class="text-secondary small"><?= Html::encode(Yii::t('app', $label)) ?> <span class="badge bg-secondary-lt ms-1"><?= (int) $totals[$state]['count'] ?></span></div>
+                    <div class="h3 mb-0 <?= $color ?>" data-total-<?= $state ?>><?= Html::encode(PaymentTotals::format($totals[$state]['cents'])) ?></div>
+                </div>
+            <?php endforeach; ?>
+        </div>
     </div>
     <?= GridView::widget([
         'dataProvider' => $payments,
