@@ -93,6 +93,9 @@ case "$action" in
         mkdir -p "$state/mail-review"
         chmod 700 "$state/mail-review"
         "${compose[@]}" cp web:/var/www/html/runtime/mail/. "$state/mail-review/"
+        # accanto a ogni .eml un .txt leggibile: testo decodificato, link interi (container senza rete)
+        docker run --rm --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true --user "$(id -u):$(id -g)" \
+            -v "$state/mail-review:/mail" -v "$root/docker/local/mail-text.php:/mail-text.php:ro" --entrypoint php php:8.3.36-cli /mail-text.php /mail
         find "$state/mail-review" -type f -exec chmod 600 {} +
         printf 'Private mail: %s/mail-review/\n' "$state"
         ;;

@@ -107,7 +107,8 @@ bash docker/local.sh mail
 ```
 
 Messaggi copiati in `$NAPAY_LOCAL_STATE/mail-review/`
-(directory 0700, file 0600). Aprire `.eml` localmente e seguire link HTTPS.
+(directory 0700, file 0600). Accanto a ogni `.eml` un `.txt` con intestazioni e
+testo decodificato (link interi, senza `=3D` o righe spezzate), mai sovrascritto.
 I link contengono credenziali temporanee: non incollarli in chat/log pubblici.
 Prima richiesta mail va generata tramite registrazione o recupero password.
 
