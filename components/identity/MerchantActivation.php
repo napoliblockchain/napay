@@ -42,6 +42,12 @@ final class MerchantActivation
             }
             $merchant->scenario = Merchants::SCENARIO_ACTIVATION;
             $merchant->user_id = $ownerId;
+            // Email dell'azienda = email di registrazione del titolare (letta sotto lock), mai dal form
+            $merchant->email = (string) $db->createCommand('SELECT email FROM {{%users}} WHERE id=:id', [':id'=>$ownerId])->queryScalar();
+            // campi non più nel form (colonne NOT NULL): civico nella via, provincia vuota, paese IT
+            $merchant->addressNumberHouse = '';
+            $merchant->addressProvince = '';
+            $merchant->addressCountry = 'IT';
             if (!$merchant->validate()) {
                 $tx->rollBack();
                 return null;

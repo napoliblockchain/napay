@@ -200,12 +200,14 @@ try {
     check((new DOMXPath($document))->query('//input[@name="Merchants[vatNumber]" and @readonly]')->length === 1, 'Company VAT field read-only');
     check(request('/merchants/company', ['Merchants' => ['description' => 'Injected']])['status'] === 400, 'Company updates require CSRF');
     $saved = request('/merchants/company', ['_csrf' => token($company['body']), 'Merchants' => [
-        'description' => 'HTTP company edited', 'email' => 'edited@example.invalid', 'vatNumber' => ['invalid'], 'user_id' => 1, 'id' => 2147483647,
+        'description' => 'HTTP company edited', 'email' => 'edited@example.invalid', 'vatNumber' => ['invalid'], 'user_id' => 1, 'id' => 2147483647, 'phone' => '',
     ]]);
     check($saved['status'] === 302 && str_contains($saved['headers'], '/merchants/company'), 'Company details save through POST and redirect back');
     $company = request('/merchants/company');
-    check(str_contains($company['body'], 'HTTP company edited') && str_contains($company['body'], 'edited@example.invalid')
-        && str_contains($company['body'], '12345678901'), 'Allowed company fields change while crafted VAT and owner are ignored');
+    check(str_contains($company['body'], 'HTTP company edited') && !str_contains($company['body'], 'edited@example.invalid')
+        && str_contains($company['body'], '12345678901'), 'Allowed company fields change while crafted email, VAT and owner are ignored');
+    $invalid = request('/merchants/company', ['_csrf' => token($company['body']), 'Merchants' => ['addressZip' => '801', 'phone' => 'abc']]);
+    check($invalid['status'] === 200 && str_contains($invalid['body'], 'CAP di 5 cifre') && str_contains($invalid['body'], 'telefono valido'), 'Company update rejects malformed postal code and phone');
     $jar = tempnam(sys_get_temp_dir(), 'napay-http-'); $jars[] = $jar;
     check(login('operator')['status'] === 302, 'Level-40 operator authenticates');
     $operatorList = request('/users/index');

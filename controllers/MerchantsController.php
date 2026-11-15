@@ -3,6 +3,7 @@
 namespace app\controllers;
 
 use Yii;
+use app\models\MemberProfiles;
 use app\models\Merchants;
 
 use app\models\search\MerchantsSearch;
@@ -150,6 +151,14 @@ class MerchantsController extends Controller
             return $this->redirect(['company']);
         }
         $model->user_id = $owner;
+        if (!Yii::$app->request->isPost) {
+            // Precompilato dal profilo socio PG: ragione sociale, P.IVA e indirizzo già dichiarati alla registrazione
+            $profile = MemberProfiles::find()->where(['user_id'=>$owner, 'is_corporate'=>1])->one();
+            if ($profile !== null) {
+                $model->setAttributes(['description'=>(string) $profile->denomination, 'vatNumber'=>(string) $profile->vat,
+                    'addressStreet'=>(string) $profile->address, 'addressZip'=>(string) $profile->cap, 'addressCity'=>(string) $profile->city]);
+            }
+        }
         return $this->render('activate', ['model'=>$model, 'users_list'=>[]]);
     }
 

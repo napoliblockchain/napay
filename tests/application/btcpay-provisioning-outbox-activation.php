@@ -20,7 +20,7 @@ $db = $app->db;
 if ($db->createCommand('SELECT DATABASE()')->queryScalar() !== 'napay_test_runtime') exit(1);
 $instance = (string) getenv('BTCPAY_PROVISION_INSTANCE');
 if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1) exit(1);
-function data(): array { return ['description' => 'W4b PG', 'email' => 'company@example.invalid', 'vatNumber' => '12345678901', 'phone' => '123', 'mobile' => '456',
+function data(): array { return ['description' => 'W4b PG', 'email' => 'company@example.invalid', 'vatNumber' => '12345678903', 'phone' => '081 1234567', 'mobile' => '',
     'addressStreet' => 'Via Test', 'addressNumberHouse' => '1', 'addressCity' => 'Napoli', 'addressZip' => '80100', 'addressProvince' => 'NA', 'addressCountry' => 'IT']; }
 function activate(int $owner, ?int $actor = null): ?int {
     Yii::$app->user->setIdentity(Users::findOne($actor ?? $owner));

@@ -19,6 +19,6 @@ echo "PASS: disposable HTTP identities created after verified v2 restore\n";
 foreach (['merchant', 'other'] as $role) {
     $owner = app\components\db\V2Bootstrap::rows($db, 'SELECT id FROM users WHERE username=?', ['runtime-' . $role])[0]['id'];
     $db->prepare('INSERT INTO merchants (user_id,description,email,vatNumber,phone,mobile,addressStreet,addressNumberHouse,addressCity,addressZip,addressProvince,addressCountry) VALUES (?,?,?,?,?,?,?,?,?,?,?,?)')
-        ->execute([$owner, 'Runtime company ' . $role, $role . '@example.invalid', '12345678901', '123', '456', 'Fixture street', '1', 'Napoli', '80100', 'NA', 'IT']);
+        ->execute([$owner, 'Runtime company ' . $role, $role . '@example.invalid', '12345678901', '081 1234567', '333 1234567', 'Fixture street', '1', 'Napoli', '80100', 'NA', 'IT']);
 }
 echo "PASS: disposable merchant companies created\n";

@@ -14,8 +14,8 @@ $app = new yii\web\Application(require $root.'/config/web.php');
 $app->user->enableSession = false; $app->user->enableAutoLogin = false;
 $db = $app->db;
 if ($db->createCommand('SELECT DATABASE()')->queryScalar() !== 'napay_test_runtime') exit(1);
-function data(): array { return ['description'=>'R3b PG', 'email'=>'company@example.invalid', 'vatNumber'=>'12345678901',
-    'phone'=>'123', 'mobile'=>'456', 'addressStreet'=>'Via Test', 'addressNumberHouse'=>'1', 'addressCity'=>'Napoli', 'addressZip'=>'80100', 'addressProvince'=>'NA', 'addressCountry'=>'IT']; }
+function data(): array { return ['description'=>'R3b PG', 'email'=>'company@example.invalid', 'vatNumber'=>'12345678903',
+    'phone'=>'081 1234567', 'mobile'=>'', 'addressStreet'=>'Via Test', 'addressNumberHouse'=>'1', 'addressCity'=>'Napoli', 'addressZip'=>'80100', 'addressProvince'=>'NA', 'addressCountry'=>'IT']; }
 function activate(int $owner, ?int $actor = null, array $fields = []): ?int {
     Yii::$app->user->setIdentity(Users::findOne($actor ?? $owner));
     return Activation::activate($actor ?? $owner, $owner, new Merchants($fields + data()));
@@ -63,16 +63,21 @@ denied(fn()=>activate($pg,$pf),'Another basic account cannot activate this PG');
 login('r3b-pf@example.invalid');check(http('/merchants/activate')['status']===403,'PF denied by HTTP gate');
 login('r3b-pg@example.invalid');$p=http('/merchants/activate');
 check($p['status']===200,'Eligible PG sees activation form');
+check(str_contains($p['body'],'value="PG r3b-pg"')&&!str_contains($p['body'],'Merchants[email]')&&!str_contains($p['body'],'Merchants[addressProvince]'),
+    'Activation form prefilled from the PG profile, no email or province fields');
 check(str_contains(http('/')['body'],'data-napay-activate-merchant-link'),'PG gets account menu activation link');
 check(http('/merchants/activate',data())['status']===400,'Activation requires CSRF');
 check(http('/merchants/activate',null,'PUT')['status']===405,'Unsupported activation method denied');
-foreach (['description','vatNumber','email'] as $field) {
+foreach (['description','vatNumber','addressCity'] as $field) {
     $r=http('/merchants/activate',['_csrf'=>csrf($p),'Merchants'=>[$field=>['bad']]+data()]);
     check($r['status']===200&&!Policy::merchantForManager($pg),'Malformed text rerenders safely without activation');
 }
 $r=http('/merchants/activate',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'=>$pf,'privilege_id'=>1,'is_active'=>2,'id'=>$existingMerchant]]);
 check($r['status']===302&&str_contains($r['headers'],'/merchants/company'),'PG activation redirects to its company');
 $id=Policy::merchantForManager($pg);check($id!==null,'PG now qualifies as its unique merchant manager');
+$row=$db->createCommand('SELECT email,addressCountry,addressProvince,addressNumberHouse,mobile FROM merchants WHERE id=:id',[':id'=>$id])->queryOne();
+check($row===['email'=>'r3b-pg@example.invalid','addressCountry'=>'IT','addressProvince'=>'','addressNumberHouse'=>'','mobile'=>''],
+    'Company email is the registration email, country IT, optional fields empty');
 check((int)scalar('SELECT user_id FROM merchants WHERE id=:id',[':id'=>$id])===$pg,'Posted foreign owner ignored');
 check((int)scalar('SELECT is_merchant FROM users WHERE id=:id',[':id'=>$pg])===1,'Legacy merchant flag aligned atomically');
 check((int)scalar('SELECT COUNT(*) FROM merchants WHERE user_id=:id',[':id'=>$pf])===0,'Target PF has no merchant');
@@ -87,7 +92,11 @@ $new=user('r3b-admin-pg');login('admin@example.invalid');$p=http('/merchants/cre
 check(!str_contains($p['body'],'r3b-pf@example.invalid')&&str_contains($p['body'],'r3b-admin-pg@example.invalid'),'Admin selector only offers eligible PGs');
 check(http('/merchants/create',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'=>$pf]])['status']===403,'Crafted admin create cannot promote PF');
 check(http('/merchants/create',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'=>$new]])['status']===302&&Policy::merchantForManager($new)!==null,'Admin create uses the same qualified activation service');
-$bad=user('r3b-bad');check(activate($bad,null,['email'=>'invalid'])===null&&Policy::canActivateMerchant($bad),'Invalid company data leaves PG eligible and unchanged');
+$bad=user('r3b-bad');check(activate($bad,null,['addressZip'=>'801'])===null&&Policy::canActivateMerchant($bad),'Invalid company data leaves PG eligible and unchanged');
+foreach (['VAT check digit'=>['vatNumber'=>'12345678901'], 'VAT length'=>['vatNumber'=>'1234567890'], 'postal code'=>['addressZip'=>'8010A'],
+    'city'=>['addressCity'=>'123'], 'street'=>['addressStreet'=>'12'], 'phone'=>['phone'=>'abc']] as $label=>$fields) {
+    check(activate($bad,null,$fields)===null&&Policy::canActivateMerchant($bad),'Activation refused: invalid '.$label);
+}
 $role=(int)scalar('SELECT id FROM privileges WHERE level=30 ORDER BY id LIMIT 1');
 $db->createCommand()->insert('privileges',['level'=>30,'description'=>'R3b duplicate','codice_ruolo'=>'R3B_DUP'])->execute();$dup=(int)$db->lastInsertID;
 try{denied(fn()=>activate($bad),'Ambiguous merchant privilege catalog denied');}finally{$db->createCommand()->delete('privileges',['id'=>$dup])->execute();}

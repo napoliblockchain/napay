@@ -31,10 +31,8 @@ class Merchants extends \yii\db\ActiveRecord
     public function scenarios()
     {
         $scenarios = parent::scenarios();
-        $scenarios[self::SCENARIO_UPDATE] = [
-            'description', 'email', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse',
-            'addressCity', 'addressZip', 'addressProvince', 'addressCountry',
-        ];
+        // Form ridotto: via e civico in un campo, provincia e paese non richiesti, email = registrazione del titolare.
+        $scenarios[self::SCENARIO_UPDATE] = ['description', 'phone', 'mobile', 'addressStreet', 'addressCity', 'addressZip'];
         $scenarios[self::SCENARIO_ACTIVATION] = array_merge(['user_id', 'vatNumber'], $scenarios[self::SCENARIO_UPDATE]);
         return $scenarios;
     }
@@ -52,11 +50,20 @@ class Merchants extends \yii\db\ActiveRecord
      */
     public function rules()
     {
+        $form = [self::SCENARIO_ACTIVATION, self::SCENARIO_UPDATE];
         return [
-            [['description', 'email', 'vatNumber', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse', 'addressCity', 'addressZip', 'addressProvince', 'addressCountry'],
-                'filter', 'filter'=>static fn($v) => is_string($v) ? trim($v) : '', 'on'=>self::SCENARIO_ACTIVATION],
-            ['email', 'email', 'on'=>self::SCENARIO_ACTIVATION],
-            [['user_id', 'description', 'email', 'vatNumber', 'phone', 'mobile', 'addressStreet', 'addressNumberHouse', 'addressCity', 'addressZip', 'addressProvince', 'addressCountry'], 'required'],
+            [['description', 'vatNumber', 'phone', 'mobile', 'addressStreet', 'addressCity', 'addressZip'],
+                'filter', 'filter'=>static fn($v) => is_string($v) ? trim(preg_replace('/\s+/u', ' ', $v)) : '', 'on'=>$form],
+            // P.IVA anche con prefisso IT o spazi: salvata come 11 cifre
+            ['vatNumber', 'filter', 'filter'=>static fn($v) => preg_replace('/^IT/i', '', str_replace(' ', '', $v)), 'on'=>self::SCENARIO_ACTIVATION],
+            ['vatNumber', 'validateItalianVat', 'on'=>self::SCENARIO_ACTIVATION],
+            ['addressZip', 'match', 'pattern'=>'/^[0-9]{5}$/D', 'message'=>Yii::t('app', 'Enter a 5-digit postal code.'), 'on'=>$form],
+            ['addressCity', 'match', 'pattern'=>"/^\\p{L}[\\p{L}\\p{M}' .-]*$/Du", 'message'=>Yii::t('app', 'Enter a valid city name.'), 'on'=>$form],
+            ['addressStreet', 'match', 'pattern'=>'/\\p{L}/u', 'message'=>Yii::t('app', 'Enter street and house number.'), 'on'=>$form],
+            [['phone', 'mobile'], 'match', 'pattern'=>'/^\\+?[0-9][0-9 .\\/-]{5,28}$/D', 'message'=>Yii::t('app', 'Enter a valid phone number.'), 'on'=>$form],
+            ['email', 'email'],
+            [['user_id', 'description', 'email', 'vatNumber', 'addressStreet', 'addressCity', 'addressZip'], 'required'],
+            [['phone', 'mobile'], 'default', 'value'=>''],
             [['user_id'], 'integer'],
             [['description', 'email', 'addressCity'], 'string', 'max' => 256],
             [['vatNumber'], 'string', 'max' => 16],
@@ -68,6 +75,23 @@ class Merchants extends \yii\db\ActiveRecord
         ];
     }
 
+    /** Partita IVA italiana: 11 cifre con cifra di controllo. */
+    public function validateItalianVat($attribute): void
+    {
+        $vat = $this->$attribute;
+        if (!is_string($vat) || preg_match('/^[0-9]{11}$/D', $vat) !== 1) {
+            $this->addError($attribute, Yii::t('app', 'Enter an Italian VAT number (11 digits).'));
+            return;
+        }
+        $sum = 0;
+        for ($i = 0; $i < 10; $i++) {
+            $digit = (int) $vat[$i];
+            if ($i % 2 === 1) { $digit *= 2; if ($digit > 9) $digit -= 9; }
+            $sum += $digit;
+        }
+        if ((10 - $sum % 10) % 10 !== (int) $vat[10]) $this->addError($attribute, Yii::t('app', 'VAT number check digit is not valid.'));
+    }
+
     /**
      * {@inheritdoc}
      */
@@ -76,12 +100,12 @@ class Merchants extends \yii\db\ActiveRecord
         return [
             'id' => Yii::t('app', 'ID'),
             'user_id' => Yii::t('app', 'User ID'),
-            'description' => Yii::t('app', 'Description'),
+            'description' => Yii::t('app', 'Company name'),
             'email' => Yii::t('app', 'Email'),
             'vatNumber' => Yii::t('app', 'Vat Number'),
             'phone' => Yii::t('app', 'Phone'),
             'mobile' => Yii::t('app', 'Mobile'),
-            'addressStreet' => Yii::t('app', 'Address Street'),
+            'addressStreet' => Yii::t('app', 'Address (street and number)'),
             'addressNumberHouse' => Yii::t('app', 'Address Number House'),
             'addressCity' => Yii::t('app', 'Address City'),
             'addressZip' => Yii::t('app', 'Address Zip'),
