@@ -23,7 +23,9 @@ localCheck($config['networks']['database']['internal'] === true);
 localCheck($config['networks']['napay_local_browser']['external'] === true
     && $config['networks']['napay_local_browser']['name'] === 'napay_local_browser');
 $webNetworks = array_keys($services['web']['networks']); sort($webNetworks);
-localCheck($webNetworks === ['database', 'egress', 'napay_local_browser']);
+localCheck($webNetworks === ['database', 'egress', 'napay_local_browser', 'napay_local_chain']);
+// chain di sviluppo: rete interna esterna al compose, condivisa solo con wallet-besu
+localCheck($config['networks']['napay_local_chain']['external'] === true && $config['networks']['napay_local_chain']['name'] === 'napay_local_chain');
 localCheck($services['web']['networks']['napay_local_browser']['aliases'] === ['napay-local-web']);
 localCheck(array_keys($services['mysql']['networks']) === ['database']);
 // proxy di uscita: unico con internet, web raggiunge solo lui (rete interna), nessuna porta pubblicata

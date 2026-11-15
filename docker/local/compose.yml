@@ -12,6 +12,8 @@ services:
       egress: {}
       napay_local_browser:
         aliases: [napay-local-web]
+      # SIP-021 fase 3: sola lettura della chain di sviluppo (wallet-besu) per i pagamenti TTS del POS
+      napay_local_chain: {}
     volumes:
       - .:/var/www/html:ro
       - ./docker/local/https.conf:/etc/apache2/conf-enabled/napay-local-https.conf:ro
@@ -53,6 +55,10 @@ networks:
   # interna, creata da start-localhost.sh: solo web e napay-gateway, nessuna uscita Internet
   napay_local_browser:
     name: napay_local_browser
+    external: true
+  # interna, creata da start-localhost.sh: solo web e wallet-besu
+  napay_local_chain:
+    name: napay_local_chain
     external: true
   btcpay_regtest_client:
     name: btcpay_regtest_client
