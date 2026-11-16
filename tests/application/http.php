@@ -90,6 +90,11 @@ try {
     $page = request('/site/login');
     check($page['status'] === 200 && str_contains($page['body'], 'login-form'), 'Pretty URL login rendered');
     check(token($page['body']) !== '', 'CSRF token generated');
+    check(str_contains($page['body'], 'class="auth auth--napay"') && str_contains($page['body'], '<canvas class="auth-chain" aria-hidden="true">')
+        && str_contains($page['body'], 'na<span>pay</span>') && !str_contains($page['body'], 'navbar'), 'Login: shared auth layout, animated chain, wordmark, no navbar');
+    preg_match_all('~(?:src|href)="(/(?:bundles/auth|brand)/[^"?]+)~', $page['body'], $own);
+    check(count(array_unique($own[1])) >= 6, 'Login references auth bundle, supporter logos and brand icons');
+    foreach (array_unique($own[1]) as $file) check(request($file)['status'] === 200, 'Login file loads: ' . $file);
     preg_match_all('~(?:src|href)="(/assets/[^"?]+)~', $page['body'], $matches);
     check(count($matches[1]) > 0, 'Composer assets published');
     foreach (array_unique($matches[1]) as $asset) check(request($asset)['status'] === 200, 'Published login asset loads');

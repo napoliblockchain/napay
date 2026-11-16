@@ -17,7 +17,7 @@ final class NapayTheme
     {
         $controller = Yii::$app->controller;
         if (!$controller instanceof Controller || $controller->module !== Yii::$app
-            || !in_array($controller->layout, [null, 'main'], true)) {
+            || !in_array($controller->layout, [null, 'main', 'auth'], true)) {
             return;
         }
         $bundles = &Yii::$app->assetManager->bundles;

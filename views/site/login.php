@@ -1,100 +1,29 @@
 <?php
 
 /** @var yii\web\View $this */
-/** @var yii\bootstrap5\ActiveForm $form */
-
-/** @var app\models\LoginForm $model */
+/** @var app\models\forms\LoginForm $model */
 
 use yii\bootstrap5\ActiveForm;
 use yii\bootstrap5\Html;
-use app\widgets\Alert;
 use yii\helpers\Url;
 
-$this->title = 'Login';
-// $this->params['breadcrumbs'][] = $this->title;
+$this->title = Yii::t('app', 'Sign in');
 ?>
-<div class="site-login mt-4">
-    <div class="row">
-        <div class="col-lg-12">
+<div class="site-login">
+    <h1 class="auth-title"><?= Html::encode(Yii::t('app', 'Sign in')) ?></h1>
+    <p class="auth-subtitle"><?= Html::encode(Yii::t('app', 'Enter your credentials to continue')) ?></p>
 
-            <div class="container mt-4">
-                <div class="row align-items-center justify-content-center ">
-                    <div class="col-lg-6 col-md-12 align-self-end">
-                        <?= Alert::widget() ?>
-
-                        <div class="card text-left">
-                            <div class="card-header text-center">
-                                <h4><?= Yii::t('app', 'Accedi per iniziare la sessione') ?></h4>
-                            </div>
-                            <div class="card-body login-card-body text-left" id="loginBody">
-
-                                <?php $form = ActiveForm::begin(['id' => 'login-form']) ?>
-
-                                <?= $form->field($model, 'email', [
-                                    'options' => ['class' => 'form-group has-feedback shadow p-2'],
-                                    'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-envelope"></span></div></div>',
-                                    'template' => '{label}{beginWrapper}{input}{error}{endWrapper}',
-                                    'wrapperOptions' => ['class' => 'input-group input-group-sm mb-1'],
-                                    'inputOptions' => ['autocomplete' => 'off'],
-                                ])
-                                    ->label($model->getAttributeLabel('email'))
-                                    ->textInput(['type' => 'email', 'placeholder' => 'Inserisci la tua email']) ?>
-
-                                <?= $form->field($model, 'password', [
-                                    'options' => ['class' => 'form-group has-feedback shadow p-2'],
-                                    'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-lock"></span></div></div>',
-                                    'template' => '{label}{beginWrapper}{input}{error}{endWrapper}',
-                                    'wrapperOptions' => ['class' => 'input-group input-group-sm mb-1'],
-                                    'inputOptions' => ['autocomplete' => 'off'],
-                                ])
-                                    ->label($model->getAttributeLabel('password'))
-                                    ->passwordInput(['placeholder' => 'Inserisci la password']) ?>
-
-                                <div class="row">
-                                    <div class="col-12">
-                                        <?= Html::submitButton('Accedi', [
-                                            'class' => 'btn btn-primary w-100',
-                                        ]) ?>
-                                    </div>
-                                </div>
-                                <div class="row">
-                                    <div class="col-6">
-                                        <p class="my-2">
-                                            <?= Html::a(Yii::t('app', 'I forgot my password'), Url::to(['site/forgot-password']), [
-                                                'class' => 'small text-danger',
-                                            ],) ?>
-                                        </p>
-                                    </div>
-                                    <div class="col-6">
-                                        <p class="my-2">
-                                            <?= Html::a(Yii::t('app', 'Request activation link'), ['site/resend-activation'], ['class' => 'small text-info']) ?>
-                                        </p>
-                                        <p class="my-2 text-right">
-                                            <?= Html::a(Yii::t('app', 'Register new account'), Url::to(['site/signup']), [
-                                                'class' => 'small text-info',
-                                            ],) ?>
-                                        </p>
-                                        <p class="my-2 text-right">
-                                            <?= Html::a(
-                                                '<i class="fas fa-mobile-alt"></i> ' . Yii::t('app', 'Install to home screen'),
-                                                '#',
-                                                [
-                                                    'class' => 'small text-gray',
-                                                    'onclick' => 'javascript:saveOnDesktop();'
-                                                ],
-                                            ) ?>
-                                        </p>
-                                    </div>
-                                </div>
-                                <?php ActiveForm::end(); ?>
-
-                            </div>
-                            <!-- /.login-card-body -->
-                        </div>
-                    </div>
-                    
-                </div>
-            </div>
-        </div>
+    <?php $form = ActiveForm::begin(['id' => 'login-form']) ?>
+    <?= $form->field($model, 'email')->textInput(['type' => 'email', 'autocomplete' => 'username', 'placeholder' => Yii::t('app', 'name@example.com')]) ?>
+    <?= $form->field($model, 'password')->passwordInput(['autocomplete' => 'current-password', 'placeholder' => '••••••••']) ?>
+    <?= Html::submitButton(Html::encode(Yii::t('app', 'Sign in')), ['class' => 'auth-submit', 'name' => 'login-button']) ?>
+    <div class="auth-links">
+        <?= Html::a(Html::encode(Yii::t('app', 'I forgot my password')), Url::to(['site/forgot-password'])) ?>
+        <?= Html::a(Html::encode(Yii::t('app', 'Register new account')), Url::to(['site/signup'])) ?>
     </div>
+    <div class="auth-links">
+        <?= Html::a(Html::encode(Yii::t('app', 'Request activation link')), Url::to(['site/resend-activation'])) ?>
+        <?= Html::a(Html::encode(Yii::t('app', 'Install to home screen')), '#', ['onclick' => 'saveOnDesktop(); return false;']) ?>
+    </div>
+    <?php ActiveForm::end(); ?>
 </div>

@@ -1,62 +1,20 @@
 <?php
 
-use yii\helpers\Html;
+/** @var yii\web\View $this */
+/** @var app\models\forms\PasswordResetRequestForm $model */
+
 use yii\bootstrap5\ActiveForm;
-use app\widgets\Alert;
+use yii\bootstrap5\Html;
 
 $this->title = Yii::t('app', 'Request password reset');
 ?>
+<h1 class="auth-title"><?= Html::encode($this->title) ?></h1>
+<p class="auth-subtitle"><?= Html::encode(Yii::t('app', 'Enter your email: we will send you a link to reset the password.')) ?></p>
 
-<div class="site-login mt-4">
-    <div class="row">
-        <div class="col-lg-12">
-
-            <div class="container mt-4">
-                <div class="row align-items-center justify-content-center ">
-                    <?= Alert::widget() ?>
-                    <div class="col-lg-6 align-self-end">
-                        <div class="card card-secondary text-left">
-                            <div class="card-header text-center">
-                                <h4><?= Html::encode($this->title) ?></h4>
-                            </div>
-                            <div class="card-body login-card-body text-left" id="loginBody">
-
-
-                                <?php $form = ActiveForm::begin(['id' => 'login-form']) ?>
-
-                                <?= $form->field($model, 'email', [
-                                    'options' => ['class' => 'form-group has-feedback'],
-                                    'inputTemplate' => '{input}<div class="input-group-append"><div class="input-group-text"><span class="fas fa-envelope"></span></div></div>',
-                                    'template' => '{beginWrapper}{input}{error}{endWrapper}',
-                                    'wrapperOptions' => ['class' => 'input-group mb-3'],
-                                ])
-                                    ->label(false)
-                                    ->textInput(['placeholder' => $model->getAttributeLabel('email')]) ?>
-
-                                <p class="text-info">
-                                    <?= Yii::t('app', 'Please fill out your email.') ?>
-                                    </br>
-                                    <?= Yii::t('app', 'A link to reset password will be sent there.') ?>
-                                </p>
-
-                                <div class="row">
-                                    <div class="col-12">
-                                        <?= Html::submitButton('<i class="fa fa-sign-in-alt"></i> ' . Yii::t('app', 'Submit'), [
-                                            'class' => 'btn btn-primary w-100',
-                                        ]) ?>
-                                    </div>
-                                </div>
-
-                                <?php ActiveForm::end(); ?>
-
-                            </div>
-                            <!-- /.login-card-body -->
-                        </div>
-                    </div>
-                </div>
-            </div>
-
-
-        </div>
-    </div>
+<?php $form = ActiveForm::begin(['id' => 'login-form']) ?>
+<?= $form->field($model, 'email')->textInput(['type' => 'email', 'autocomplete' => 'email', 'placeholder' => Yii::t('app', 'name@example.com')]) ?>
+<?= Html::submitButton(Html::encode(Yii::t('app', 'Send link')), ['class' => 'auth-submit']) ?>
+<?php ActiveForm::end(); ?>
+<div class="auth-links">
+    <?= Html::a(Html::encode(Yii::t('app', 'Back to login')), ['site/login']) ?>
 </div>

@@ -132,7 +132,7 @@ class SiteController extends Controller
             return $this->redirect(['site/signup']);
         }
 
-        $this->layout = 'login';
+        $this->layout = 'auth';
 
         $model = new LoginForm();
         if ($model->load(Yii::$app->request->post()) && $model->login()) {
@@ -190,7 +190,7 @@ class SiteController extends Controller
             return $this->redirect(['site/index']);
         }
 
-        $this->layout = 'login';
+        $this->layout = 'auth';
 
         $model = new SignupForm();
         $consensus = new UserConsensus();
@@ -307,7 +307,7 @@ class SiteController extends Controller
      */
     public function actionForgotPassword()
     {
-        $this->layout = 'login';
+        $this->layout = 'auth';
 
         $model = new PasswordResetRequestForm();
         if ($model->load(Yii::$app->request->post()) && $model->validate()) {
@@ -316,7 +316,7 @@ class SiteController extends Controller
             $message_log = 'Password reset request received.';
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
             
-            Yii::$app->session->setFlash('success', 'Check your email for further instructions.');
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Check your email for further instructions.'));
             return $this->redirect(['/site/login']);
         }
 
@@ -327,7 +327,7 @@ class SiteController extends Controller
 
     public function actionResendActivation()
     {
-        $this->layout = 'login';
+        $this->layout = 'auth';
         $model = new ActivationResendForm();
         if ($model->load(Yii::$app->request->post()) && $model->validate()) {
             $model->sendEmail();
