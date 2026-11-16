@@ -40,7 +40,7 @@ class SettingsSearch extends Settings
      */
     public function search($params)
     {
-        $query = Settings::find();
+        $query = Settings::find()->andWhere(['not in', 'code', Settings::RETIRED_CODES]);
 
         // add conditions that should always apply here
 

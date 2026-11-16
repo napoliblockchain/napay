@@ -15,6 +15,12 @@ use Yii;
 class Settings extends \yii\db\ActiveRecord
 {
     /**
+     * Righe ritirate (SIP-030 punto 4): server e chiave BTCPay dei negozi ora dalle variabili d'ambiente.
+     * Restano nel DB (il bootstrap vieta alle migration di cambiare i dati importati) ma mai lette né mostrate.
+     */
+    public const RETIRED_CODES = ['btcpayHost', 'btcpayApiKey', 'webhookSecret'];
+
+    /**
      * {@inheritdoc}
      */
     public static function tableName()
@@ -31,6 +37,7 @@ class Settings extends \yii\db\ActiveRecord
             [['description', 'code'], 'required'],
             [['description', 'code'], 'string', 'max' => 256],
             [['code'], 'unique'],
+            [['code'], 'in', 'range' => self::RETIRED_CODES, 'not' => true],
             [['value'], 'string', 'max' => 2048],
         ];
     }

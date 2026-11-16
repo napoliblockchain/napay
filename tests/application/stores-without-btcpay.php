@@ -43,8 +43,22 @@ $managerA = (int) scalar("SELECT id FROM users WHERE username='runtime-merchant'
 $merchantA = (int) scalar("SELECT id FROM merchants WHERE description='Runtime company merchant'");
 $merchantB = (int) scalar("SELECT id FROM merchants WHERE description='Runtime company other'");
 $db->createCommand()->insert('member_profiles', ['user_id' => $managerA, 'is_corporate' => 1, 'denomination' => 'Stores PG A'])->execute();
-// BTCPay non configurato e irraggiungibile: nessun valore nelle impostazioni.
-$db->createCommand()->update('settings', ['value' => ''], ['code' => ['btcpayHost', 'btcpayApiKey']])->execute();
+// SIP-030 punto 4: server e chiave BTCPay dei negozi solo dalle variabili d'ambiente, mai dal DB
+$envUrl = getenv('BTCPAY_URL'); $envKey = getenv('BTCPAY_STORES_API_KEY');
+$storesClient = static function (string $url, string $key): ?app\components\BTCPayServer {
+    putenv('BTCPAY_URL=' . $url); putenv('BTCPAY_STORES_API_KEY=' . $key);
+    return app\components\btcpay\StoresBtcpay::client();
+};
+$db->createCommand()->update('settings', ['value' => 'https://db-host.example.invalid'], ['code' => 'btcpayHost'])->execute();
+$db->createCommand()->update('settings', ['value' => str_repeat('d', 40)], ['code' => 'btcpayApiKey'])->execute();
+check($storesClient('', '') === null, 'Store BTCPay client unavailable without env, DB values ignored');
+check($storesClient('https://btcpay.example.invalid', str_repeat('a', 40)) instanceof app\components\BTCPayServer, 'Store BTCPay client from BTCPAY_URL and BTCPAY_STORES_API_KEY');
+check($storesClient('http://btcpay.example.invalid', str_repeat('a', 40)) === null && $storesClient('https://btcpay.example.invalid', 'short') === null
+    && $storesClient('https://user@btcpay.example.invalid', str_repeat('a', 40)) === null, 'Plain HTTP, credentials in URL or malformed key refused');
+$storesClient((string) $envUrl, (string) $envKey);
+$retired = array_column((new app\models\search\SettingsSearch())->search([])->query->asArray()->all(), 'code');
+check(array_intersect($retired, app\models\Settings::RETIRED_CODES) === [] && !(new app\models\Settings(['description' => 'x', 'code' => 'btcpayApiKey', 'value' => 'x']))->validate(),
+    'Retired BTCPay settings hidden from admin and cannot be recreated');
 $before = (int) scalar('SELECT COUNT(*) FROM stores');
 
 // --- creazione dal gestore: sempre per il proprio merchant, senza BTCPay

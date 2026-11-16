@@ -19,10 +19,9 @@ use yii\helpers\Url;
 use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
-use app\components\BTCPayServer;
 use app\components\btcpay\provisioning\ProvisioningOutbox;
+use app\components\btcpay\StoresBtcpay;
 
-use app\models\Settings;
 use app\models\Pos;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -122,13 +121,12 @@ class StoresController extends Controller
         if (!$this->linked($model)) {
             return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false, 'ttsWallet' => $this->ttsWallet($model)]);
         }
-        $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-        $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
+        $BTCPayServer = StoresBtcpay::client();
 
         // recupero il rate da exchange
         $storeId = $model->storesettings->bps_storeid;
         $defaultCurrency = $model->storesettings->defaultPaymentMethod . '_' . $model->storesettings->defaultCurrency;
-        $rates = $BTCPayServer->getRates($storeId, $defaultCurrency);
+        $rates = $BTCPayServer === null ? null : $BTCPayServer->getRates($storeId, $defaultCurrency);
         
         if (isset($rates['statusCode']) && $rates['statusCode'] == 200){
             $value = (empty($rates->getData()[0]['errors']) ? $rates->getData()[0]['rate'] : $rates->getData()[0]['errors']) . chr(32) . $model->storesettings->defaultCurrency;
@@ -243,9 +241,8 @@ class StoresController extends Controller
                 $transaction = Yii::$app->db->beginTransaction();
                 try {
                     if ($model->save(true, ['description']) && $store->save(true, ['defaultCurrency', 'htmlTitle'])) {
-                        $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-                        $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-                        $result = $BTCPayServer->updateStore($store->bps_storeid, $this->btcpayStoreSettings($model, $store));
+                        $BTCPayServer = StoresBtcpay::client();
+                        $result = $BTCPayServer === null ? ['error' => 'not-configured'] : $BTCPayServer->updateStore($store->bps_storeid, $this->btcpayStoreSettings($model, $store));
                         if (!is_array($result)) {
                             $transaction->commit();
                             Yii::$app->session->setFlash('success', Yii::t('app', 'Store updated.'));
@@ -328,59 +325,22 @@ class StoresController extends Controller
         $model->historical = 1;
         $model->save();
 
-        // NON ELIMINO IL NEGOZIO SU BTCPAYWERVER
-        // MA LO RICHIAMO DELETED (solo se il negozio è già collegato a BTCPay)
+        // su BTCPay il negozio non si elimina: viene rinominato -DELETED e le sue app POS rimosse (se collegato e configurato)
         if ($this->linked($model)) {
-        $store = $model->storesettings;
-        $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-
-        $params = [
-            "name" => $model->description.'-DELETED',
-            "website" => $store->website,
-            "defaultCurrency" => $store->defaultCurrency,
-            "invoiceExpiration" => (int) $store->invoiceExpiration,
-            "displayExpirationTimer" => $store->displayExpirationTimer,
-            "monitoringExpiration" => $store->monitoringExpiration,
-            "speedPolicy" => $store->speedPolicy,
-            "lightningDescriptionTemplate" => $store->lightningDescriptionTemplate,
-            "paymentTolerance" => $store->paymentTolerance,
-            "anyoneCanCreateInvoice" => $store->anyoneCanCreateInvoice,
-            "requiresRefundEmail" => $store->requiresRefundEmail,
-            "checkoutType" => $store->checkoutType,
-            "receipt" => json_decode($store->receipt, true),
-            "lightningAmountInSatoshi" => $store->lightningAmountInSatoshi,
-            "lightningPrivateRouteHints" => $store->lightningPrivateRouteHints,
-            "onChainWithLnInvoiceFallback" => $store->onChainWithLnInvoiceFallback,
-            "redirectAutomatically" => $store->redirectAutomatically,
-            "showRecommendedFee" => $store->showRecommendedFee,
-            "recommendedFeeBlockTarget" => $store->recommendedFeeBlockTarget,
-            "defaultLang" => $store->defaultLang,
-            'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
-            'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
-            "htmlTitle" => $store->htmlTitle,
-            "networkFeeMode" => $store->networkFeeMode,
-            "payJoinEnabled" => $store->payJoinEnabled,
-            "lazyPaymentMethods" => $store->lazyPaymentMethods,
-            "defaultPaymentMethod" => $store->defaultPaymentMethod,
-        ];
-
-        // inizializzo la classe BTCPayServer
-        $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-
-        $result = $BTCPayServer->updateStore($store->bps_storeid, $params);
-
-        // storicizza tutti i pos collegati
-        $allPos = Pos::find()->byStoreId($model->id)->all();
-        $client = $BTCPayServer->setPos();
-        foreach ($allPos as $pos) {
-            $pos->close_date = $close_date;
-            $pos->historical = 1;
-            $pos->save();
-
-            // IL POS DA BTCPAYSERVER VIENE RIMOSSO
-            $removePos = $client->removePos($pos->possettings->sin);
-
-        }
+            $store = $model->storesettings;
+            $BTCPayServer = StoresBtcpay::client();
+            if ($BTCPayServer !== null) {
+                $params = $this->btcpayStoreSettings($model, $store);
+                $params['name'] = $model->description . '-DELETED';
+                $BTCPayServer->updateStore($store->bps_storeid, $params);
+            }
+            $client = $BTCPayServer?->setPos();
+            foreach (Pos::find()->byStoreId($model->id)->all() as $pos) {
+                $pos->close_date = $close_date;
+                $pos->historical = 1;
+                $pos->save();
+                if ($client !== null) $client->removePos($pos->possettings->sin);
+            }
         }
 
         $message_log = Yii::t('app', 'User {user} has deleted {item}: {itemname}', [
@@ -389,14 +349,7 @@ class StoresController extends Controller
             'itemname' => $model->description
         ]);
         Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-
-        
-        
-        
         return $this->redirect(['index']);
-
-        //         Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio eliminato correttamente'));
-
     }
     /**
      * Esporta la selezione in un file excel

@@ -168,7 +168,7 @@ class SettingsController extends Controller
      */
     protected function findModel($id)
     {
-        if (($model = Settings::findOne($id)) !== null) {
+        if (($model = Settings::findOne($id)) !== null && !in_array($model->code, Settings::RETIRED_CODES, true)) {
             return $model;
         }
 
