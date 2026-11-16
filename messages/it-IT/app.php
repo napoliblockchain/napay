@@ -546,4 +546,7 @@ return [
     'BTCPay link in progress' => 'Collegamento a BTCPay in corso',
     'BTC payments' => 'Pagamenti BTC',
     'BTCPay account' => 'Account BTCPay',
+    'Retry BTCPay link' => 'Riprova collegamento BTCPay',
+    'BTCPay link retry requested: it will be processed shortly.' => 'Riprova del collegamento BTCPay richiesta: verrà eseguita a breve.',
+    'Nothing to retry for this BTCPay link.' => 'Niente da riprovare per questo collegamento BTCPay.',
 ];

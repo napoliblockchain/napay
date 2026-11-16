@@ -62,6 +62,54 @@ final class ProvisioningOutbox
         return self::insert($db, 'pos_link', $instance, $merchantId, $terminalId, $actorId);
     }
 
+    /** Stati dell'ultimo lavoro di store/terminale che l'admin può riprovare (SIP-022 B5). */
+    public const RETRYABLE = ['failed', 'deferred', 'reconcile_required'];
+
+    /** Ultimo lavoro (generazione più alta) di store_link/pos_link per l'entità, null se nessuno o funzione spenta. */
+    public static function lastJob(#[\SensitiveParameter] Connection $db, string $kind, int $entityId): ?array
+    {
+        if (!in_array($kind, ['store_link', 'pos_link'], true) || $entityId < 1) return null;
+        $instance = self::instance();
+        if ($instance === null) return null;
+        $row = $db->createCommand('SELECT merchant_id, generation, state FROM {{%' . self::TABLE . '}} WHERE kind=:k AND instance=:i AND entity_id=:e ORDER BY generation DESC LIMIT 1',
+            [':k' => $kind, ':i' => $instance, ':e' => $entityId])->queryOne();
+        return $row === false ? null : ['merchant_id' => (int) $row['merchant_id'], 'generation' => (int) $row['generation'], 'state' => (string) $row['state']];
+    }
+
+    /**
+     * Riprova dell'admin (SIP-022 B5): nuovo lavoro con la generazione successiva, mai una modifica dei lavori esistenti.
+     * Solo store/terminale con ultimo lavoro in RETRYABLE e scope ancora coerente (letto nella transazione del chiamante).
+     * Doppio clic o richiesta concorrente: il vincolo unico fa vincere una sola riga (true per entrambe).
+     * @return bool false se non riprovabile o funzione spenta
+     */
+    public static function retry(#[\SensitiveParameter] Connection $db, string $kind, int $entityId, int $adminId): bool
+    {
+        self::ids($entityId, $adminId);
+        $instance = self::open($db);
+        if ($instance === null) return false;
+        $last = self::lastJob($db, $kind, $entityId);
+        if ($last === null || !in_array($last['state'], self::RETRYABLE, true)) return false;
+        $merchant = $last['merchant_id'];
+        if ($kind === 'store_link') {
+            $owner = $db->createCommand('SELECT merchant_id FROM {{%stores}} WHERE id=:id FOR SHARE', [':id' => $entityId])->queryScalar();
+            if ($owner === false || (int) $owner !== $merchant) return false;
+        } else {
+            $row = $db->createCommand('SELECT t.merchant_id, s.merchant_id AS store_merchant FROM {{%pos_terminals}} t JOIN {{%stores}} s ON s.id = t.store_id WHERE t.id=:id FOR SHARE',
+                [':id' => $entityId])->queryOne();
+            if ($row === false || (int) $row['merchant_id'] !== $merchant || (int) $row['store_merchant'] !== $merchant) return false;
+        }
+        $now = time();
+        try {
+            $db->createCommand('INSERT INTO {{%' . self::TABLE . '}} (kind, instance, merchant_id, entity_id, generation, requested_by, created_at, updated_at)'
+                . ' VALUES (:kind, :instance, :merchant, :entity, :generation, :actor, :now, :now)',
+                [':kind' => $kind, ':instance' => $instance, ':merchant' => $merchant, ':entity' => $entityId, ':generation' => $last['generation'] + 1,
+                    ':actor' => $adminId, ':now' => $now])->execute();
+        } catch (IntegrityException $e) {
+            if ((int) ($e->errorInfo[1] ?? 0) !== 1062) throw $e;
+        }
+        return true;
+    }
+
     /** Digest dell'istanza configurata, null se la funzione non è attiva. */
     public static function instance(): ?string
     {

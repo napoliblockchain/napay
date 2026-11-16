@@ -37,7 +37,8 @@ use app\components\btcpay\provisioning\ProvisioningStatus;
         [
             'label' => Yii::t('app', 'BTC payments'),
             'format' => 'raw',
-            'value' => ProvisioningStatus::badge($btcpayState = ProvisioningStatus::store((int) $model->id)),
+            'value' => ProvisioningStatus::badge($btcpayState = ProvisioningStatus::store((int) $model->id))
+                . $this->render('/btcpay-provisioning/_retry', ['kind' => 'store_link', 'entityId' => (int) $model->id]),
             'visible' => $btcpayState !== null,
         ],
         [

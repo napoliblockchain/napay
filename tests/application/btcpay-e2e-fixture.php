@@ -49,12 +49,33 @@ try {
             'credentials' => $q('SELECT merchant_id, generation, state FROM btcpay_merchant_credentials WHERE instance=:i ORDER BY merchant_id, generation'),
             'stores' => $q('SELECT merchant_id, store_id, remote_store_id, state FROM btcpay_store_links WHERE instance=:i ORDER BY merchant_id'),
             'pos' => $q('SELECT merchant_id, store_id, terminal_id, remote_app_id, state FROM btcpay_pos_links WHERE instance=:i ORDER BY merchant_id'),
-            'jobs' => $q('SELECT kind, merchant_id, state, attempts, last_error_code FROM btcpay_provisioning_jobs WHERE instance=:i ORDER BY id'),
+            'jobs' => $q('SELECT kind, merchant_id, entity_id, generation, state, attempts, last_error_code FROM btcpay_provisioning_jobs WHERE instance=:i ORDER BY id'),
             // stato mostrato nel backoffice (SIP-022 B5)
             'status' => array_merge(
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::merchant((int) $r['merchant_id']), $q('SELECT merchant_id FROM btcpay_merchant_accounts WHERE instance=:i')),
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::store((int) $r['store_id']), $q('SELECT store_id FROM btcpay_store_links WHERE instance=:i')),
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::terminal((int) $r['terminal_id']), $q('SELECT terminal_id FROM btcpay_pos_links WHERE instance=:i'))),
         ], JSON_THROW_ON_ERROR), "\n";
+    } elseif (in_array($argv[1] ?? '', ['--break', '--stuck', '--retry'], true)) {
+        // SIP-022 B5: guasti simulati sul mapping locale e riprova come lo chiede il web (admin)
+        $kind = (string) ($argv[2] ?? ''); $entity = (int) ($argv[3] ?? 0);
+        $table = ['store_link' => ['btcpay_store_links', 'store_id', 'remote_store_id', 'create_store'], 'pos_link' => ['btcpay_pos_links', 'terminal_id', 'remote_app_id', 'create_pos_app']][$kind] ?? exit(1);
+        [$links, $column, $remote, $op] = $table;
+        $last = (int) $db->createCommand('SELECT MAX(generation) FROM btcpay_provisioning_jobs WHERE instance=:i AND kind=:k AND entity_id=:e', [':i' => $instance, ':k' => $kind, ':e' => $entity])->queryScalar();
+        $where = ['instance' => $instance, 'kind' => $kind, 'entity_id' => $entity, 'generation' => $last];
+        if ($argv[1] === '--break') {
+            // rifiuto definitivo noto dopo la creazione remota (o risorsa remota sparita): mapping chiuso senza ID
+            $db->createCommand()->update($links, ['state' => 'failed', $remote => null, 'last_error_code' => 'store_rejected'], ['instance' => $instance, $column => $entity])->execute();
+            $db->createCommand()->update('btcpay_provisioning_jobs', ['state' => 'failed', 'last_error_code' => 'store_rejected'], $where)->execute();
+        } elseif ($argv[1] === '--stuck') {
+            // POST appena tentato con esito ignoto: riconciliazione con marker in volo
+            $db->createCommand()->update($links, ['state' => 'reconcile_required', $remote => null, 'last_error_code' => 'outcome_unknown'], ['instance' => $instance, $column => $entity])->execute();
+            $db->createCommand()->update('btcpay_provisioning_jobs', ['state' => 'reconcile_required', 'in_flight_op' => $op, 'in_flight_started_at' => time(),
+                'in_flight_owner' => '00000000-0000-4000-8000-000000000e2e', 'next_attempt_at' => time() + 86400], $where)->execute();
+        } else {
+            $admin = (int) $db->createCommand("SELECT id FROM users WHERE username='runtime-admin'")->queryScalar();
+            $queued = $db->transaction(fn() => ProvisioningOutbox::retry($db, $kind, $entity, $admin));
+            echo $queued ? "queued\n" : "refused\n";
+        }
     } else exit(1);
 } catch (Throwable $error) { fwrite(STDERR, 'E2E fixture failed: ' . get_class($error) . ' at line ' . $error->getLine() . "\n"); exit(1); }

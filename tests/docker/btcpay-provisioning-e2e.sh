@@ -148,7 +148,7 @@ docker volume create "$project-data" >/dev/null
 compose up -d --no-build --wait --wait-timeout 240 web
 compose run --rm --no-deps --entrypoint php bootstrap /app/tests/application/fixture.php
 instance=$(printf %s https://btcpay.local | sha256sum | cut -c1-64)
-fixture() { compose run --rm --no-deps -e "BTCPAY_PROVISION_INSTANCE=$instance" --entrypoint php bootstrap /app/tests/application/btcpay-e2e-fixture.php "$1"; }
+fixture() { compose run --rm --no-deps -e "BTCPAY_PROVISION_INSTANCE=$instance" --entrypoint php bootstrap /app/tests/application/btcpay-e2e-fixture.php "$@"; }
 fixture --seed > "$work/w/seed.json"
 pass 'Two qualified merchants, one store and one terminal each, jobs enqueued as the web does'
 
@@ -233,6 +233,55 @@ state
 [ "$(json "len(d['pos']) == 2 and len({x['remote_app_id'] for x in d['pos']}) == 2 and len({s['remote_store_id'] for s in d['stores']}) == 2" "$work/w/state.json")" = True ] \
     || fail 'duplicate or shared remote resources after rerun'
 pass 'Rerun of run/links/reconcile is idle: no new job, mapping or remote resource'
+
+# --- 7. riprova dell'admin (SIP-022 B5): adotta per marker, ricrea solo dopo una lista completa a vuoto, attende la quiete
+storeA=$(json "d['A']['store']" "$work/w/seed.json"); termB=$(json "d['B']['terminal']" "$work/w/seed.json")
+storeB=$(json "d['B']['store']" "$work/w/seed.json")
+iA=$(json "[a['merchant_id'] for a in d['accounts']].index($(json "d['A']['merchant']" "$work/w/seed.json"))" "$work/w/final.json")
+iB=$((1 - iA))
+remoteA=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeA][0]" "$work/w/final.json")
+remoteB=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeB][0]" "$work/w/final.json")
+appB=$(json "[x['remote_app_id'] for x in d['pos'] if x['terminal_id']==$termB][0]" "$work/w/final.json")
+r=$(fixture --retry store_link "$storeA" 2>&1 | tail -1)
+[ "$r" = refused ] || fail "retry accepted on a linked store: $r"
+pass 'Retry refused while the link is fine'
+fixture --break store_link "$storeA"
+state
+[ "$(json "'error' in d['status']" "$work/w/state.json")" = True ] || fail 'broken link not shown as error'
+[ "$(fixture --retry store_link "$storeA")" = queued ] && [ "$(fixture --retry store_link "$storeA")" = refused ] || fail 'store retry request'
+drain links store_link,pos_link
+state
+[ "$(json "[(s['state'], s['remote_store_id']) for s in d['stores'] if s['store_id']==$storeA]" "$work/w/state.json")" = "[('synced', '$remoteA')]" ] || fail 'store not adopted'
+api GET /api/v1/stores "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 1 ] || fail "duplicate store after retry ($code)"
+pass 'Admin retry adopts the existing BTCPay store by its marker: same ID, no duplicate'
+
+api DELETE "/api/v1/apps/$appB" "" "verify-$iB.hdr"
+[ "$code" = 200 ] || fail "remove POS app for the test ($code)"
+fixture --break pos_link "$termB"
+[ "$(fixture --retry pos_link "$termB")" = queued ] || fail 'pos retry request'
+drain links store_link,pos_link
+state
+newApp=$(json "[x['remote_app_id'] for x in d['pos'] if x['terminal_id']==$termB and x['state']=='synced'][0]" "$work/w/state.json")
+[ -n "$newApp" ] && [ "$newApp" != "$appB" ] || fail 'POS app not recreated'
+api GET "/api/v1/stores/$remoteB/apps" "" "verify-$iB.hdr"
+[ "$code" = 200 ] && [ "$(json "[a['id'] for a in d]" "$work/w/out.json")" = "['$newApp']" ] || fail "POS apps after recreate ($code)"
+[ "$(json "sorted(j['last_error_code'] for j in d['jobs'] if j['kind']=='pos_link' and j['entity_id']==$termB and j['state']=='failed')" "$work/w/state.json")" = "['store_rejected']" ] \
+    || fail 'previous job not kept as failed'
+pass 'Admin retry recreates a POS app missing from a complete lookup, exactly one app'
+
+api DELETE "/api/v1/apps/$newApp" "" "verify-$iB.hdr"
+[ "$code" = 200 ] || fail "remove POS app again ($code)"
+fixture --stuck pos_link "$termB"
+[ "$(fixture --retry pos_link "$termB")" = queued ] || fail 'retry of an uncertain link'
+compose run --rm --no-deps worker-cli btcpay-provision/links --once > "$work/cli.out" 2>&1
+grep -qx job-processed "$work/cli.out"; private_output
+state
+[ "$(json "[(j['state'], j['last_error_code']) for j in d['jobs'] if j['kind']=='pos_link' and j['entity_id']==$termB][-1]" "$work/w/state.json")" = "('retry_wait', 'admin_retry_wait')" ] \
+    && [ "$(json "[x['state'] for x in d['pos'] if x['terminal_id']==$termB]" "$work/w/state.json")" = "['reconcile_required']" ] || fail 'retry did not wait for the quiet period'
+api GET "/api/v1/stores/$remoteB/apps" "" "verify-$iB.hdr"
+[ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 0 ] || fail "POS app created during the quiet period ($code)"
+pass 'After a recent uncertain POST the retry only waits (no creation before the quiet period)'
 printf 'PASS %s BTCPay provisioning e2e checks (regtest, no real money)\n' "$checks"
 E2E
 sh "$private/runtime.sh"

@@ -21,12 +21,18 @@ use yii\db\Connection;
  *   dopo un POST, conserva l'incertezza (riconciliazione con marker). Nomi remoti generici: ID locale + marker.
  * W3e: reconcileOnce() prende un lavoro reconcile_required (API W3d) e fa SOLO GET: adotta il marker unico o
  *   riprogramma la GET (deferred per l'admin quando ripetere non serve); non crea mai mapping, account o marker.
+ * B5 riprova dell'admin (generazione > 1, nuovo INSERT dal web): un mapping failed/suspended senza ID remoto torna in
+ *   riconciliazione e si cerca il marker con una GET. Trovato = adottato (nessun doppione). Assente in una lista completa
+ *   e nessun POST tentato negli ultimi ADMIN_RETRY_QUIET secondi = lavori precedenti chiusi (superseded) e mapping di
+ *   nuovo pending: il passo successivo crea la risorsa. Ambiguo, 401/403 o lettura non disponibile: come sempre.
  * Nessun loop o daemon: un lavoro per chiamata.
  */
 final class ProvisioningLinkWorker
 {
     private const KINDS = ['store_link' => 'create_store', 'pos_link' => 'create_pos_app'];
     private const LOCK_WAIT = 5;
+    /** Secondi senza POST in volo su quella risorsa prima che il riprova dell'admin possa ricreare dopo una GET a vuoto. */
+    public const ADMIN_RETRY_QUIET = 900;
 
     private readonly \Closure $clock;
 
@@ -121,6 +127,11 @@ final class ProvisioningLinkWorker
             // Esito di un POST precedente incerto o mapping già oltre pending: solo GET (o stato già finale).
             $result = $step->reconcile($snapshot, $key);
             unset($key);
+            if ($job['generation'] > 1 && $result->kind === StepOutcome::RECONCILE && str_ends_with((string) $result->code, '_not_found')
+                && $snapshot['state'] === 'reconcile_required' && $snapshot[$this->remoteField($job)] === null) {
+                $this->recreateAfterRetry($job, $version);
+                return;
+            }
             $this->apply($job, $version, $result, false);
             return;
         }
@@ -255,6 +266,7 @@ final class ProvisioningLinkWorker
             $link = $create ? $this->store->ensureStoreLink($account, $job['entity_id']) : $this->store->storeLink($job['entity_id']);
             if ($link === null) return $wait('link_missing');
             if ($link['merchant_id'] !== $job['merchant_id']) throw new LinkIneligible('scope_mismatch');
+            if ($create) $link = $this->reopenForRetry($job, $link);
             $snapshot = ['store_name' => 'Negozio ' . $job['entity_id'], 'remote_store_id' => $link['remote_store_id']];
         } else {
             $terminal = $this->terminal($job['entity_id']);
@@ -263,10 +275,48 @@ final class ProvisioningLinkWorker
             $link = $create ? $this->store->ensurePosLink($storeLink, $job['entity_id']) : $this->store->posLink($job['entity_id']);
             if ($link === null) return $wait('link_missing');
             if ($link['merchant_id'] !== $job['merchant_id'] || $link['store_id'] !== $terminal['store_id']) throw new LinkIneligible('scope_mismatch');
+            if ($create) $link = $this->reopenForRetry($job, $link);
             $snapshot = ['terminal_name' => 'Cassa ' . $job['entity_id'], 'remote_store_id' => $storeLink['remote_store_id'], 'remote_app_id' => $link['remote_app_id']];
         }
         return [$snapshot + ['waiting' => null, 'state' => $link['state'], 'marker' => $link['marker'], 'account_state' => $account['state'],
             'uncertain' => $link['state'] === 'reconcile_required' || $this->otherInFlight($job), 'in_flight' => false], $current['key']];
+    }
+
+    /** Riprova dell'admin: mapping chiuso (failed/suspended) senza ID remoto torna in riconciliazione; altrimenti invariato. */
+    private function reopenForRetry(array $job, array $link): array
+    {
+        if ($job['generation'] < 2 || !in_array($link['state'], ['failed', 'suspended'], true) || $link[$this->remoteField($job)] !== null) return $link;
+        $this->updateLink($job, $link, ['state' => 'reconcile_required', 'last_error_code' => 'admin_retry']);
+        return $this->currentLink($job) ?? throw new \UnexpectedValueException('link_missing');
+    }
+
+    /**
+     * Riprova dell'admin con marker assente da una lista completa: dopo ADMIN_RETRY_QUIET secondi dall'ultimo POST in volo
+     * della risorsa, lavori precedenti chiusi e mapping pending (la creazione avviene al passo successivo, con checkpoint);
+     * prima, nuova verifica alla scadenza. Nessuna chiamata remota qui.
+     */
+    private function recreateAfterRetry(array $job, int $version): void
+    {
+        $since = $this->db->createCommand('SELECT MAX(in_flight_started_at) FROM {{%btcpay_provisioning_jobs}} WHERE instance=:i AND kind=:k AND entity_id=:e AND id<>:id AND in_flight_op IS NOT NULL',
+            [':i' => $this->instance, ':k' => $job['kind'], ':e' => $job['entity_id'], ':id' => $job['id']])->queryScalar();
+        $quietUntil = $since === null || $since === false ? 0 : (int) $since + self::ADMIN_RETRY_QUIET;
+        if ($this->now() < $quietUntil) {
+            $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->retryLater($job['id'], $version, 'admin_retry_wait', $quietUntil, false, $m), null);
+            return;
+        }
+        $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->retryLater($job['id'], $version, 'admin_retry_recreate', $this->now() + 1, false, $m), function () use ($job) {
+            $link = $this->currentLink($job) ?? throw new \UnexpectedValueException('link_missing');
+            if ($link['state'] !== 'reconcile_required' || $link[$this->remoteField($job)] !== null) throw new \UnexpectedValueException('link_changed');
+            $params = [':i' => $this->instance, ':k' => $job['kind'], ':e' => $job['entity_id'], ':id' => $job['id']];
+            if ((int) $this->db->createCommand("SELECT COUNT(*) FROM {{%btcpay_provisioning_jobs}} WHERE instance=:i AND kind=:k AND entity_id=:e AND id<>:id AND state IN ('running','in_flight') FOR UPDATE", $params)->queryScalar() > 0) {
+                throw new \UnexpectedValueException('link_changed');
+            }
+            $this->db->createCommand("UPDATE {{%btcpay_provisioning_jobs}} SET state='failed', last_error_code='superseded', lease_owner=NULL, lease_until=NULL,"
+                . ' in_flight_op=NULL, in_flight_started_at=NULL, in_flight_owner=NULL, version=version+1, updated_at=:now'
+                . " WHERE instance=:i AND kind=:k AND entity_id=:e AND id<>:id AND (state IN ('pending','retry_wait','deferred','reconcile_required') OR in_flight_op IS NOT NULL)",
+                $params + [':now' => $this->now()])->execute();
+            $this->updateLink($job, $link, ['state' => 'pending', 'last_error_code' => null]);
+        });
     }
 
     /** Adozione dell'ID remoto solo su un mapping ancora pending/in riconciliazione e senza un ID diverso. */

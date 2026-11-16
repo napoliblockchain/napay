@@ -106,6 +106,12 @@ $walletTab = (string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/_de
 check(!str_contains($walletTab, 'derivationScheme') && !str_contains($walletTab, 'accountKeyPath'), 'BTC wallet tab hides derivation scheme and account key path');
 foreach (['_details-general.php', 'update.php', 'view.php'] as $file) check(!str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/' . $file), 'bps_storeid'), 'BTCPay store ID never shown: ' . $file);
 check(str_contains(web('/pos-management/index')['body'], 'Negozio senza BTCPay'), 'New store available for POS terminals');
+// SIP-022 B5: il riprova del collegamento BTCPay è solo dell'admin (POST con CSRF), mai del gestore
+$page = web('/stores/index');
+$before = (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs');
+$r = web('/btcpay-provisioning/retry', ['_csrf' => csrf($page), 'kind' => 'store_link', 'id' => $id]);
+check($r['status'] === 403 && (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs') === $before, 'BTCPay link retry refused to a merchant manager (403), nothing queued');
+check(!str_contains(web('/stores/view?id=' . urlencode($id))['body'], 'btcpay-provisioning/retry'), 'Retry button never shown to a merchant manager');
 
 // --- scope: il gestore non vede negozi di altri merchant (prima: qualunque ID cifrato valido)
 $db->createCommand()->insert('stores', ['merchant_id' => $merchantB, 'description' => 'Negozio di B', 'email' => 'b@example.invalid', 'phone' => '', 'mobile' => '',

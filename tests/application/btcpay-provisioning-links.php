@@ -200,8 +200,8 @@ $token = $marker($store, 'store_link', $storeA);
 $g2 = $enqueue($instance, 'store_link', $storeA, 2);
 $http->queue = [$r(200, [])];
 $run->runOnce();
-check($job($g2)['state'] === 'reconcile_required' && $job($g2)['last_error_code'] === 'store_not_found' && end($http->calls)[0] === 'GET' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 1,
-    'New generation after uncertain POST: GET only; zero markers = no POST, reconciliation');
+check($job($g2)['state'] === 'retry_wait' && $job($g2)['last_error_code'] === 'admin_retry_wait' && end($http->calls)[0] === 'GET' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 1,
+    'New generation after a recent uncertain POST: GET only; zero markers = no POST, waits for the quiet period');
 $g3 = $enqueue($instance, 'store_link', $storeA, 3);
 $http->queue = [$r(200, [['id' => 'st-a', 'name' => 'X ' . $token], ['id' => 'st-b', 'name' => 'Y ' . $token]])];
 $run->runOnce();
@@ -211,6 +211,39 @@ $http->queue = [$r(200, [['id' => 'st-x', 'name' => 'Other'], ['id' => 'st-ok', 
 $run->runOnce();
 check($job($g4)['state'] === 'done' && $store->storeLink($storeA)['state'] === 'synced' && $store->storeLink($storeA)['remote_store_id'] === 'st-ok' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 1,
     'Exactly one marker: adopted through GET, still a single POST overall');
+
+// --- SIP-022 B5 riprova dell'admin: dopo la quiete una lista completa a vuoto chiude i lavori precedenti e ricrea
+[$instance, $http, $store, $run] = $scenario();
+$id = $enqueue($instance, 'store_link', $storeA);
+$http->queue = [new Http(Http::OUTCOME_UNKNOWN)];
+$run->runOnce();
+$g2 = $enqueue($instance, 'store_link', $storeA, 2);
+$t += ProvisioningLinkWorker::ADMIN_RETRY_QUIET + 1;
+$http->queue = [$r(200, [])];
+$run->runOnce();
+check($job($g2)['state'] === 'retry_wait' && $job($g2)['last_error_code'] === 'admin_retry_recreate' && $job($id)['state'] === 'failed' && $job($id)['last_error_code'] === 'superseded'
+    && $job($id)['in_flight_op'] === null && $store->storeLink($storeA)['state'] === 'pending' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 1,
+    'Admin retry after the quiet period: empty complete lookup supersedes old jobs and reopens the link, no POST yet');
+$t += 2;
+$http->queue = [$r(200, ['id' => 'st-r'])];
+$run->runOnce();
+check($job($g2)['state'] === 'done' && $store->storeLink($storeA)['remote_store_id'] === 'st-r' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 2,
+    'Then exactly one new POST creates the store');
+$t -= ProvisioningLinkWorker::ADMIN_RETRY_QUIET + 3;
+[$instance, $http, $store, $run] = $scenario();
+$id = $enqueue($instance, 'store_link', $storeA);
+$http->queue = [$r(422)];
+$run->runOnce();
+check($job($id)['state'] === 'failed' && $store->storeLink($storeA)['state'] === 'failed', 'Rejected creation: link failed');
+$token = $marker($store, 'store_link', $storeA);
+$g2 = $enqueue($instance, 'store_link', $storeA, 2);
+$http->queue = [$r(200, [['id' => 'st-f', 'name' => 'Negozio ' . $storeA . ' ' . $token]])];
+$run->runOnce();
+check($job($g2)['state'] === 'done' && $store->storeLink($storeA)['remote_store_id'] === 'st-f' && end($http->calls)[0] === 'GET' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 1,
+    'Admin retry on a failed link: GET first, existing store with the marker adopted');
+$g1 = $enqueue($instance, 'store_link', $storeA, 3);
+$run->runOnce();
+check($job($g1)['state'] === 'done' && count($http->calls) === 2, 'A first-generation-like job on a synced link does nothing remote');
 
 // --- POS: tipo app errato
 [$instance, $http, $store, $run] = $scenario();
@@ -223,7 +256,8 @@ $token = $marker($store, 'pos_link', $terminalA);
 $g2 = $enqueue($instance, 'pos_link', $terminalA, 2);
 $http->queue = [$r(200, [['id' => 'app-x', 'appType' => 'Crowdfund', 'appName' => 'Cassa ' . $token]])];
 $run->runOnce();
-check($job($g2)['last_error_code'] === 'app_not_found' && end($http->calls)[1] === '/api/v1/stores/st-5/apps', 'Reconciliation ignores a non-PointOfSale app with the marker');
+check($job($g2)['last_error_code'] === 'admin_retry_wait' && end($http->calls)[1] === '/api/v1/stores/st-5/apps' && count(array_filter($http->calls, fn($c) => $c[0] === 'POST')) === 1,
+    'Reconciliation ignores a non-PointOfSale app with the marker (no POST within the quiet period)');
 $g3 = $enqueue($instance, 'pos_link', $terminalA, 3);
 $http->queue = [$r(200, [['id' => 'app-x', 'appType' => 'Crowdfund', 'appName' => 'Cassa ' . $token], ['id' => 'app-ok', 'appType' => 'PointOfSale', 'appName' => 'Cassa ' . $token]])];
 $run->runOnce();
