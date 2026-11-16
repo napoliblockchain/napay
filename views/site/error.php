@@ -8,7 +8,7 @@
 use yii\helpers\Html;
 use app\components\Log;
 
-$this->context->layout = (!Yii::$app->user->isGuest) ? 'main' : 'login';
+$this->context->layout = (!Yii::$app->user->isGuest) ? 'main' : 'auth';
 
 // Log message
 $message_log = Yii::t('app', 'ERROR for user {user}. {title}: {message}', [
@@ -42,13 +42,8 @@ $this->title = $name;
                         <p><?= Html::a(Yii::t('app', 'Request password reset'), ['site/forgot-password']) ?></p>
                     <?php endif; ?>
 
-                    <p>
-                        L'errore sopra riportato si è verificato mentre il server Web stava elaborando la tua richiesta.
-                    </p>
-                    <p>
-                        Per favore, contattaci se ritieni che si tratti di un errore del server. Grazie.
-                    </p>
-
+                    <p><?= Html::encode(Yii::t('app', 'The above error occurred while the web server was processing your request.')) ?></p>
+                    <p><?= Html::encode(Yii::t('app', 'Please contact us if you think this is a server error. Thank you.')) ?></p>
                 </div>
             </div>
         </div>

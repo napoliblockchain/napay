@@ -17,7 +17,7 @@ use app\models\forms\pos\AcceptInvitationForm;
  */
 class PosInvitationController extends Controller
 {
-    public $layout = 'login';
+    public $layout = 'auth';
 
     public function behaviors()
     {
