@@ -282,6 +282,22 @@ state
 api GET "/api/v1/stores/$remoteB/apps" "" "verify-$iB.hdr"
 [ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 0 ] || fail "POS app created during the quiet period ($code)"
 pass 'After a recent uncertain POST the retry only waits (no creation before the quiet period)'
+
+# --- 8. riprova di un account merchant (R2): utente ritrovato per email e adottato solo con la prova della password
+merchantA=$(json "d['A']['merchant']" "$work/w/seed.json")
+userA=$(json "d['accounts'][$iA]['remote_user_id']" "$work/w/final.json")
+emailA=$(json "d['accounts'][$iA]['technical_email']" "$work/w/final.json")
+fixture --lose-user "$merchantA"
+state
+[ "$(json "[a['state'] for a in d['accounts'] if a['merchant_id']==$merchantA]" "$work/w/state.json")" = "['reconcile_required']" ] || fail 'account not in reconciliation'
+[ "$(fixture --retry merchant_account "$merchantA")" = queued ] || fail 'account retry request'
+drain run merchant_account
+state
+[ "$(json "[(a['state'], a['remote_user_id']) for a in d['accounts'] if a['merchant_id']==$merchantA]" "$work/w/state.json")" = "[('synced', '$userA')]" ] || fail 'account not adopted'
+[ "$(json "max(c['generation'] for c in d['credentials'] if c['merchant_id']==$merchantA and c['state']=='current')" "$work/w/state.json")" = 2 ] || fail 'no new current key'
+api GET "/api/v1/users/$emailA" "" admin.hdr
+[ "$code" = 200 ] && [ "$(json "d['id']" "$work/w/out.json")" = "$userA" ] || fail "BTCPay user changed ($code)"
+pass 'Admin retry of a merchant account: same BTCPay user found by email, ownership proven by a new key (generation 2)'
 printf 'PASS %s BTCPay provisioning e2e checks (regtest, no real money)\n' "$checks"
 E2E
 sh "$private/runtime.sh"

@@ -56,10 +56,19 @@ try {
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::store((int) $r['store_id']), $q('SELECT store_id FROM btcpay_store_links WHERE instance=:i')),
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::terminal((int) $r['terminal_id']), $q('SELECT terminal_id FROM btcpay_pos_links WHERE instance=:i'))),
         ], JSON_THROW_ON_ERROR), "\n";
+    } elseif (($argv[1] ?? '') === '--lose-user') {
+        // SIP-022 R2: esito della creazione utente ignoto (ID remoto mai salvato), account in riconciliazione
+        $merchantId = (int) ($argv[2] ?? 0);
+        $db->createCommand()->update('btcpay_merchant_accounts', ['state' => 'reconcile_required', 'remote_user_id' => null, 'last_error_code' => 'user_outcome_unknown'],
+            ['instance' => $instance, 'merchant_id' => $merchantId])->execute();
+        $last = (int) $db->createCommand("SELECT MAX(generation) FROM btcpay_provisioning_jobs WHERE instance=:i AND kind='merchant_account' AND entity_id=:e", [':i' => $instance, ':e' => $merchantId])->queryScalar();
+        $db->createCommand()->update('btcpay_provisioning_jobs', ['state' => 'failed', 'last_error_code' => 'user_outcome_unknown'],
+            ['instance' => $instance, 'kind' => 'merchant_account', 'entity_id' => $merchantId, 'generation' => $last])->execute();
     } elseif (in_array($argv[1] ?? '', ['--break', '--stuck', '--retry'], true)) {
         // SIP-022 B5: guasti simulati sul mapping locale e riprova come lo chiede il web (admin)
         $kind = (string) ($argv[2] ?? ''); $entity = (int) ($argv[3] ?? 0);
-        $table = ['store_link' => ['btcpay_store_links', 'store_id', 'remote_store_id', 'create_store'], 'pos_link' => ['btcpay_pos_links', 'terminal_id', 'remote_app_id', 'create_pos_app']][$kind] ?? exit(1);
+        $table = ['merchant_account' => ['btcpay_merchant_accounts', 'merchant_id', 'remote_user_id', 'create_user'], 'store_link' => ['btcpay_store_links', 'store_id', 'remote_store_id', 'create_store'],
+            'pos_link' => ['btcpay_pos_links', 'terminal_id', 'remote_app_id', 'create_pos_app']][$kind] ?? exit(1);
         [$links, $column, $remote, $op] = $table;
         $last = (int) $db->createCommand('SELECT MAX(generation) FROM btcpay_provisioning_jobs WHERE instance=:i AND kind=:k AND entity_id=:e', [':i' => $instance, ':k' => $kind, ':e' => $entity])->queryScalar();
         $where = ['instance' => $instance, 'kind' => $kind, 'entity_id' => $entity, 'generation' => $last];

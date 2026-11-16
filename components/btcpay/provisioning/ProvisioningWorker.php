@@ -14,6 +14,10 @@ use yii\db\Connection;
  * - Prima di ogni POST: checkpoint W3a con mapping e ricontrollo del merchant (righe identità bloccate in lettura).
  * - Ogni esito: CAS W3a con mapping atomico e nuovo ricontrollo del merchant; un merchant non più idoneo non adotta
  *   esiti tardivi (account sospeso, lavoro fallito). Esito ignoto = riconciliazione, mai un nuovo POST automatico.
+ * B5 riprova dell'admin (generazione > 1, nuovo INSERT dal web) su account reconcile_required/failed/suspended:
+ *   utente remoto già noto = nuova chiave (passo B, entro MAX_GENERATIONS); utente non confermato = A-r: GET per email
+ *   tecnica, assente = passo A con la stessa password (BTCPay rifiuta email doppie), presente = adottato solo se la
+ *   password salvata crea la chiave (passo B, prova di proprietà). Mai reset o modifica di un utente esistente.
  * Nessun loop, daemon o console: runOnce() esegue al più un lavoro.
  */
 final class ProvisioningWorker
@@ -74,6 +78,10 @@ final class ProvisioningWorker
         $version = $this->outcome($job, $job['version'], fn(#[\SensitiveParameter] $m) => $this->jobs->prepare($job['id'], $job['version'], $m), $merchant,
             fn() => $this->store->ensureAccount($merchant));
         if ($version === null) return;
+        if ($job['generation'] > 1) {
+            $version = $this->reopenForRetry($job, $version, $merchant);
+            if ($version === null) return;
+        }
         for ($step = 0; $step < 4; ++$step) {
             $account = $this->store->account($merchant);
             $state = $account['state'];
@@ -91,6 +99,32 @@ final class ProvisioningWorker
             if ($next === null) return;
             $version = $next;
         }
+    }
+
+    /**
+     * Riprova dell'admin: account chiuso (reconcile_required/failed/suspended) riaperto al passo giusto, con lo stato
+     * cambiato sotto CAS della coda. Utente non confermato: A-r (solo GET con la chiave del provisioner). Altri stati: invariato.
+     */
+    private function reopenForRetry(array $job, int $version, int $merchant): ?int
+    {
+        $account = $this->store->account($merchant) ?? throw new \UnexpectedValueException('account_missing');
+        if (!in_array($account['state'], ['reconcile_required', 'failed', 'suspended'], true)) return $version;
+        if ($account['remote_user_id'] !== null) {
+            return $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->prepare($job['id'], $version, $m), $merchant,
+                fn() => $this->setAccount($merchant, ['state' => 'user_created', 'last_error_code' => null]));
+        }
+        $result = $this->step->findUser($account['technical_email'], $this->provisionerKey);
+        return match ($result->kind) {
+            StepOutcome::ABSENT => $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->prepare($job['id'], $version, $m), $merchant,
+                fn() => $this->setAccount($merchant, ['state' => 'user_requested', 'last_error_code' => null])),
+            // Presente: proprietà ancora da provare, la prova è il passo B con la password salvata (401 = riconciliazione).
+            StepOutcome::FOUND => $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->prepare($job['id'], $version, $m), $merchant,
+                fn() => $this->setAccount($merchant, ['state' => 'user_created', 'remote_user_id' => $result->data['remote_user_id'], 'last_error_code' => null])),
+            StepOutcome::RETRY => $this->later($job, $version, $result, $merchant, false),
+            StepOutcome::FAILED => $this->finalFailure($job, $version, $result->code, $merchant, 'failed'),
+            default => $this->outcome($job, $version, fn(#[\SensitiveParameter] $m) => $this->jobs->reconcile($job['id'], $version, (string) $result->code, $m), $merchant,
+                fn() => $this->setAccount($merchant, ['state' => 'reconcile_required', 'last_error_code' => $result->code]), false),
+        };
     }
 
     /** A: password casuale salvata cifrata PRIMA della chiamata (una volta sola), checkpoint, POST, esito. */

@@ -14,12 +14,12 @@ use app\components\User;
 use app\components\btcpay\provisioning\ProvisioningOutbox;
 
 /**
- * Riprova del collegamento BTCPay di un negozio o di un terminale (SIP-022 B5): solo admin, solo POST con CSRF.
+ * Riprova del collegamento BTCPay di un account merchant, un negozio o un terminale (SIP-022 B5): solo admin, POST con CSRF.
  * Accoda un nuovo lavoro (generazione successiva); il worker cerca prima la risorsa esistente e non crea doppioni.
  */
 class BtcpayProvisioningController extends Controller
 {
-    private const TARGETS = ['store_link' => 'store', 'pos_link' => 'terminal'];
+    private const TARGETS = ['merchant_account' => 'merchant', 'store_link' => 'store', 'pos_link' => 'terminal'];
 
     public function behaviors()
     {
@@ -56,8 +56,10 @@ class BtcpayProvisioningController extends Controller
         } else {
             Yii::$app->session->setFlash('warning', Yii::t('app', 'Nothing to retry for this BTCPay link.'));
         }
-        return $kind === 'store_link'
-            ? $this->redirect(['stores/view', 'id' => Crypt::encrypt($entity)])
-            : $this->redirect(['pos-management/index']);
+        return match ($kind) {
+            'merchant_account' => $this->redirect(['merchants/view', 'id' => Crypt::encrypt($entity)]),
+            'store_link' => $this->redirect(['stores/view', 'id' => Crypt::encrypt($entity)]),
+            default => $this->redirect(['pos-management/index']),
+        };
     }
 }

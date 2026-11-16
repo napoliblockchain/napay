@@ -1,7 +1,7 @@
 <?php
 
 /* Pulsante "riprova collegamento BTCPay" (SIP-022 B5): solo admin e solo con l'ultimo lavoro riprovabile. */
-/* @var $kind string store_link | pos_link */
+/* @var $kind string merchant_account | store_link | pos_link */
 /* @var $entityId int */
 
 use app\components\Crypt;

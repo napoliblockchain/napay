@@ -252,6 +252,63 @@ try { $run->runOnce(); } catch (RuntimeException $e) {
 }
 check($safe && $http->calls === [] && $job($id)['state'] === 'running', 'Full callback failure trace is sanitized; failed checkpoint rolled back');
 
+// --- SIP-022 B5 riprova dell'admin (generazione > 1): A-r, prova di proprietà, nuova chiave
+$retry = static function (string $instance, int $generation) use ($admin, $merchant, &$t): int {
+    $admin->createCommand()->insert('btcpay_provisioning_jobs', ['kind' => 'merchant_account', 'instance' => $instance, 'merchant_id' => $merchant,
+        'entity_id' => $merchant, 'generation' => $generation, 'created_at' => $t, 'updated_at' => $t])->execute();
+    return (int) $admin->lastInsertID;
+};
+$posts = static fn(FakeHttp $http, string $path): int => count(array_filter($http->calls, fn($c) => $c[0] === 'POST' && $c[1] === $path));
+// utente creato ma esito ignoto: GET per email, presente = adottato solo con la chiave creata dalla password salvata
+[$instance, $http, $store, $run, $id] = $scenario();
+$http->queue = [new Http(Http::OUTCOME_UNKNOWN)];
+$run->runOnce();
+$email = $store->account($merchant)['technical_email'];
+$saved = $store->password($store->account($merchant));
+$g2 = $retry($instance, 2);
+$http->queue = [$r(200, ['id' => 'user-ar', 'email' => $email]), $r(200, ['apiKey' => 'k-ar-0123456789abcdef0123456789', 'permissions' => $perm]), $r(200, [])];
+$run->runOnce();
+$account = $store->account($merchant);
+check($job($g2)['state'] === 'done' && $account['state'] === 'synced' && $account['remote_user_id'] === 'user-ar' && $posts($http, '/api/v1/users') === 1
+    && $http->calls[1] === ['GET', '/api/v1/users/' . $email, null, 'key:' . $prov] && $http->calls[2][3] === 'basic:' . $email . ':' . $saved,
+    'Admin retry after an unknown A: existing user found by email, adopted only after the saved password created the key');
+// utente assente: stesso POST con la stessa password (BTCPay rifiuta email doppie)
+[$instance, $http, $store, $run, $id] = $scenario();
+$http->queue = [new Http(Http::OUTCOME_UNKNOWN)];
+$run->runOnce();
+$saved = $store->password($store->account($merchant));
+$g2 = $retry($instance, 2);
+$http->queue = array_merge([$r(404)], $happy('user-new'));
+$run->runOnce();
+$userPosts = array_values(array_filter($http->calls, fn($c) => $c[0] === 'POST' && $c[1] === '/api/v1/users'));
+check($job($g2)['state'] === 'done' && $store->account($merchant)['remote_user_id'] === 'user-new' && count($userPosts) === 2
+    && $userPosts[1][2]['password'] === $saved, 'Admin retry with no user on BTCPay: A again with the same saved password');
+// utente presente ma password diversa (non è nostro): nessuna adozione
+[$instance, $http, $store, $run, $id] = $scenario();
+$http->queue = [$r(422, ['code' => 'duplicate'])];
+$run->runOnce();
+$g2 = $retry($instance, 2);
+$http->queue = [$r(200, ['id' => 'user-other', 'email' => $store->account($merchant)['technical_email']]), $r(401)];
+$run->runOnce();
+check($store->account($merchant)['state'] === 'reconcile_required' && $store->account($merchant)['last_error_code'] === 'password_rejected' && $store->currentKey($store->account($merchant)) === null,
+    'User found but the saved password is rejected: not adopted, no usable key');
+// utente noto, chiave rifiutata: nuova chiave (generazione 2), stesso utente
+[$instance, $http, $store, $run, $id] = $scenario();
+$http->queue = $happy('user-k');
+$run->runOnce();
+check($store->updateAccount($store->account($merchant), ['state' => 'reconcile_required', 'last_error_code' => 'merchant_key_denied']) !== null, 'Fixture: key denied by BTCPay');
+$g2 = $retry($instance, 2);
+$http->queue = [$r(200, ['apiKey' => 'k-g2-0123456789abcdef0123456789', 'permissions' => $perm]), $r(200, [])];
+$run->runOnce();
+$account = $store->account($merchant);
+check($job($g2)['state'] === 'done' && $account['state'] === 'synced' && $account['remote_user_id'] === 'user-k' && $store->currentKey($account)['generation'] === 2
+    && count($http->calls) === 5 && $http->calls[3][2]['label'] === 'napay-' . $account['ref'] . '-g2', 'Admin retry with a known user: new key generation 2, no user call');
+// generazioni finite: nessuna chiamata, resta all'admin
+check($store->updateAccount($store->account($merchant), ['state' => 'reconcile_required', 'key_generations_used' => 3, 'last_error_code' => 'merchant_key_denied']) !== null, 'Fixture: generations used');
+$g3 = $retry($instance, 3);
+$run->runOnce();
+check($job($g3)['state'] === 'reconcile_required' && $job($g3)['last_error_code'] === 'generations_exhausted' && count($http->calls) === 5, 'Generations exhausted: no remote call, still for the admin');
+
 // --- Connessione e segreti
 $app->set('db', $admin);
 $refused = false;

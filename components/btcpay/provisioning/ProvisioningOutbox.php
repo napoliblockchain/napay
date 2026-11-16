@@ -65,10 +65,10 @@ final class ProvisioningOutbox
     /** Stati dell'ultimo lavoro di store/terminale che l'admin può riprovare (SIP-022 B5). */
     public const RETRYABLE = ['failed', 'deferred', 'reconcile_required'];
 
-    /** Ultimo lavoro (generazione più alta) di store_link/pos_link per l'entità, null se nessuno o funzione spenta. */
+    /** Ultimo lavoro (generazione più alta) dell'entità (merchant, negozio o terminale), null se nessuno o funzione spenta. */
     public static function lastJob(#[\SensitiveParameter] Connection $db, string $kind, int $entityId): ?array
     {
-        if (!in_array($kind, ['store_link', 'pos_link'], true) || $entityId < 1) return null;
+        if (!in_array($kind, ['merchant_account', 'store_link', 'pos_link'], true) || $entityId < 1) return null;
         $instance = self::instance();
         if ($instance === null) return null;
         $row = $db->createCommand('SELECT merchant_id, generation, state FROM {{%' . self::TABLE . '}} WHERE kind=:k AND instance=:i AND entity_id=:e ORDER BY generation DESC LIMIT 1',
@@ -78,7 +78,7 @@ final class ProvisioningOutbox
 
     /**
      * Riprova dell'admin (SIP-022 B5): nuovo lavoro con la generazione successiva, mai una modifica dei lavori esistenti.
-     * Solo store/terminale con ultimo lavoro in RETRYABLE e scope ancora coerente (letto nella transazione del chiamante).
+     * Account merchant, negozio o terminale con ultimo lavoro in RETRYABLE e scope ancora coerente (transazione del chiamante).
      * Doppio clic o richiesta concorrente: il vincolo unico fa vincere una sola riga (true per entrambe).
      * @return bool false se non riprovabile o funzione spenta
      */
@@ -90,7 +90,11 @@ final class ProvisioningOutbox
         $last = self::lastJob($db, $kind, $entityId);
         if ($last === null || !in_array($last['state'], self::RETRYABLE, true)) return false;
         $merchant = $last['merchant_id'];
-        if ($kind === 'store_link') {
+        if ($kind === 'merchant_account') {
+            // come all'attivazione: gestore PG qualificato con questo solo merchant, righe bloccate in lettura
+            $owner = $db->createCommand('SELECT user_id FROM {{%merchants}} WHERE id=:id FOR SHARE', [':id' => $entityId])->queryScalar();
+            if ($entityId !== $merchant || $owner === false || $owner === null || AccountEligibility::merchantForManager((int) $owner) !== $merchant) return false;
+        } elseif ($kind === 'store_link') {
             $owner = $db->createCommand('SELECT merchant_id FROM {{%stores}} WHERE id=:id FOR SHARE', [':id' => $entityId])->queryScalar();
             if ($owner === false || (int) $owner !== $merchant) return false;
         } else {
