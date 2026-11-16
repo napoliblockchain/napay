@@ -45,11 +45,18 @@ final class StoreLinkStep
         return self::adopt($response['json'], 'name', $snapshot['marker'], 'remote_store_id', 'store');
     }
 
-    /** Nome remoto: descrizione del negozio (accorciata) + marker esatto, unica chiave di riconciliazione. */
+    /** Lunghezza massima del nome di uno store accettata da BTCPay (422 su `name` oltre). */
+    public const MAX_NAME = 50;
+
+    /**
+     * Nome remoto alla creazione: descrizione accorciata + marker esatto, unica chiave di riconciliazione finché la
+     * creazione è incerta. Entro MAX_NAME caratteri. A collegamento fatto store_update mette il nome pulito del negozio.
+     */
     public static function name(string $description, string $marker): string
     {
+        $token = ' [napay-' . $marker . ']';
         $description = trim(preg_replace('/[\x00-\x1f\x7f]+/u', ' ', $description) ?? '');
-        return mb_substr($description === '' ? 'Negozio' : $description, 0, 60) . ' [napay-' . $marker . ']';
+        return mb_substr($description === '' ? 'Negozio' : $description, 0, self::MAX_NAME - strlen($token)) . $token;
     }
 
     /** @internal anche per PosLinkStep */

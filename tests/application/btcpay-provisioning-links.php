@@ -8,8 +8,8 @@ require $root . '/config/env.php';
 if (env('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !== 'napay_test_runtime') exit(1);
 define('YII_ENABLE_ERROR_HANDLER', false);
 require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
-use app\components\btcpay\provisioning\{ProvisioningHttpException as Http, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningStore};
-use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreLinkStep};
+use app\components\btcpay\provisioning\{ProvisioningHttpException as Http, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore};
+use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreLinkStep, StoreSettingsStep};
 
 $password = trim((string) fgets(STDIN));
 if (!preg_match('/^[0-9a-f]{48}$/D', $password)) exit(1);
@@ -419,4 +419,40 @@ $failure = null;
 $http->queue = [new LogicException('transport bug with ' . $apiKey)];
 try { $run->reconcileOnce(); } catch (RuntimeException $e) { $failure = $e; }
 check($failure !== null && $failure->getMessage() === 'provisioning_link_worker_failed' && $failure->getPrevious() === null && $clean($failure), 'reconcileOnce failure sanitized like runOnce');
+// --- SIP-022 passo 3: store_update, impostazioni dello store con la chiave del merchant (PUT idempotente)
+$long = app\components\btcpay\provisioning\steps\StoreLinkStep::name(str_repeat('Pizzeria Napoletana ', 5), str_repeat('a', 32));
+check(mb_strlen($long) === 50 && str_ends_with($long, ' [napay-' . str_repeat('a', 32) . ']'), 'Creation name never exceeds the 50 characters BTCPay accepts, marker intact');
+$admin->createCommand()->insert('storesettings', ['store_id' => $storeA, 'defaultCurrency' => 'EUR', 'invoiceExpiration' => 900, 'speedPolicy' => 'MediumSpeed',
+    'requiresRefundEmail' => 1, 'receipt' => '{"enabled":1,"showQR":1,"showPayments":0}', 'defaultPaymentMethod' => 'BTC', 'htmlTitle' => 'W3c'])->execute();
+$storeName = (string) $admin->createCommand('SELECT description FROM stores WHERE id=:s', [':s' => $storeA])->queryScalar();
+[$instance, $http, $store, $run] = $scenario();
+$settings = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock);
+check($settings->runOnce() === false, 'Settings worker idle without store_update jobs');
+$su = $enqueue($instance, 'store_update', $storeA);
+check($settings->runOnce() === true && $job($su)['state'] === 'retry_wait' && $job($su)['last_error_code'] === 'store_not_ready' && count($http->calls) === 0,
+    'Settings wait for the store link (no call)');
+$syncStore($store, $storeA, 'st-set');
+$t += 3600;
+$http->queue = [$r(200, ['id' => 'st-set'])];
+$settings->runOnce();
+[$method, $path, $body, $key] = $http->calls[0];
+check($job($su)['state'] === 'done' && $method === 'PUT' && $path === '/api/v1/stores/st-set' && $key === $apiKey
+    && $body['name'] === $storeName
+    && $body['defaultCurrency'] === 'EUR' && $body['invoiceExpiration'] === 900 && $body['requiresRefundEmail'] === true
+    && $body['receipt'] === ['enabled' => true, 'showQR' => true, 'showPayments' => false] && !array_key_exists('website', $body),
+    'One PUT with the merchant key: plain shop name and typed fixed values read from Napay');
+$su2 = $enqueue($instance, 'store_update', $storeA, 2);
+$http->queue = [$r(502)];
+$settings->runOnce();
+check($job($su2)['state'] === 'retry_wait' && $job($su2)['last_error_code'] === 'store_update_unavailable', '5xx: retried later, never reconciliation (idempotent PUT)');
+$t += 3600;
+$http->queue = [$r(401)];
+$settings->runOnce();
+check($job($su2)['state'] === 'failed' && $job($su2)['last_error_code'] === 'merchant_key_denied' && $store->account($merchant)['state'] === 'reconcile_required',
+    '401: job failed and account under review (admin retry = new key)');
+$calls = count($http->calls);
+$su3 = $enqueue($instance, 'store_update', $storeB);
+$settings->runOnce();
+check($job($su3)['state'] === 'failed' && $job($su3)['last_error_code'] === 'scope_mismatch' && count($http->calls) === $calls, 'Store of another merchant: failed, no call');
+$t -= 7200;
 echo "PASS $checks BTCPay provisioning link worker checks\n";

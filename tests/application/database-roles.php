@@ -5,6 +5,7 @@ $root = dirname(__DIR__, 2);
 require $root . '/config/env.php';
 if (env('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !== 'napay_test_runtime') exit(1);
 require $root . '/components/db/DatabaseRoles.php';
+require_once $root . '/components/btcpay/StoreSettingsPayload.php';
 use app\components\db\DatabaseRoles;
 $checks = 0; $stage = 'connect'; $admin = null;
 $users = ['napay_role_web', 'napay_role_migrator', 'napay_role_worker'];
@@ -78,8 +79,15 @@ try {
     denied($worker, 'DELETE FROM btcpay_provisioning_jobs WHERE 1=0', 'Worker cannot delete jobs');
     denied($worker, 'UPDATE users SET is_active=0 WHERE 1=0', 'Worker cannot change source identities');
     denied($worker, 'SELECT password FROM users', 'Worker cannot read password hashes');
-    denied($worker, 'SELECT description FROM stores', 'Worker cannot read unneeded store details');
+    denied($worker, 'SELECT email FROM stores', 'Worker cannot read unneeded store details');
     $worker->query('SELECT id,merchant_id FROM stores')->fetchAll(); check(true, 'Worker reads minimum tenant identifiers');
+    // SIP-022 passo 3: nome del negozio e impostazioni dello store BTCPay, non ID remoti né dati di derivazione
+    $worker->query('SELECT description FROM stores')->fetchAll();
+    $worker->query('SELECT ' . implode(',', app\components\btcpay\StoreSettingsPayload::COLUMNS) . ' FROM storesettings')->fetchAll();
+    check(true, 'Worker reads the shop name and the BTCPay store settings it applies');
+    denied($worker, 'SELECT bps_storeid FROM storesettings', 'Worker cannot read the v1 BTCPay store ID');
+    denied($worker, 'SELECT derivationScheme FROM storesettings', 'Worker cannot read derivation data');
+    denied($worker, 'UPDATE storesettings SET defaultCurrency=defaultCurrency WHERE 1=0', 'Worker cannot change store settings');
     denied($worker, 'UPDATE logs SET description=\'x\' WHERE 1=0', 'Worker cannot rewrite audit history');
     // Exercise the application's actual Yii schema lookup, not only explicit INSERT SQL.
     define('YII_ENABLE_ERROR_HANDLER', false);

@@ -179,13 +179,13 @@ state
     = "[('synced', True, True), ('synced', True, True)]" ] || fail "accounts: $(json "[(a['state']) for a in d['accounts']]" "$work/w/state.json")"
 [ "$(json "len({a['remote_user_id'] for a in d['accounts']})" "$work/w/state.json")" = 2 ] || fail 'merchants share a BTCPay user'
 pass 'Each merchant gets its own BTCPay user (technical email) and a verified key'
-drain links store_link,pos_link
+drain links store_link,pos_link,store_update
 state
 [ "$(json "sorted((s['state'], bool(s['remote_store_id'])) for s in d['stores'])" "$work/w/state.json")" = "[('synced', True), ('synced', True)]" ] \
     || fail "store links: $(json "[(s['state']) for s in d['stores']]" "$work/w/state.json")"
 [ "$(json "sorted((x['state'], bool(x['remote_app_id'])) for x in d['pos'])" "$work/w/state.json")" = "[('synced', True), ('synced', True)]" ] \
     || fail "pos links: $(json "[(x['state']) for x in d['pos']]" "$work/w/state.json")"
-[ "$(json "sum(1 for j in d['jobs'] if j['state'] != 'done')" "$work/w/state.json")" = 0 ] || fail 'jobs not all done'
+[ "$(json "sum(1 for j in d['jobs'] if j['state'] != 'done')" "$work/w/state.json")" = 0 ] || fail "jobs not all done: $(json "[(j['kind'], j['state'], j['last_error_code']) for j in d['jobs'] if j['state'] != 'done']" "$work/w/state.json")"
 [ "$(json "d['status']" "$work/w/state.json")" = "['linked', 'linked', 'linked', 'linked', 'linked', 'linked']" ] || fail "backoffice status: $(json "d['status']" "$work/w/state.json")"
 pass 'Store and POS app linked for both merchants, every job done, backoffice shows linked'
 
@@ -223,6 +223,21 @@ done
 pass 'BTCPay: merchant users not admin, each store owned only by its merchant, exactly one POS app'
 pass 'Isolation: a merchant key gets 403 on the other merchant store'
 
+# --- 5b. impostazioni dello store (SIP-022 passo 3): applicate dal worker con la chiave del merchant, poi una modifica
+storeA=$(json "d['A']['store']" "$work/w/seed.json")
+iA=$(json "[a['merchant_id'] for a in d['accounts']].index($(json "d['A']['merchant']" "$work/w/seed.json"))" "$work/w/final.json")
+remoteA=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeA][0]" "$work/w/final.json")
+api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "(d['name'], d['defaultCurrency'], d['speedPolicy'], d['invoiceExpiration'], d['networkFeeMode'])" "$work/w/out.json")" = "('E2E negozio A', 'EUR', 'MediumSpeed', 900, 'Always')" ] \
+    || fail "store settings not applied ($code)"
+pass 'Fixed store settings and the plain shop name (shown at checkout) applied to BTCPay by the worker'
+fixture --edit-store "$storeA"
+drain links store_update
+api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "(d['name'], d['defaultCurrency'])" "$work/w/out.json")" = "('E2E negozio rinominato', 'USD')" ] || fail "store edit not applied ($code)"
+state; cp "$work/w/state.json" "$work/w/final.json"
+pass 'Name and currency changed in Napay reach BTCPay through a store_update job (no web call)'
+
 # --- 6. ripetizione: nessun lavoro, nessuna nuova risorsa
 for route in run links reconcile; do
     compose run --rm --no-deps worker-cli "btcpay-provision/$route" --once > "$work/cli.out" 2>&1
@@ -239,28 +254,32 @@ storeA=$(json "d['A']['store']" "$work/w/seed.json"); termB=$(json "d['B']['term
 storeB=$(json "d['B']['store']" "$work/w/seed.json")
 iA=$(json "[a['merchant_id'] for a in d['accounts']].index($(json "d['A']['merchant']" "$work/w/seed.json"))" "$work/w/final.json")
 iB=$((1 - iA))
-remoteA=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeA][0]" "$work/w/final.json")
+# negozio C appena creato: lo store remoto ha ancora il nome con il marker (caso reale di creazione incerta)
+storeC=$(fixture --new-store | tail -1)
+drain links store_link,pos_link,store_update
+state
+remoteC=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeC and s['state']=='synced'][0]" "$work/w/state.json")
 remoteB=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeB][0]" "$work/w/final.json")
 appB=$(json "[x['remote_app_id'] for x in d['pos'] if x['terminal_id']==$termB][0]" "$work/w/final.json")
-r=$(fixture --retry store_link "$storeA" 2>&1 | tail -1)
+r=$(fixture --retry store_link "$storeC" 2>&1 | tail -1)
 [ "$r" = refused ] || fail "retry accepted on a linked store: $r"
 pass 'Retry refused while the link is fine'
-fixture --break store_link "$storeA"
+fixture --break store_link "$storeC"
 state
 [ "$(json "'error' in d['status']" "$work/w/state.json")" = True ] || fail 'broken link not shown as error'
-[ "$(fixture --retry store_link "$storeA")" = queued ] && [ "$(fixture --retry store_link "$storeA")" = refused ] || fail 'store retry request'
-drain links store_link,pos_link
+[ "$(fixture --retry store_link "$storeC")" = queued ] && [ "$(fixture --retry store_link "$storeC")" = refused ] || fail 'store retry request'
+drain links store_link,pos_link,store_update
 state
-[ "$(json "[(s['state'], s['remote_store_id']) for s in d['stores'] if s['store_id']==$storeA]" "$work/w/state.json")" = "[('synced', '$remoteA')]" ] || fail 'store not adopted'
+[ "$(json "[(s['state'], s['remote_store_id']) for s in d['stores'] if s['store_id']==$storeC]" "$work/w/state.json")" = "[('synced', '$remoteC')]" ] || fail 'store not adopted'
 api GET /api/v1/stores "" "verify-$iA.hdr"
-[ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 1 ] || fail "duplicate store after retry ($code)"
+[ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 2 ] || fail "duplicate store after retry ($code)"
 pass 'Admin retry adopts the existing BTCPay store by its marker: same ID, no duplicate'
 
 api DELETE "/api/v1/apps/$appB" "" "verify-$iB.hdr"
 [ "$code" = 200 ] || fail "remove POS app for the test ($code)"
 fixture --break pos_link "$termB"
 [ "$(fixture --retry pos_link "$termB")" = queued ] || fail 'pos retry request'
-drain links store_link,pos_link
+drain links store_link,pos_link,store_update
 state
 newApp=$(json "[x['remote_app_id'] for x in d['pos'] if x['terminal_id']==$termB and x['state']=='synced'][0]" "$work/w/state.json")
 [ -n "$newApp" ] && [ "$newApp" != "$appB" ] || fail 'POS app not recreated'

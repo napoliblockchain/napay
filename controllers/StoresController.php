@@ -21,6 +21,8 @@ use app\components\User;
 use app\components\Log;
 use app\components\btcpay\provisioning\ProvisioningOutbox;
 use app\components\btcpay\StoresBtcpay;
+use app\components\btcpay\provisioning\ProvisioningStatus;
+use app\components\btcpay\StoreSettingsPayload;
 
 use app\models\Pos;
 
@@ -121,7 +123,8 @@ class StoresController extends Controller
         if (!$this->linked($model)) {
             return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false, 'ttsWallet' => $this->ttsWallet($model)]);
         }
-        $BTCPayServer = StoresBtcpay::client();
+        // cambio solo per i negozi v1 (chiave ponte); i negozi del provisioning non chiamano BTCPay dal web
+        $BTCPayServer = $this->legacy($model) ? StoresBtcpay::client() : null;
 
         // recupero il rate da exchange
         $storeId = $model->storesettings->bps_storeid;
@@ -188,6 +191,7 @@ class StoresController extends Controller
                         if ($storesettings->save()) {
                             // Lavoro BTCPay accodato nella stessa transazione (se il provisioning è attivo).
                             ProvisioningOutbox::enqueueStore(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
+                            ProvisioningOutbox::enqueueStoreSettings(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
                             $transaction->commit();
                             Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio creato. Pagamenti BTC da configurare: il collegamento a BTCPay verrà creato automaticamente.'));
                             Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has created a new {item}: {itemname}', [
@@ -240,20 +244,29 @@ class StoresController extends Controller
                 $store->htmlTitle = Html::encode($description);
                 $transaction = Yii::$app->db->beginTransaction();
                 try {
-                    if ($model->save(true, ['description']) && $store->save(true, ['defaultCurrency', 'htmlTitle'])) {
+                    $logUpdate = fn() => Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has updated general {item} settings: {itemname}', [
+                        'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
+                    ]));
+                    if (!$model->save(true, ['description']) || !$store->save(true, ['defaultCurrency', 'htmlTitle'])) {
+                        Yii::$app->session->setFlash('error', Yii::t('app', 'Store not saved. Try again.'));
+                    } elseif (!$this->legacy($model)) {
+                        // SIP-022 passo 3: nessuna chiamata dal web, il worker allinea lo store con la chiave del merchant
+                        ProvisioningOutbox::enqueueStoreSettings(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
+                        $transaction->commit();
+                        Yii::$app->session->setFlash('success', Yii::t('app', 'Store updated. BTCPay will be updated shortly.'));
+                        $logUpdate();
+                        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+                    } else {
+                        // negozio v1: chiave ponte (SIP-030 punto 4)
                         $BTCPayServer = StoresBtcpay::client();
                         $result = $BTCPayServer === null ? ['error' => 'not-configured'] : $BTCPayServer->updateStore($store->bps_storeid, $this->btcpayStoreSettings($model, $store));
                         if (!is_array($result)) {
                             $transaction->commit();
                             Yii::$app->session->setFlash('success', Yii::t('app', 'Store updated.'));
-                            Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has updated general {item} settings: {itemname}', [
-                                'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
-                            ]));
+                            $logUpdate();
                             return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
                         }
                         Yii::$app->session->setFlash('error', Yii::t('app', 'BTCPay could not update the store. Try again later.'));
-                    } else {
-                        Yii::$app->session->setFlash('error', Yii::t('app', 'Store not saved. Try again.'));
                     }
                     if ($transaction->isActive) $transaction->rollBack();
                 } catch (\Throwable $e) {
@@ -273,38 +286,10 @@ class StoresController extends Controller
         ]);
     }
 
-    /** Impostazioni inviate a BTCPay: valori fissi salvati alla creazione, più nome e valuta scelti dal merchant. */
+    /** Impostazioni inviate a BTCPay (negozi v1): valori fissi salvati alla creazione, più nome e valuta scelti dal merchant. */
     private function btcpayStoreSettings(Stores $model, Storesettings $store): array
     {
-        return [
-            'name' => $model->description,
-            'website' => $store->website,
-            'defaultCurrency' => $store->defaultCurrency,
-            'invoiceExpiration' => (int) $store->invoiceExpiration,
-            'displayExpirationTimer' => $store->displayExpirationTimer,
-            'monitoringExpiration' => $store->monitoringExpiration,
-            'speedPolicy' => $store->speedPolicy,
-            'lightningDescriptionTemplate' => $store->lightningDescriptionTemplate,
-            'paymentTolerance' => $store->paymentTolerance,
-            'anyoneCanCreateInvoice' => $store->anyoneCanCreateInvoice,
-            'requiresRefundEmail' => $store->requiresRefundEmail,
-            'checkoutType' => $store->checkoutType,
-            'receipt' => json_decode((string) $store->receipt, true),
-            'lightningAmountInSatoshi' => $store->lightningAmountInSatoshi,
-            'lightningPrivateRouteHints' => $store->lightningPrivateRouteHints,
-            'onChainWithLnInvoiceFallback' => $store->onChainWithLnInvoiceFallback,
-            'redirectAutomatically' => $store->redirectAutomatically,
-            'showRecommendedFee' => $store->showRecommendedFee,
-            'recommendedFeeBlockTarget' => $store->recommendedFeeBlockTarget,
-            'defaultLang' => $store->defaultLang,
-            'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
-            'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
-            'htmlTitle' => $store->htmlTitle,
-            'networkFeeMode' => $store->networkFeeMode,
-            'payJoinEnabled' => $store->payJoinEnabled,
-            'lazyPaymentMethods' => $store->lazyPaymentMethods,
-            'defaultPaymentMethod' => $store->defaultPaymentMethod,
-        ];
+        return StoreSettingsPayload::build((string) $model->description, $store->getAttributes(StoreSettingsPayload::COLUMNS));
     }
 
     /**
@@ -326,7 +311,8 @@ class StoresController extends Controller
         $model->save();
 
         // su BTCPay il negozio non si elimina: viene rinominato -DELETED e le sue app POS rimosse (se collegato e configurato)
-        if ($this->linked($model)) {
+        // negozi del provisioning: archivio locale; lo store BTCPay resta (archiviazione tramite worker da fare)
+        if ($this->legacy($model)) {
             $store = $model->storesettings;
             $BTCPayServer = StoresBtcpay::client();
             if ($BTCPayServer !== null) {
@@ -510,15 +496,27 @@ class StoresController extends Controller
         return $address === false ? null : $address;
     }
 
-    /** Negozio già collegato a uno store BTCPay. Prima del provisioning le pagine BTCPay non contattano il server. */
+    /** Negozio collegato a uno store BTCPay: negozio v1 (ID store salvato) oppure creato dal provisioning (SIP-022). */
     private function linked(Stores $model): bool
+    {
+        return $this->legacy($model) || $this->provisioned($model);
+    }
+
+    /** Negozio v1: store BTCPay gestito dal web con la chiave ponte (SIP-030 punto 4). */
+    private function legacy(Stores $model): bool
     {
         return $model->storesettings !== null && !empty($model->storesettings->bps_storeid);
     }
 
+    /** Negozio collegato dal provisioning: lo store si aggiorna solo tramite il worker, con la chiave del merchant. */
+    private function provisioned(Stores $model): bool
+    {
+        return $model->storesettings !== null && ProvisioningStatus::store((int) $model->id) === ProvisioningStatus::LINKED;
+    }
+
     private function notLinked(Stores $model)
     {
-        Yii::$app->session->setFlash('info', Yii::t('app', 'Negozio non ancora collegato a BTCPay: le impostazioni dei pagamenti BTC saranno disponibili dopo il collegamento automatico.'));
+        Yii::$app->session->setFlash('info', Yii::t('app', 'Store not linked to BTCPay yet: BTC payment settings will be available after the automatic link.'));
         return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
     }
 

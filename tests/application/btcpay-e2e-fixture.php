@@ -33,11 +33,20 @@ try {
                 'phone' => '', 'mobile' => '', 'addressStreet' => '', 'addressNumberHouse' => '', 'addressCity' => '', 'addressZip' => '',
                 'addressProvince' => '', 'addressCountry' => ''])->execute();
             $store = (int) $db->lastInsertID;
+            // impostazioni fisse come StoresController::defaultSettings (SIP-030 punto 4)
+            $db->createCommand()->insert('storesettings', ['store_id' => $store, 'defaultCurrency' => 'EUR', 'invoiceExpiration' => 900, 'displayExpirationTimer' => 300,
+                'monitoringExpiration' => 3600, 'speedPolicy' => 'MediumSpeed', 'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
+                'paymentTolerance' => 0, 'anyoneCanCreateInvoice' => 0, 'requiresRefundEmail' => 1, 'checkoutType' => 'V1',
+                'receipt' => json_encode(['enabled' => 1, 'showQR' => 1, 'showPayments' => 1]), 'lightningAmountInSatoshi' => 0, 'lightningPrivateRouteHints' => 0,
+                'onChainWithLnInvoiceFallback' => 0, 'redirectAutomatically' => 0, 'showRecommendedFee' => 1, 'recommendedFeeBlockTarget' => 1, 'defaultLang' => 'it-IT',
+                'customLogo' => 'https://napay.example.invalid/bundles/site/images/logopos.png', 'customCSS' => 'https://napay.example.invalid/bundles/site/css/checkout.css',
+                'htmlTitle' => 'E2E negozio ' . $label, 'networkFeeMode' => 'Always', 'payJoinEnabled' => 0, 'lazyPaymentMethods' => 0, 'defaultPaymentMethod' => 'BTC'])->execute();
             $terminal = new app\models\PosTerminals(['merchant_id' => $m['id'], 'store_id' => $store, 'name' => 'E2E cassa ' . $label]);
             if (!$terminal->save()) exit(1);
             // come il web: ogni accodamento nella transazione dell'operazione che lo genera
             $db->transaction(fn() => ProvisioningOutbox::enqueueMerchant($db, $m['id'], $m['owner'])) || exit(1);
             $db->transaction(fn() => ProvisioningOutbox::enqueueStore($db, $store, $m['id'], $m['owner'])) || exit(1);
+            $db->transaction(fn() => ProvisioningOutbox::enqueueStoreSettings($db, $store, $m['id'], $m['owner'])) || exit(1);
             $db->transaction(fn() => ProvisioningOutbox::enqueueTerminal($db, (int) $terminal->id, $store, $m['id'], $m['owner'])) || exit(1);
             $out[$label] = ['merchant' => $m['id'], 'store' => $store, 'terminal' => (int) $terminal->id];
         }
@@ -56,6 +65,25 @@ try {
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::store((int) $r['store_id']), $q('SELECT store_id FROM btcpay_store_links WHERE instance=:i')),
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::terminal((int) $r['terminal_id']), $q('SELECT terminal_id FROM btcpay_pos_links WHERE instance=:i'))),
         ], JSON_THROW_ON_ERROR), "\n";
+    } elseif (($argv[1] ?? '') === '--new-store') {
+        // negozio appena creato del merchant A: solo collegamento (lo store remoto ha ancora il nome con il marker)
+        $m = $merchants['A'];
+        $db->createCommand()->insert('stores', ['merchant_id' => $m['id'], 'description' => 'E2E negozio C', 'email' => 'e2e@example.invalid', 'phone' => '', 'mobile' => '',
+            'addressStreet' => '', 'addressNumberHouse' => '', 'addressCity' => '', 'addressZip' => '', 'addressProvince' => '', 'addressCountry' => ''])->execute();
+        $store = (int) $db->lastInsertID;
+        $db->createCommand()->insert('storesettings', ['store_id' => $store, 'defaultCurrency' => 'EUR'])->execute();
+        $db->transaction(fn() => ProvisioningOutbox::enqueueStore($db, $store, $m['id'], $m['owner'])) || exit(1);
+        echo $store, "\n";
+    } elseif (($argv[1] ?? '') === '--edit-store') {
+        // SIP-022 passo 3: nome e valuta cambiati dal merchant, come StoresController::actionUpdateGeneral
+        $storeId = (int) ($argv[2] ?? 0);
+        $owner = (int) $db->createCommand('SELECT m.user_id FROM stores s JOIN merchants m ON m.id = s.merchant_id WHERE s.id=:s', [':s' => $storeId])->queryScalar();
+        $merchantId = (int) $db->createCommand('SELECT merchant_id FROM stores WHERE id=:s', [':s' => $storeId])->queryScalar();
+        $db->transaction(function () use ($db, $storeId, $merchantId, $owner) {
+            $db->createCommand()->update('stores', ['description' => 'E2E negozio rinominato'], ['id' => $storeId])->execute();
+            $db->createCommand()->update('storesettings', ['defaultCurrency' => 'USD'], ['store_id' => $storeId])->execute();
+            ProvisioningOutbox::enqueueStoreSettings($db, $storeId, $merchantId, $owner) || exit(1);
+        });
     } elseif (($argv[1] ?? '') === '--lose-user') {
         // SIP-022 R2: esito della creazione utente ignoto (ID remoto mai salvato), account in riconciliazione
         $merchantId = (int) ($argv[2] ?? 0);

@@ -549,4 +549,6 @@ return [
     'Retry BTCPay link' => 'Riprova collegamento BTCPay',
     'BTCPay link retry requested: it will be processed shortly.' => 'Riprova del collegamento BTCPay richiesta: verrà eseguita a breve.',
     'Nothing to retry for this BTCPay link.' => 'Niente da riprovare per questo collegamento BTCPay.',
+    'Store updated. BTCPay will be updated shortly.' => 'Negozio aggiornato. BTCPay verrà aggiornato a breve.',
+    'Store not linked to BTCPay yet: BTC payment settings will be available after the automatic link.' => 'Negozio non ancora collegato a BTCPay: le impostazioni dei pagamenti BTC saranno disponibili dopo il collegamento automatico.',
 ];

@@ -1,8 +1,8 @@
 <?php
 namespace app\commands;
 
-use app\components\btcpay\provisioning\{ProvisioningHttpClient, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningStore, ProvisioningWorker, WorkerSecrets};
-use app\components\btcpay\provisioning\steps\{MerchantAccountStep, PosLinkStep, StoreLinkStep};
+use app\components\btcpay\provisioning\{ProvisioningHttpClient, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore, ProvisioningWorker, WorkerSecrets};
+use app\components\btcpay\provisioning\steps\{MerchantAccountStep, PosLinkStep, StoreLinkStep, StoreSettingsStep};
 use app\components\db\V2Bootstrap;
 use yii\console\Controller;
 
@@ -24,10 +24,18 @@ final class BtcpayProvisionController extends Controller
         return $this->report($worker->runOnce());
     }
 
-    /** W3e: un lavoro store_link/pos_link (con la chiave corrente del merchant, mai quella del provisioner). */
+    /**
+     * W3e: un lavoro store_link/pos_link (con la chiave corrente del merchant, mai quella del provisioner); se non ce ne
+     * sono, un lavoro store_update (SIP-022 passo 3: impostazioni dello store).
+     */
     public function actionLinks(): int
     {
-        return $this->report($this->linkWorker()->runOnce());
+        if ($this->linkWorker()->runOnce()) return $this->report(true);
+        [$db, $http, $instance] = $this->worker();
+        $secrets = WorkerSecrets::keyringOnly(env_required('BTCPAY_KEK_KEYRING_FILE'));
+        $store = new ProvisioningStore($db, $instance, $secrets->keyring(), $secrets->current);
+        $settings = new ProvisioningSettingsWorker($db, new ProvisioningJobs($db, self::owner()), $store, new StoreSettingsStep($http->withKey(...)), $instance);
+        return $this->report($settings->runOnce());
     }
 
     /** W3e: una riconciliazione GET-only di store_link/pos_link. */
