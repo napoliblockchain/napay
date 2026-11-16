@@ -4,7 +4,8 @@ use yii\helpers\Html;
 use app\components\sendMail;
 use app\models\MemberProfiles;
 
-$URL = sendMail::applicationUrl('site/login');
+// SIP-030: la mail parte dopo la verifica dell'email e porta alla lista delle richieste da approvare
+$URL = sendMail::applicationUrl('membership-requests/index');
 
 $corporate = MemberProfiles::find()->select('is_corporate')->where(['user_id' => $user->id])->scalar();
 $memberTypes = [0 => 'Socio persona fisica', 1 => 'Socio persona giuridica'];
@@ -84,6 +85,7 @@ $memberType = $corporate === false ? 'Account' : ($memberTypes[(int) $corporate]
     <div class="card-content">
         <p class="salutation">Ciao Admin,</p>
         <p>ricevi questa mail perché qualcuno ha effettuato una richiesta di registrazione di un nuovo utente: </p>
+        <p><?= Html::encode(Yii::t('app', 'The email address has been verified: the membership request is waiting for your approval.')) ?></p>
         <p>
         <ul>
             <li><b>Nome utente</b>: <?= Html::encode($user->username) ?></li>
@@ -107,7 +109,7 @@ $memberType = $corporate === false ? 'Account' : ($memberTypes[(int) $corporate]
                     				min-width: 100px;
 									min-height: 30px;
                     				text-shadow: 1px 1px 2px black;">
-                    <?php echo Yii::t('app', 'Collegati'); ?>
+                    <?php echo Yii::t('app', 'Open the membership requests'); ?>
                 </button>
 
             </a>

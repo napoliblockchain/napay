@@ -80,6 +80,8 @@ $URL = sendMail::activationUrl($user);
         <p class="salutation">Ciao <?= Html::encode($user->first_name ?: $user->username) ?>,</p>
         <p>qualcuno ha richiesto di registrare un nuovo account. Ti invitiamo a collegarti all'indirizzo fornito di seguito.</p>
 
+        <p><?= Html::encode(Yii::t('app', 'After you confirm your email, the association reviews your membership request: you will receive an email with the outcome.')) ?></p>
+
         <p><b>Se non sei stato tu ad effettuare questa richiesta, ignora semplicemente questa email oppure contatta un amministratore.</b></p>
 
         <div style="margin-top: 20px;">

@@ -146,6 +146,8 @@ final class LegacyImporter
                 'denomination' => self::text($row['denomination']),
                 'vat' => self::text($row['vat']), 'address' => self::text($row['address']), 'cap' => self::text($row['cap']),
                 'city' => self::city($row['city'], $comuni), 'country' => self::text($row['country']),
+                // SIP-030: soci v1 mai approvati (status 0) restano in attesa nella lista delle richieste
+                'approval_state' => in_array($type, self::INACTIVE_TYPES, true) || (int) $row['status_activation_code'] === 1 ? 'approved' : 'pending',
             ], 'id', (int) $profile['id']);
             $userMap[(int) $row['id_user']] = $userId;
         }

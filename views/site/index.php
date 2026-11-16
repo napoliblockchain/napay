@@ -12,6 +12,7 @@ use yii\helpers\Html;
 /* @var $searchModel app\models\search\UsersSearch */
 /* @var $dataProvider yii\data\ActiveDataProvider */
 /* @var $payments array|null riepilogo incassi (PaymentTotals::dashboard), null fuori dallo scope esercenti */
+/* @var $requests int|null richieste di iscrizione da approvare, null se non admin */
 
 Icon::map($this);
 
@@ -22,6 +23,13 @@ $member = AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
 ?>
 
 <div class="body-content">
+    <?php if (($requests ?? 0) > 0): ?>
+        <a href="<?= Url::to(['membership-requests/index']) ?>" class="alert alert-warning d-flex align-items-center mt-2 text-decoration-none" data-dashboard="requests">
+            <i class="fas fa-user-clock me-2" aria-hidden="true"></i>
+            <span><?= Html::encode(Yii::t('app', 'Membership requests to review: {n}', ['n' => $requests])) ?></span>
+            <span class="ms-auto fw-bold"><?= Html::encode(Yii::t('app', 'Manage')) ?></span>
+        </a>
+    <?php endif; ?>
     <?php if ($payments !== null): ?>
     <div class="row g-3 mt-2">
         <?php foreach ([

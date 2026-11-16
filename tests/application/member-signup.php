@@ -77,7 +77,7 @@ function msMember(string $email,string $type,?string $denomination): Users {
 }
 function msActivation(array $beforeMail,Users $user): string {
     $files = array_values(array_diff(msMail(),$beforeMail)); $message = '';
-    msCheck(count($files) === 2,'Successful committed signup sends member/admin file mail only');
+    msCheck(count($files) === 1,'Successful committed signup sends only the member file mail (admins are told after email verification)');
     foreach ($files as $file) {
         $raw = file_get_contents($file);
         msCheck(!str_contains($raw,'attacker.example.invalid'),'Signup file mail ignores hostile Host header');
@@ -153,7 +153,7 @@ try {
     $long = str_repeat("\u{754c}",250); $mail = msMail();
     msCheck(msSubmit(msFields('r3a-max-pg@example.invalid','pg',$long))['status'] === 302,'PG accepts exactly 250 multibyte characters server-side');
     msMember('r3a-max-pg@example.invalid','pg',$long);
-    msCheck(count(array_diff(msMail(),$mail)) === 2,'Boundary-length PG also sends only post-commit member/admin mail');
+    msCheck(count(array_diff(msMail(),$mail)) === 1,'Boundary-length PG also sends only the post-commit member mail');
     // A temporary stricter CHECK injects real write failures without SUPER or trigger privileges.
     $lastConsent = (int)$db->createCommand('SELECT COALESCE(MAX(timestamp_statuto),0) FROM user_consensus')->queryScalar();
     $deadline = microtime(true) + 3;

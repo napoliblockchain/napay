@@ -14,10 +14,12 @@ use app\models\forms\ResetPasswordForm;
 use app\models\forms\ActivationResendForm;
 use app\models\Users;
 use app\models\UserConsensus;
+use app\models\MemberProfiles;
 
 use app\components\Log;
 use app\components\sendMail;
 use app\components\Crypt;
+use app\components\User;
 
 use yii\web\BadRequestHttpException;
 use yii\base\InvalidArgumentException;
@@ -153,6 +155,8 @@ class SiteController extends Controller
         $scope = \app\components\pos\management\Scope::current();
         return $this->render('index', [
             'payments' => $scope === null ? null : \app\components\pos\tts\PaymentTotals::dashboard($scope),
+            // SIP-030: richieste di iscrizione da approvare (solo admin)
+            'requests' => User::isAdministrator() ? \app\components\association\MembershipRequests::count() : null,
             // 'dataMerchants' => $dataMerchants,
             // 'dataStores' => $dataStores,
             // 'dataPos' => $dataPos,
@@ -265,8 +269,7 @@ class SiteController extends Controller
                         if (!$invalidConsent && $consensus->save()){
                             // A delivered link must refer to committed user/consent rows.
                             $transaction->commit();
-                            // invio la mail agli admins
-                            sendMail::toAdmins($user, 'newAccountAdmin', Yii::t('app', 'Nuovo account'));
+                            // SIP-030: agli admin solo dopo la verifica dell'email (actionActivate), mai per registrazioni non confermate
 
                             // invio la mail all'utente
                             $sent = sendMail::toUser($user, ['html' => 'newAccountUser', 'text' => 'newAccountUser-text'], 'Nuovo account');
@@ -340,6 +343,12 @@ class SiteController extends Controller
         if (Yii::$app->request->isPost) {
             if (!$user->activate($sign)) throw new BadRequestHttpException("Activation link is invalid or expired.");
             Log::save($this->id, $this->action->id, "Account activated: user ID " . $user->id);
+            if (MemberProfiles::isPending((int) $user->id)) {
+                // SIP-030: email verificata, ora la richiesta arriva agli admin per l'approvazione
+                sendMail::toAdmins($user, 'newAccountAdmin', Yii::t('app', 'New membership request'));
+                Yii::$app->session->setFlash("success", Yii::t("app", "Email confirmed: your membership request is now awaiting approval. You will receive an email."));
+                return $this->redirect(["site/login"]);
+            }
             Yii::$app->session->setFlash("success", Yii::t("app", "You have activated your account successfully."));
             return $this->redirect(["site/login"]);
         }

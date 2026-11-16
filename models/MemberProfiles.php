@@ -21,9 +21,22 @@ use Yii;
  * @property mixed $cap
  * @property mixed $city
  * @property mixed $country
+ * @property string $approval_state pending (in attesa dell'admin) | approved (SIP-030)
+ * @property int|null $requested_at
+ * @property int|null $approved_at
+ * @property int|null $approved_by
  */
 class MemberProfiles extends \yii\db\ActiveRecord
 {
+    public const APPROVAL_PENDING = 'pending';
+    public const APPROVAL_APPROVED = 'approved';
+
+    /** Iscrizione in attesa dell'approvazione dell'admin: il socio non può ancora entrare. */
+    public static function isPending(int $userId): bool
+    {
+        return self::find()->where(['user_id' => $userId, 'approval_state' => self::APPROVAL_PENDING])->exists();
+    }
+
     public const SCENARIO_PROFILE_UPDATE = 'profile-update';
 
     public function scenarios()

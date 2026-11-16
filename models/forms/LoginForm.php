@@ -5,6 +5,7 @@ namespace app\models\forms;
 use Yii;
 use yii\base\Model;
 use app\models\Users;
+use app\models\MemberProfiles;
 
 
 /**
@@ -76,6 +77,8 @@ class LoginForm extends Model
                 $this->addError($attribute, Yii::t('app', 'Email o password errati.'));
             } else if (!$user->validateStatus()) {
                 $this->addError($attribute, Yii::t('app', 'User is not active.'));
+            } else if (MemberProfiles::isPending((int) $user->id)) {
+                $this->addError($attribute, Yii::t('app', 'Your membership request is awaiting approval: you will receive an email.'));
             }
         }
     }

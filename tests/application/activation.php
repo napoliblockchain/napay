@@ -86,7 +86,8 @@ try {
     $identity = [$user->oauth_uid, $user->password, $user->privilege_id];
     $pendingCredentials = [$user->authKey, $user->accessToken];
     $files = array_values(array_diff(glob($root . '/runtime/mail/*.eml') ?: [], $beforeMail));
-    check(count($files) === 2, 'Signup captures member/admin emails locally');
+    check(count($files) === 1, 'Signup sends only the member email: admins are told after email verification (SIP-030)');
+    check(app\models\MemberProfiles::isPending((int) $user->id), 'New member request starts awaiting approval');
     $message = '';
     foreach ($files as $file) {
         $raw = file_get_contents($file);
@@ -116,7 +117,11 @@ try {
     $bad = '/site/activate?' . http_build_query(['id' => $credentials['id'], 'sign' => base64_encode(str_repeat('x', 64))]);
     check(request($bad)['status'] === 400 && snapshot(member()) === $before, 'Wrong signature never deletes pending member');
     check(request($bad, ['_csrf' => $validCsrf])['status'] === 400 && snapshot(member()) === $before, 'Wrong POST signature never changes member');
+    $beforeActivationMail = glob($root . '/runtime/mail/*.eml') ?: [];
     check(request($path, ['_csrf' => $validCsrf])['status'] === 302, 'Valid confirmation activates member');
+    $adminMail = array_values(array_diff(glob($root . '/runtime/mail/*.eml') ?: [], $beforeActivationMail));
+    check(count($adminMail) === 1 && str_contains(quoted_printable_decode(file_get_contents($adminMail[0])), 'https://napay.example.invalid/membership-requests/index')
+        && !preg_match('/^To: activation@example\.invalid\r?$/m', file_get_contents($adminMail[0])), 'Email verified: admins get the request with the link to the approval list');
     $user = member();
     check((int) $user->is_active === 1 && [$user->oauth_uid, $user->password, $user->privilege_id] === $identity, 'Activation preserves password, OAuth identity and role');
     check($user->authKey !== $pendingCredentials[0] && $user->accessToken !== $pendingCredentials[1]
@@ -126,7 +131,12 @@ try {
     check(request($bad)['status'] === 400 && snapshot(member()) === $activeSnapshot, 'Wrong link cannot delete active account');
     check(app\models\UserConsensus::find()->where(['user_id' => $user->id])->count() == 1, 'Replays preserve dependent consent data');
     $login = request('/site/login');
-    check(request('/site/login', ['_csrf' => csrf($login), 'LoginForm' => ['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']])['status'] === 302, 'Activated member can log in');
+    $waiting = request('/site/login', ['_csrf' => csrf($login), 'LoginForm' => ['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']]);
+    check($waiting['status'] === 200 && str_contains($waiting['body'], 'in attesa di approvazione'), 'Verified member cannot log in until an admin approves');
+    $admin = (int) app\models\Users::find()->select('id')->where(['username' => 'runtime-admin'])->scalar();
+    check(app\components\association\MembershipRequests::approve([(string) $user->id], $admin) === 1 && !app\models\MemberProfiles::isPending((int) $user->id), 'Admin approval');
+    $login = request('/site/login');
+    check(request('/site/login', ['_csrf' => csrf($login), 'LoginForm' => ['email' => 'activation@example.invalid', 'password' => 'activation-fixture-password']])['status'] === 302, 'Approved member can log in');
     // Login by email only (TIP-020): fresh sessions, the member stays logged out of these attempts.
     $memberJar = $jar;
     $attempt = static function (array $credentials) use (&$jar) {

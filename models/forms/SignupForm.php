@@ -125,6 +125,9 @@ class SignupForm extends Model
                     'user_id' => $user->id,
                     'is_corporate' => $this->member_type === 'pg' ? 1 : 0,
                     'denomination' => $this->member_type === 'pg' ? $this->denomination : null,
+                    // SIP-030: dopo la verifica dell'email l'iscrizione attende l'approvazione dell'admin
+                    'approval_state' => MemberProfiles::APPROVAL_PENDING,
+                    'requested_at' => time(),
                 ]);
                 if (!$profile->save()) throw new \RuntimeException('Member profile could not be saved.');
                 Log::event(sprintf('Iscrizione socio %s creata (utente %d)', strtoupper($this->member_type), $user->id), Log::TYPE_DATA);
