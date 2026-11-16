@@ -5,6 +5,7 @@ use yii\helpers\Url;
 use app\components\Crypt;
 use app\components\User;
 use kartik\detail\DetailView;
+use app\components\btcpay\provisioning\ProvisioningStatus;
 
 ?>
 
@@ -33,6 +34,12 @@ use kartik\detail\DetailView;
             'value' => Html::encode($model->description ?? null)
         ],
        
+        [
+            'label' => Yii::t('app', 'BTC payments'),
+            'format' => 'raw',
+            'value' => ProvisioningStatus::badge($btcpayState = ProvisioningStatus::store((int) $model->id)),
+            'visible' => $btcpayState !== null,
+        ],
         [
             'attribute' => 'defaultCurrency',
             'value' => Html::encode($model->storesettings->defaultCurrency),

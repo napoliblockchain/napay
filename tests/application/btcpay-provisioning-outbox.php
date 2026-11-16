@@ -219,4 +219,12 @@ check($created['status'] === 302 && $httpStore > 0 && count($httpJobs) === 1 && 
 $source = implode('', array_map(static fn($t) => is_array($t) ? (in_array($t[0], [T_COMMENT, T_DOC_COMMENT], true) ? '' : $t[1]) : $t,
     token_get_all(file_get_contents($root . '/components/btcpay/provisioning/ProvisioningOutbox.php'))));
 check(!preg_match('/curl_|file_get_contents|fsockopen|http_|BTCPAY_URL|api[_-]?key|password|IGNORE|ON DUPLICATE|UPDATE |DELETE /i', $source), 'Outbox source: no HTTP, credentials, UPDATE or INSERT IGNORE');
+// SIP-022 B5: stato del collegamento per il backoffice, letto con l'utente web ristretto (solo colonne di stato)
+$pendingStore = (int) scalar("SELECT entity_id FROM btcpay_provisioning_jobs WHERE kind='store_link' AND state='pending' ORDER BY id LIMIT 1");
+check($pendingStore > 0 && app\components\btcpay\provisioning\ProvisioningStatus::store($pendingStore) === app\components\btcpay\provisioning\ProvisioningStatus::PENDING
+    && str_contains(app\components\btcpay\provisioning\ProvisioningStatus::badge('pending'), 'data-btcpay-status="pending"'), 'Backoffice status readable with web grants: link in progress');
+check(app\components\btcpay\provisioning\ProvisioningStatus::store(2147483646) === null && app\components\btcpay\provisioning\ProvisioningStatus::badge(null) === '', 'No status for a resource without provisioning work');
+putenv('BTCPAY_PROVISION_INSTANCE=');
+check(app\components\btcpay\provisioning\ProvisioningStatus::store($pendingStore) === null, 'No status when provisioning is off');
+putenv('BTCPAY_PROVISION_INSTANCE=' . $instance);
 echo "PASS $checks BTCPay provisioning outbox checks\n";

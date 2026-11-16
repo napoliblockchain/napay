@@ -186,7 +186,8 @@ state
 [ "$(json "sorted((x['state'], bool(x['remote_app_id'])) for x in d['pos'])" "$work/w/state.json")" = "[('synced', True), ('synced', True)]" ] \
     || fail "pos links: $(json "[(x['state']) for x in d['pos']]" "$work/w/state.json")"
 [ "$(json "sum(1 for j in d['jobs'] if j['state'] != 'done')" "$work/w/state.json")" = 0 ] || fail 'jobs not all done'
-pass 'Store and POS app linked for both merchants, every job done'
+[ "$(json "d['status']" "$work/w/state.json")" = "['linked', 'linked', 'linked', 'linked', 'linked', 'linked']" ] || fail "backoffice status: $(json "d['status']" "$work/w/state.json")"
+pass 'Store and POS app linked for both merchants, every job done, backoffice shows linked'
 
 # --- 5. verifica sul BTCPay reale (admin): utenti, proprietà degli store, app POS, isolamento
 cp "$work/w/state.json" "$work/w/final.json"

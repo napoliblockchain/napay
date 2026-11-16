@@ -1,6 +1,7 @@
 <?php
 use kartik\detail\DetailView;
 use yii\helpers\Html;
+use app\components\btcpay\provisioning\ProvisioningStatus;
 
 ?>
 
@@ -34,6 +35,12 @@ use yii\helpers\Html;
         'email:email',
         'phone',
         'mobile',
+        [
+            'label' => Yii::t('app', 'BTCPay account'),
+            'format' => 'raw',
+            'value' => ProvisioningStatus::badge($btcpayState = ProvisioningStatus::merchant((int) $model->id)),
+            'visible' => $btcpayState !== null,
+        ],
     ],
 ]) ?>
 

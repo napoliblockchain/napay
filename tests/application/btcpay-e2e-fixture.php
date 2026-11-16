@@ -50,6 +50,11 @@ try {
             'stores' => $q('SELECT merchant_id, store_id, remote_store_id, state FROM btcpay_store_links WHERE instance=:i ORDER BY merchant_id'),
             'pos' => $q('SELECT merchant_id, store_id, terminal_id, remote_app_id, state FROM btcpay_pos_links WHERE instance=:i ORDER BY merchant_id'),
             'jobs' => $q('SELECT kind, merchant_id, state, attempts, last_error_code FROM btcpay_provisioning_jobs WHERE instance=:i ORDER BY id'),
+            // stato mostrato nel backoffice (SIP-022 B5)
+            'status' => array_merge(
+                array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::merchant((int) $r['merchant_id']), $q('SELECT merchant_id FROM btcpay_merchant_accounts WHERE instance=:i')),
+                array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::store((int) $r['store_id']), $q('SELECT store_id FROM btcpay_store_links WHERE instance=:i')),
+                array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::terminal((int) $r['terminal_id']), $q('SELECT terminal_id FROM btcpay_pos_links WHERE instance=:i'))),
         ], JSON_THROW_ON_ERROR), "\n";
     } else exit(1);
 } catch (Throwable $error) { fwrite(STDERR, 'E2E fixture failed: ' . get_class($error) . ' at line ' . $error->getLine() . "\n"); exit(1); }

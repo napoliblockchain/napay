@@ -4,6 +4,7 @@ use yii\helpers\Html;
 use app\components\Crypt;
 use app\components\web\LinkPager;
 use app\components\pos\management\PosInvitations;
+use app\components\btcpay\provisioning\ProvisioningStatus;
 
 /* @var $this yii\web\View */
 /* @var $admin bool */
@@ -59,7 +60,8 @@ $tabs = [
                 <tr>
                     <?php if ($admin): ?><td><?= Html::encode($t['merchant']) ?></td><?php endif; ?>
                     <td><?= Html::encode($t['store'] . ' - ' . $t['name']) ?></td>
-                    <td><?= $this->render('_status', ['enabled' => (int) $t['is_enabled'] === 1]) ?></td>
+                    <td><?= $this->render('_status', ['enabled' => (int) $t['is_enabled'] === 1]) ?>
+                        <?php $btcpay = ProvisioningStatus::badge(ProvisioningStatus::terminal((int) $t['id'])); if ($btcpay !== ''): ?><div class="mt-1"><?= $btcpay ?></div><?php endif; ?></td>
                     <?php $open = $openings[$t['id']] ?? null; ?>
                     <td>
                         <?php if ($open === null): ?>

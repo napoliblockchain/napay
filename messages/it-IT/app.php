@@ -540,4 +540,10 @@ return [
     'BTCPay could not update the store. Try again later.' => 'BTCPay non ha aggiornato il negozio. Riprova più tardi.',
     'Store not saved. Try again.' => 'Negozio non salvato. Riprova.',
     'Edit store: {name}' => 'Modifica negozio: {name}',
+    'Linked to BTCPay' => 'Collegato a BTCPay',
+    'BTCPay check in progress' => 'Verifica BTCPay in corso',
+    'BTCPay link error: contact the administrator' => 'Errore di collegamento a BTCPay: contatta l\'amministrazione',
+    'BTCPay link in progress' => 'Collegamento a BTCPay in corso',
+    'BTC payments' => 'Pagamenti BTC',
+    'BTCPay account' => 'Account BTCPay',
 ];
