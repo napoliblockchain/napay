@@ -14,7 +14,6 @@ use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
 
-
 /**
  * PrivilegesController implements the CRUD actions for Privileges model.
  */
@@ -94,14 +93,12 @@ class PrivilegesController extends Controller
 
         if ($model->load(Yii::$app->request->post()) && $model->save()) {
             Yii::$app->session->setFlash('success', Yii::t('app', 'Profilo creato correttamente'));
-            // Log message
             $message_log = Yii::t('app', 'User {user} has created a new {item}: {itemname}', [
                 'user' => Yii::$app->user->identity->username,
                 'item' => Yii::$app->controller->id,
                 'itemname' => $model->description
             ]);
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-            // end log message
             return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
         }
 
@@ -123,14 +120,12 @@ class PrivilegesController extends Controller
 
         if ($model->load(Yii::$app->request->post()) && $model->save()) {
             Yii::$app->session->setFlash('success', Yii::t('app', 'Profilo aggiornato correttamente'));
-            // Log message
             $message_log = Yii::t('app', 'User {user} has updated {item}: {itemname}', [
                 'user' => Yii::$app->user->identity->username,
                 'item' => Yii::$app->controller->id,
                 'itemname' => $model->description
             ]);
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-            // end log message
             return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
         }
 
@@ -148,14 +143,12 @@ class PrivilegesController extends Controller
      */
     public function actionDelete($id)
     {
-        // Log message
         $message_log = Yii::t('app', 'User {user} has deleted {item}: {itemname}', [
             'user' => Yii::$app->user->identity->username,
             'item' => Yii::$app->controller->id,
             'itemname' => $model->description
         ]);
         Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-        // end log message
         // il delete viene dopo il log, altrimenti va in errore
         $this->findModel(Crypt::encrypt($id))->delete();
         return $this->redirect(['index']);

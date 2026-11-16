@@ -2,13 +2,10 @@
 
 namespace app\controllers;
 
-use Yii;
-
 use yii\web\Controller;
 use yii\filters\AccessControl;
 
 use app\components\User;
-
 
 /**
  * AdminController implements the CRUD actions for Logs model.
@@ -39,7 +36,6 @@ class AdminController extends Controller
         ];
     }
    
-
 
     /**
      * Lists all Logs models.

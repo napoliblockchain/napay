@@ -22,7 +22,6 @@ use app\components\geo\ItalianMunicipalities;
 use app\models\Users;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use yii\helpers\Json;
 
 /**
  * MerchantsController implements the CRUD actions for Merchants model.
@@ -86,7 +85,6 @@ class MerchantsController extends Controller
             ]
         ];
     }
-
 
     /**
      * Lists all Merchants models.
@@ -221,14 +219,12 @@ class MerchantsController extends Controller
         $model->user_id = $ownerId;
         if ($loaded && $model->save()) {
             Yii::$app->session->setFlash('success', Yii::t('app', 'Esercente aggiornato correttamente'));
-            // Log message
             $message_log = Yii::t('app', 'User {user} has updated {item}: {itemname}', [
                 'user' => Yii::$app->user->identity->username,
                 'item' => Yii::$app->controller->id,
                 'itemname' => $model->description
             ]);
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-            // end log message
             return $this->redirect($ownCompany ? ['company'] : ['view', 'id' => Crypt::encrypt($model->id)]);
         }
 
@@ -249,14 +245,12 @@ class MerchantsController extends Controller
     {
         $model = $this->findModel($id);
         
-        // Log message
         $message_log = Yii::t('app', 'User {user} has deleted {item}: {itemname}', [
             'user' => Yii::$app->user->identity->username,
             'item' => Yii::$app->controller->id,
             'itemname' => $model->description
         ]);
         Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-        // end log message
 
         $model->delete();
         return $this->redirect(['index']);
@@ -267,10 +261,6 @@ class MerchantsController extends Controller
      */
     public function actionExport()
     {
-//         echo '<pre>' . print_r(Yii::$app->request->queryParams, true) . '</pre>';
-// exit;
-
-
         $searchModel = new MerchantsSearch();
         $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
         $dataProvider->sort->defaultOrder = ['description' => SORT_ASC];

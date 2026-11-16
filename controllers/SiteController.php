@@ -5,7 +5,6 @@ namespace app\controllers;
 use Yii;
 use yii\filters\AccessControl;
 use yii\web\Controller;
-use yii\web\Response;
 use yii\filters\VerbFilter;
 use app\models\forms\LoginForm;
 use app\models\forms\SignupForm;
@@ -25,10 +24,6 @@ use yii\web\BadRequestHttpException;
 use yii\base\InvalidArgumentException;
 
 use app\models\search\MembersSearch;
-use app\models\search\MerchantsSearch;
-use app\models\search\StoresSearch;
-use app\models\search\PosSearch;
-use app\models\search\InvoicesSearch;
 
 class SiteController extends Controller
 {
@@ -50,10 +45,10 @@ class SiteController extends Controller
         return [
             'access' => [
                 'class' => AccessControl::class,
-                'only' => ['logout','dashboard'],
+                'only' => ['logout'],
                 'rules' => [
                     [
-                        'actions' => ['logout','dashboard'],
+                        'actions' => ['logout'],
                         'allow' => true,
                         'roles' => ['@'],
                         'denyCallback' => function ($rule, $action) {
@@ -105,53 +100,6 @@ class SiteController extends Controller
             return $this->redirect(['site/login']);
         }
 
-        // // esercenti
-        // $searchMerchants = new MerchantsSearch();
-        // $dataMerchants = $searchMerchants->search(Yii::$app->request->queryParams);
-        // $dataMerchants->query->andwhere(['=', 'historical', 0]);
-        // if (User::isMerchant() || User::isUser()) {
-        //     $dataMerchants->query->andwhere(['=', 'id', Yii::$app->user->identity->merchant_id]);
-        // }
-        // $dataMerchants->pagination->pageSize = 5;
-        // $dataMerchants->sort->defaultOrder = ['description' => SORT_ASC];
-
-        // // negozi
-        // $searchStores = new StoresSearch();
-        // $dataStores = $searchStores->search(Yii::$app->request->queryParams);
-        // $dataStores->query->andwhere(['=', 'stores.historical', 0]);
-        // if (User::isUser()) {
-        //     $dataStores->query->andwhere(['=', 'stores.id', Yii::$app->user->identity->store_id]);
-        // }
-        // $dataStores->pagination->pageSize = 5;
-        // $dataStores->sort->defaultOrder = ['description' => SORT_ASC];
-
-        // // pos
-        // $searchPos = new PosSearch();
-        // $dataPos = $searchPos->search(Yii::$app->request->queryParams);
-        // $dataPos->query->andwhere(['=', 'pos.historical', 0]);
-        // if (User::isMerchant()) {
-        //     $dataPos->query->andwhere(['=', 'pos.merchant_id', Yii::$app->user->identity->merchant_id]);
-        // }
-        // if (User::isUser()) {
-        //     $dataPos->query->andwhere(['=', 'pos.store_id', Yii::$app->user->identity->store_id]);
-        // }
-        // $dataPos->pagination->pageSize = 5;
-        // $dataPos->sort->defaultOrder = ['appName' => SORT_ASC];
-
-
-        // // invoices
-        // $searchInvoices = new InvoicesSearch();
-        // $dataInvoices = $searchInvoices->search(Yii::$app->request->queryParams);
-        // $dataInvoices->query->andwhere(['=', 'invoices.archived', 0]);
-        // $dataInvoices->pagination->pageSize = 5;
-        // if (User::isMerchant()) {
-        //     $dataInvoices->query->andwhere(['=', 'invoices.merchant_id', Yii::$app->user->identity->merchant_id]);
-        // }
-        // if (User::isUser()) {
-        //     $dataInvoices->query->andwhere(['=', 'invoices.store_id', Yii::$app->user->identity->store_id]);
-        // }
-        // $dataInvoices->sort->defaultOrder = ['id' => SORT_DESC];
-
         // riepilogo incassi TTS e saldo del wallet (gestore e admin, stesso scope di Incassi)
         $scope = \app\components\pos\management\Scope::current();
         return $this->render('index', [
@@ -160,10 +108,6 @@ class SiteController extends Controller
             'requests' => User::isAdministrator() ? \app\components\association\MembershipRequests::count() : null,
             // soci per stato della quota (solo admin): al clic la lista Soci con lo stesso filtro
             'members' => User::isAdministrator() ? self::memberCounts() : null,
-            // 'dataMerchants' => $dataMerchants,
-            // 'dataStores' => $dataStores,
-            // 'dataPos' => $dataPos,
-            // 'dataInvoices' => $dataInvoices,
         ]);
         
     }
@@ -215,17 +159,14 @@ class SiteController extends Controller
      */
     public function actionLogout()
     {
-        // Log message
         $message_log = Yii::t('app', 'User {user} has logged out.', [
             'user' => Yii::$app->user->identity->username,
         ]);
         Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-        // end log message
 
         Yii::$app->user->logout();
         return $this->redirect(['site/login']);
 
-        // return $this->goHome();
     }
 
     /** Soci iscritti, in regola, in scadenza e scaduti: stessi filtri della lista Soci (MembersSearch). */
@@ -255,11 +196,9 @@ class SiteController extends Controller
         $consensus = new UserConsensus();
 
         $post = Yii::$app->request->post();
-        // echo "<pre>".print_r($post,true)."</pre>";exit;
 
         if (isset($post['SignupForm']) && isset($post['UserConsensus'])) {
             if ($model->load(Yii::$app->request->post()) && $consensus->load(Yii::$app->request->post())) {
-
                 $invalidConsent = false;
                 foreach (['consenso_statuto', 'consenso_privacy', 'consenso_condizioni', 'consenso_marketing'] as $attribute) {
                     $value = $consensus->$attribute;
@@ -276,7 +215,6 @@ class SiteController extends Controller
                 $transaction = $connection->beginTransaction();
                 try {
                     if ($user = $model->signup()){
-                        // echo "<pre>" . print_r($user->attributes, true) . "</pre>";exit;
                         $consensus->user_id = $user->id;
                         $consensus->consenso_condizioni_pos = 0;
                         if (!$invalidConsent && $consensus->save()){
@@ -287,12 +225,10 @@ class SiteController extends Controller
                             // invio la mail all'utente
                             $sent = sendMail::toUser($user, ['html' => 'newAccountUser', 'text' => 'newAccountUser-text'], 'Nuovo account');
 
-                            // Log message
                             $message_log = Yii::t('app', 'User {user} has signup succesfully.', [
                                 'user' => $user->username,
                             ]);
                             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-                            // end log message
 
                             Yii::$app->session->setFlash('success', $sent ? 'Utente registrato con successo' : 'Registrazione completata. Se non ricevi la mail, richiedi un nuovo link di attivazione dal login.');
                             return $this->redirect(['site/index']);
@@ -313,13 +249,11 @@ class SiteController extends Controller
                 $p = '<p>C\'è stato un errore.</p>';
                 $errors = $model->getErrors();
                 foreach ($errors as $id => $error) {
-                    // echo "<pre>".print_r($error,true)."</pre>";exit;
                     foreach ($error as $e)
                         $p .= '<p>' . $e . '</p>';
                 }
                 $errors = $consensus->getErrors();
                 foreach ($errors as $id => $error) {
-                    // echo "<pre>".print_r($error,true)."</pre>";exit;
                     foreach ($error as $e)
                         $p .= '<p>' . $e . '</p>';
                 }
@@ -328,13 +262,11 @@ class SiteController extends Controller
             }
         }
 
-        // $model->password = '';
         return $this->render('signup', [
             'model' => $model,
             'consensus' => $consensus,
         ]);
     }
-
 
     /**
      * Activate registered user.
@@ -379,12 +311,10 @@ class SiteController extends Controller
 
         $model = new PasswordResetRequestForm();
         if ($model->load(Yii::$app->request->post()) && $model->validate()) {
-            
             $model->sendEmail();
 
             $message_log = 'Password reset request received.';
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-            // end log message
             
             Yii::$app->session->setFlash('success', 'Check your email for further instructions.');
             return $this->redirect(['/site/login']);

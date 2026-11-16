@@ -121,7 +121,6 @@ class LogsController extends Controller
         return ($colNum < 26 ? chr(65 + $colNum) : chr(65 + floor($colNum / 26) - 1) . chr(65 + ($colNum % 26)));
     }   
 
-
     /**
      * Lists all Logs models.
      * @return mixed

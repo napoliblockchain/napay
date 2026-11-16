@@ -19,7 +19,6 @@ use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
 use yii\helpers\ArrayHelper;
 
-
 use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
@@ -28,7 +27,6 @@ use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
 use PhpOffice\PhpSpreadsheet\Cell\DataType;
 use yii\helpers\Json;
-
 
 /**
  * UsersController implements the CRUD actions for Users model.
@@ -146,14 +144,9 @@ class UsersController extends Controller
         $attributeLabels = [
             'id' => Yii::t('app', 'ID'),
             'username' => Yii::t('app', 'Nome utente'),
-            // 'oauth_provider' => Yii::t('app', 'OAuth Provider'),
-            // 'oauth_uid' => Yii::t('app', 'OAuth ID'),
-            // 'authKey' => Yii::t('app', 'Auth Key'),
-            // 'accessToken' => Yii::t('app', 'Access Token'),
             'first_name' => Yii::t('app', 'Nome'),
             'last_name' => Yii::t('app', 'Cognome'),
             'email' => Yii::t('app', 'Email'),
-            // 'picture' => Yii::t('app', 'Picture'),
             'privilege.description' => Yii::t('app', 'Profilo'),
             'merchant.description' => Yii::t('app', 'Esercente'),
             'store.description' => Yii::t('app', 'Negozio'),
@@ -224,7 +217,6 @@ class UsersController extends Controller
      */
     public function actionIndex()
     {
-        
         if (User::canManageUsers()) {
             $searchModel = new UsersSearch();
             $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
@@ -353,6 +345,5 @@ class UsersController extends Controller
         }
         return $model;
     }
-
 
 }
