@@ -5,11 +5,9 @@ use Yii;
 use yii\base\Model;
 use app\components\pos\tts\TtsAddress;
 
-/** SIP-021 fase 3: indirizzo wallet TTS del merchant; merchant e autore li decide il server. */
+/** Indirizzo wallet TTS del negozio (SIP-030); negozio e autore li decide il server. */
 class TtsWalletForm extends Model
 {
-    /** ID merchant cifrato con Crypt (solo admin) */
-    public $merchant;
     public $address;
 
     public function rules()
@@ -19,7 +17,6 @@ class TtsWalletForm extends Model
             ['address', 'required'],
             ['address', 'string', 'max' => 42],
             ['address', 'validateAddress'],
-            ['merchant', 'string', 'max' => 512],
         ];
     }
 
@@ -35,6 +32,6 @@ class TtsWalletForm extends Model
 
     public function attributeLabels()
     {
-        return ['merchant' => Yii::t('app', 'Merchant'), 'address' => Yii::t('app', 'TTS wallet address')];
+        return ['address' => Yii::t('app', 'TTS wallet address')];
     }
 }

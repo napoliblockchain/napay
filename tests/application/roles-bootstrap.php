@@ -39,8 +39,8 @@ try {
     $web->query('SELECT id FROM pos_terminal_openings')->fetchAll(); check(true, 'Web reads POS opening history');
     rejected(static fn() => $web->exec('DELETE FROM pos_terminal_openings WHERE 1=0'), 'Web cannot delete POS opening history');
     rejected(static fn() => $worker->query('SELECT id FROM pos_terminal_openings')->fetchAll(), 'BTCPay worker cannot read POS openings');
-    $web->exec('DELETE FROM merchant_tts_wallets WHERE 1=0'); check(true, 'Web can remove a merchant TTS wallet');
-    foreach (['pos_tts_payments' => 'id', 'merchant_tts_wallets' => 'merchant_id'] as $table => $column) {
+    $web->exec('DELETE FROM store_tts_wallets WHERE 1=0'); check(true, 'Web can remove a store TTS wallet');
+    foreach (['pos_tts_payments' => 'id', 'store_tts_wallets' => 'store_id'] as $table => $column) {
         $web->query("SELECT $column FROM $table")->fetchAll(); check(true, 'Web reads TTS table ' . $table);
         if ($table === 'pos_tts_payments') rejected(static fn() => $web->exec("DELETE FROM $table WHERE 1=0"), 'Web cannot delete TTS payments');
         rejected(static fn() => $worker->query("SELECT $column FROM $table")->fetchAll(), 'BTCPay worker cannot read TTS table ' . $table);

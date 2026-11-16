@@ -7,6 +7,7 @@ use app\components\User;
 /* @var $this yii\web\View */
 /* @var $model app\models\Stores */
 /* @var $linked bool negozio già collegato a uno store BTCPay */
+/* @var $ttsWallet string|null indirizzo wallet TTS del negozio (SIP-030) */
 
 $this->title = Yii::t('app', 'Negozio') . ': ' . $model->description;
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Stores'), 'url' => ['index']];
@@ -49,11 +50,17 @@ $this->params['breadcrumbs'][] = $this->title;
                                 // 'visible' => !is_null($model),
                             ],
                             [
-                                'label' => Yii::t('app', 'Wallet'),
+                                'label' => Yii::t('app', 'BTC wallet'),
                                 'encode' => false,
                                 'options' => ['id' => 'tab-wallet'],
                                 'content' => $this->render('_details-wallet', ['model' => $model]),
                                 'visible' => User::isMerchant(),
+                            ],
+                            [
+                                'label' => Yii::t('app', 'TTS wallet'),
+                                'encode' => false,
+                                'options' => ['id' => 'tab-tts-wallet'],
+                                'content' => $this->render('_details-tts-wallet', ['model' => $model, 'ttsWallet' => $ttsWallet]),
                             ],
                             [
                                 'label' => Yii::t('app', 'Tassi di cambio'),

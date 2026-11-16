@@ -37,8 +37,9 @@ final class PaymentTotals
 
     /**
      * Riepilogo per la dashboard: incassato oggi e nel mese (ora di Roma), richieste in attesa e, solo per il gestore,
-     * il saldo reale del wallet TTS letto dalla chain (null se non impostato o chain non raggiungibile).
-     * @return array{today:int, month:int, pending:int, wallet:?string, balance:?int}
+     * il saldo reale dei wallet TTS dei suoi negozi letto dalla chain: somma degli indirizzi distinti
+     * (null se nessuno è impostato o la chain non risponde).
+     * @return array{today:int, month:int, pending:int, wallets:string[], balance:?int}
      */
     public static function dashboard(Scope $scope): array
     {
@@ -47,17 +48,18 @@ final class PaymentTotals
             'today' => self::byState(self::scoped($scope, $now->setTime(0, 0)->getTimestamp()))['paid']['cents'],
             'month' => self::byState(self::scoped($scope, $now->modify('first day of this month')->setTime(0, 0)->getTimestamp()))['paid']['cents'],
             'pending' => self::byState(self::scoped($scope))['pending']['count'],
-            'wallet' => null,
+            'wallets' => [],
             'balance' => null,
         ];
         if ($scope->isAdmin()) return $summary;
-        $wallet = Yii::$app->db->createCommand('SELECT address FROM {{%merchant_tts_wallets}} WHERE merchant_id=:m', [':m' => $scope->merchantId])->queryScalar();
-        if ($wallet === false) return $summary;
-        $summary['wallet'] = $wallet;
+        $summary['wallets'] = Yii::$app->db->createCommand('SELECT DISTINCT address FROM {{%store_tts_wallets}} WHERE merchant_id=:m ORDER BY address', [':m' => $scope->merchantId])->queryColumn();
+        if ($summary['wallets'] === []) return $summary;
         try {
             $chain = TtsChain::fromEnv();
-            $balance = $chain === null ? null : $chain->balanceOf($wallet);
-            $summary['balance'] = $balance !== null && strlen($balance) < 16 ? (int) $balance : null;
+            if ($chain === null) return $summary;
+            $total = '0';
+            foreach ($summary['wallets'] as $wallet) $total = gmp_strval(gmp_add($total, $chain->balanceOf($wallet)));
+            $summary['balance'] = strlen($total) < 16 ? (int) $total : null;
         } catch (\Throwable $e) {
             // chain non raggiungibile o non configurata: la dashboard resta disponibile senza saldo
             $summary['balance'] = null;

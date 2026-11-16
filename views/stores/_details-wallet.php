@@ -1,9 +1,8 @@
 <?php
 
+/* Wallet BTC del negozio (derivazione BTCPay), in sola lettura: la modifica passa dal provisioning (SIP-022). */
+
 use yii\helpers\Html;
-use yii\helpers\Url;
-use app\components\Crypt;
-use app\components\User;
 use kartik\detail\DetailView;
 
 ?>
@@ -42,11 +41,3 @@ use kartik\detail\DetailView;
 
     ],
 ]) ?>
-
-<div class="card-footer">
-    <div class="d-flex flex-row">
-        <div class="p-1">
-            <?= Html::a('<i class="fas fa-pen"></i> ' . Yii::t('app', 'Update'), ['update-wallet', 'id' => Crypt::encrypt($model->id)], ['class' => 'btn btn-primary']) ?>
-        </div>
-    </div>
-</div>

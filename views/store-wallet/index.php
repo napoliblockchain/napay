@@ -2,37 +2,39 @@
 
 use yii\helpers\Html;
 use yii\bootstrap5\ActiveForm;
-use app\assets\MerchantWalletAsset;
+use app\assets\StoreWalletAsset;
 
 /* @var $this yii\web\View */
 /* @var $form app\models\forms\pos\TtsWalletForm */
 /* @var $current array|null wallet salvato: address, updated_at */
-/* @var $merchants array ID merchant cifrato => nome (solo admin) */
-/* @var $merchant string|null merchant selezionato (ID cifrato, solo admin) */
-/* @var $selected bool merchant determinato */
+/* @var $stores array ID negozio cifrato => nome (in scope) */
+/* @var $store string|null negozio selezionato (ID cifrato) */
 /* @var $editing bool form visibile: nessun indirizzo, modifica richiesta o errori */
 
-MerchantWalletAsset::register($this);
-$back = $merchant === null ? ['index'] : ['index', 'merchant' => $merchant];
+StoreWalletAsset::register($this);
+$back = ['index', 'store' => $store];
 
 $this->title = Yii::t('app', 'TTS wallet');
+$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Stores'), 'url' => ['stores/index']];
 $this->params['breadcrumbs'][] = $this->title;
 ?>
-<?php if ($merchants !== []): ?>
+<?php if (count($stores) > 1): ?>
 <div class="card mb-3">
     <div class="card-body">
         <?= Html::beginForm(['index'], 'get', ['class' => 'd-flex gap-2']) ?>
-        <?= Html::dropDownList('merchant', $merchant, $merchants, ['class' => 'form-select', 'prompt' => Yii::t('app', 'Select the merchant'), 'aria-label' => Yii::t('app', 'Merchant')]) ?>
+        <?= Html::dropDownList('store', $store, $stores, ['class' => 'form-select', 'prompt' => Yii::t('app', 'Select the store'), 'aria-label' => Yii::t('app', 'Store')]) ?>
         <?= Html::submitButton(Html::encode(Yii::t('app', 'Open')), ['class' => 'btn btn-outline-secondary']) ?>
         <?= Html::endForm() ?>
     </div>
 </div>
+<?php elseif ($stores === []): ?>
+<div class="alert alert-info"><?= Html::encode(Yii::t('app', 'Create a store first: each store has its own TTS wallet.')) ?></div>
 <?php endif; ?>
-<?php if ($selected): ?>
+<?php if ($store !== null): ?>
 <div class="card">
-    <div class="card-header"><h3 class="card-title"><?= Html::encode($this->title) ?></h3></div>
+    <div class="card-header"><h3 class="card-title"><?= Html::encode($this->title . ' - ' . ($stores[$store] ?? '')) ?></h3></div>
     <div class="card-body">
-        <p class="text-secondary"><?= Html::encode(Yii::t('app', 'All POS terminals of the merchant receive TTS payments on this address.')) ?></p>
+        <p class="text-secondary"><?= Html::encode(Yii::t('app', 'The POS terminals of this store receive TTS payments on this address.')) ?></p>
         <?php if ($current !== null && !$editing): ?>
             <span class="form-label"><?= Html::encode(Yii::t('app', 'Current address')) ?></span>
             <div class="input-group mb-2">
@@ -44,14 +46,14 @@ $this->params['breadcrumbs'][] = $this->title;
             <div class="form-hint mb-3"><?= Html::encode(Yii::t('app', 'A transfer sent straight to this address is not a POS payment: payments are recognized only through the POS request (QR with reference).')) ?></div>
             <div class="d-flex gap-2">
                 <?= Html::a('<i class="fa fa-pen me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Edit')), $back + ['edit' => '1'], ['class' => 'btn btn-primary']) ?>
-                <?= Html::beginForm($merchant === null ? ['delete'] : ['delete', 'merchant' => $merchant], 'post', ['class' => 'd-inline']) ?>
+                <?= Html::beginForm(['delete', 'store' => $store], 'post', ['class' => 'd-inline']) ?>
                 <?= Html::submitButton('<i class="fa fa-trash me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Delete')), ['class' => 'btn btn-outline-danger',
-                    'data-confirm' => Yii::t('app', 'Remove the TTS wallet? New TTS payments will be refused until a new address is saved.')]) ?>
+                    'data-confirm' => Yii::t('app', 'Remove the TTS wallet of the store? New TTS payments of the store will be refused until a new address is saved.')]) ?>
                 <?= Html::endForm() ?>
             </div>
         <?php else: ?>
             <?php if ($current === null): ?>
-                <div class="alert alert-warning"><?= Html::encode(Yii::t('app', 'Not set: TTS payments are disabled.')) ?></div>
+                <div class="alert alert-warning"><?= Html::encode(Yii::t('app', 'Not set: TTS payments of this store are disabled.')) ?></div>
             <?php endif; ?>
             <?php $f = ActiveForm::begin(['id' => 'tts-wallet-form', 'action' => $back]); ?>
             <?= $f->field($form, 'address')->textInput(['maxlength' => 42, 'autocomplete' => 'off', 'spellcheck' => 'false', 'placeholder' => '0x…']) ?>

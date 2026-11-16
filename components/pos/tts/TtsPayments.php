@@ -46,7 +46,9 @@ final class TtsPayments
         $replay = self::replay($db, $session, $key, $request);
         if ($replay !== null) return [200, $replay];
         $opening = TerminalOpenings::requireUsable($session, $openingId, $instanceId, $generation);
-        $wallet = $db->createCommand('SELECT address FROM {{%merchant_tts_wallets}} WHERE merchant_id=:m', [':m' => (int) $opening['merchant_id']])->queryScalar();
+        // wallet del negozio del terminale (SIP-030): negozio senza indirizzo = incasso TTS non disponibile
+        $wallet = $db->createCommand('SELECT w.address FROM {{%pos_terminals}} t JOIN {{%store_tts_wallets}} w ON w.store_id=t.store_id AND w.merchant_id=t.merchant_id WHERE t.id=:t AND t.merchant_id=:m',
+            [':t' => (int) $opening['terminal_id'], ':m' => (int) $opening['merchant_id']])->queryScalar();
         if ($wallet === false) throw new PaymentException(PaymentException::UNAVAILABLE);
         // blocco di partenza letto prima della transazione: nessuna chiamata di rete sotto lock
         $startBlock = $chain->blockNumber();
@@ -64,7 +66,7 @@ final class TtsPayments
             }
             // scope riletto dopo i lock: grant, profilo e terminale ancora validi
             TerminalOpenings::requireUsable($session, $openingId, $instanceId, $generation);
-            $wallet = $db->createCommand('SELECT address FROM {{%merchant_tts_wallets}} WHERE merchant_id=:m', [':m' => $merchant])->queryScalar();
+            $wallet = $db->createCommand('SELECT address FROM {{%store_tts_wallets}} WHERE store_id=:s AND merchant_id=:m', [':s' => (int) $terminal['store_id'], ':m' => $merchant])->queryScalar();
             if ($wallet === false) throw new PaymentException(PaymentException::UNAVAILABLE);
             $now = time();
             $row = ['public_id' => self::uuid(), 'merchant_id' => $merchant, 'store_id' => (int) $terminal['store_id'], 'terminal_id' => (int) $terminal['id'],

@@ -129,7 +129,7 @@ class StoresController extends Controller
         $model = $this->findModel(Crypt::decrypt($id));
 
         if (!$this->linked($model)) {
-            return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false]);
+            return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false, 'ttsWallet' => $this->ttsWallet($model)]);
         }
         $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
         $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
@@ -152,6 +152,7 @@ class StoresController extends Controller
             'model' => $model,
             'rates' => $value,
             'linked' => true,
+            'ttsWallet' => $this->ttsWallet($model),
         ]);
     }
 
@@ -1087,6 +1088,13 @@ class StoresController extends Controller
             // 'accountKeyPath' => null, //$settings->derivationAccountKeyPath,
 
         ]);
+    }
+
+    /** Indirizzo wallet TTS del negozio (SIP-030), null se non impostato. */
+    private function ttsWallet(Stores $model): ?string
+    {
+        $address = Yii::$app->db->createCommand('SELECT address FROM {{%store_tts_wallets}} WHERE store_id=:s', [':s' => (int) $model->id])->queryScalar();
+        return $address === false ? null : $address;
     }
 
     /** Negozio già collegato a uno store BTCPay. Prima del provisioning le pagine BTCPay non contattano il server. */

@@ -36,13 +36,18 @@ $member = AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
                 </a>
             </div>
         <?php endforeach; ?>
-        <?php if ($payments['wallet'] !== null): ?>
-            <!-- saldo reale sulla chain: comprende anche i trasferimenti fuori dal POS, quindi è separato dagli incassi -->
+        <?php if ($payments['wallets'] !== []): ?>
+            <!-- saldo reale sulla chain dei wallet dei negozi: comprende anche i trasferimenti fuori dal POS, quindi è separato dagli incassi -->
+            <?php $single = count($payments['wallets']) === 1 ? $payments['wallets'][0] : null; ?>
             <div class="col-sm-6 col-lg-3">
-                <a href="<?= Url::to(['merchant-wallet/index']) ?>" class="card card-sm h-100 p-3 text-reset text-decoration-none border-primary" data-dashboard="balance">
+                <a href="<?= Url::to(['store-wallet/index']) ?>" class="card card-sm h-100 p-3 text-reset text-decoration-none border-primary" data-dashboard="balance">
                     <span class="text-secondary"><span class="badge bg-primary me-2"></span><?= Html::encode(Yii::t('app', 'TTS wallet balance')) ?></span>
                     <span class="h2 mb-0 mt-1"><?= Html::encode($payments['balance'] === null ? Yii::t('app', 'Not available') : PaymentTotals::format($payments['balance'])) ?></span>
-                    <span class="small text-secondary text-truncate font-monospace" title="<?= Html::encode($payments['wallet']) ?>"><?= Html::encode(substr($payments['wallet'], 0, 10) . '…' . substr($payments['wallet'], -8)) ?></span>
+                    <?php if ($single !== null): ?>
+                        <span class="small text-secondary text-truncate font-monospace" title="<?= Html::encode($single) ?>"><?= Html::encode(substr($single, 0, 10) . '…' . substr($single, -8)) ?></span>
+                    <?php else: ?>
+                        <span class="small text-secondary"><?= Html::encode(Yii::t('app', '{n} wallets of the stores', ['n' => count($payments['wallets'])])) ?></span>
+                    <?php endif; ?>
                 </a>
             </div>
         <?php endif; ?>

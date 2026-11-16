@@ -16,6 +16,7 @@ $stateFile = '/tmp/napay-tts-state.json';
 $key = env_required('NAPAY_TEST_POS_CLIENT_KEY');
 $checks = 0; $jar = null; $secrets = [$key, 'fixture-password-only'];
 
+use app\components\Crypt;
 use app\components\pos\tts\TtsAddress;
 use app\components\pos\tts\TtsChain;
 use app\components\pos\tts\TtsChainException;
@@ -93,7 +94,14 @@ function webLogin(string $email): void {
     $page = web('/site/login');
     if (web('/site/login', ['_csrf' => csrf($page), 'LoginForm' => ['email' => $email, 'password' => 'fixture-password-only']])['status'] !== 302) throw new RuntimeException('Web login failed.');
 }
-function saveWallet(string $address): array { $page = web('/merchant-wallet/index'); return web('/merchant-wallet/index', ['_csrf' => csrf($page), 'TtsWalletForm' => ['address' => $address]]); }
+// ID cifrati legati alla sessione (Crypt): la chiave del negozio si legge dal selettore della pagina, come fa l'utente
+function walletUrl(?string $key, string $action = 'index'): string { return '/store-wallet/' . $action . ($key === null ? '' : '?store=' . urlencode($key)); }
+function storeKey(string $name): string {
+    if (!preg_match('~<option value="([^"]+)"[^>]*>' . preg_quote($name, '~') . '</option>~', web('/store-wallet/index')['body'], $m)) throw new RuntimeException('Store not listed: ' . $name);
+    return html_entity_decode($m[1]);
+}
+function saveWallet(string $address, ?string $store = null): array { $page = web(walletUrl($store)); return web(walletUrl($store), ['_csrf' => csrf($page), 'TtsWalletForm' => ['address' => $address]]); }
+function storeWallet(int $store) { return scalar('SELECT address FROM store_tts_wallets WHERE store_id=:s', [':s' => $store]); }
 function logged(string $needle): int { return (int) scalar('SELECT COUNT(*) FROM logs WHERE description LIKE :d', [':d' => '%' . $needle . '%']); }
 
 if ($phase === 'setup') {
@@ -114,7 +122,7 @@ if ($phase === 'setup') {
     putenv('TTS_TOKEN_ADDRESS');
     check(TtsChain::fromEnv() !== null, 'Container configuration restored');
 
-    // --- Fixture: merchant A (gestore runtime-merchant) con wallet, merchant B senza wallet
+    // --- Fixture: merchant A (gestore runtime-merchant) con due negozi, wallet solo sul primo; merchant B senza wallet
     $hash = password_hash('fixture-password-only', PASSWORD_BCRYPT);
     $level = fn(int $l) => (int) scalar('SELECT id FROM privileges WHERE level=:l ORDER BY id LIMIT 1', [':l' => $l]);
     $user = function (string $name, int $privilegeLevel) use ($db, $level, $hash): int {
@@ -134,58 +142,71 @@ if ($phase === 'setup') {
     $merchantB = (int) $db->lastInsertID;
     $store = function (int $merchantId, string $name) use ($db, $base): int {
         $db->createCommand()->insert('stores', ['merchant_id' => $merchantId, 'description' => $name] + $base)->execute();
-        return (int) $db->lastInsertID;
+        $id = (int) $db->lastInsertID;
+        // come la creazione dall'app: impostazioni del negozio senza collegamento BTCPay
+        $db->createCommand()->insert('storesettings', ['store_id' => $id, 'defaultCurrency' => 'EUR', 'speedPolicy' => 'MediumSpeed', 'requiresRefundEmail' => 1,
+            'receipt' => json_encode(['enabled' => 1, 'showQR' => 1, 'showPayments' => 1])])->execute();
+        return $id;
     };
-    $storeA = $store($merchantA, 'TTS A1'); $storeB = $store($merchantB, 'TTS B1');
+    $storeA = $store($merchantA, 'TTS A1'); $storeA2 = $store($merchantA, 'TTS A2'); $storeB = $store($merchantB, 'TTS B1');
     $opU = $user('tt-op-u', 0); $opB = $user('tt-op-b', 0);
-    foreach ([[$opU, $merchantA, $storeA], [$opB, $merchantB, $storeB]] as [$u, $m, $s]) {
+    foreach ([[$opU, $merchantA, [$storeA, $storeA2]], [$opB, $merchantB, [$storeB]]] as [$u, $m, $stores]) {
         $db->createCommand()->insert('pos_operators', ['user_id' => $u, 'merchant_id' => $m] + $on)->execute();
-        $db->createCommand()->insert('pos_store_operators', ['user_id' => $u, 'merchant_id' => $m, 'store_id' => $s] + $on)->execute();
+        foreach ($stores as $s) $db->createCommand()->insert('pos_store_operators', ['user_id' => $u, 'merchant_id' => $m, 'store_id' => $s] + $on)->execute();
     }
     $terminal = function (int $merchantId, int $storeId, string $name) use ($db, $now): string {
         $id = uuid();
         $db->createCommand()->insert('pos_terminals', ['public_id' => $id, 'merchant_id' => $merchantId, 'store_id' => $storeId, 'name' => $name, 'is_enabled' => 1, 'created_at' => $now, 'updated_at' => $now])->execute();
         return $id;
     };
-    $tA = $terminal($merchantA, $storeA, 'Cassa TTS A'); $tB = $terminal($merchantB, $storeB, 'Cassa TTS B');
-    check((int) scalar('SELECT COUNT(*) FROM pos_tts_payments') === 0 && (int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets') === 0, 'Schema present, no payments or wallets provisioned');
+    $tA = $terminal($merchantA, $storeA, 'Cassa TTS A'); $tA2 = $terminal($merchantA, $storeA2, 'Cassa TTS A2'); $tB = $terminal($merchantB, $storeB, 'Cassa TTS B');
+    check((int) scalar('SELECT COUNT(*) FROM pos_tts_payments') === 0 && (int) scalar('SELECT COUNT(*) FROM store_tts_wallets') === 0, 'Schema present, no payments or wallets provisioned');
+    check($db->getTableSchema('merchant_tts_wallets', true) === null, 'Merchant-level wallet table removed by the migration');
 
-    // --- Backoffice: wallet del merchant (gestore sul proprio merchant)
+    // --- Backoffice: wallet TTS per negozio (gestore sui negozi del proprio merchant)
     $jar = tempnam(sys_get_temp_dir(), 'napay-tts-');
-    check(web('/merchant-wallet/index')['status'] === 302, 'Anonymous visitor redirected to login');
+    $foreign = Crypt::encrypt($storeA); // cifrato fuori dalla sessione del browser: non valido per nessuna pagina
+    check(web(walletUrl($foreign))['status'] === 302, 'Anonymous visitor redirected to login');
     webLogin('tt-op-u@example.invalid');
-    check(web('/merchant-wallet/index')['status'] === 403, 'Operator cannot manage merchant wallets');
+    check(web(walletUrl($foreign))['status'] === 403 && web(walletUrl(null))['status'] === 403, 'Operator cannot manage store wallets');
     webLogin('tt-manager-b@example.invalid');
-    check(web('/merchant-wallet/index?merchant=' . urlencode(base64_encode((string) $merchantA)))['status'] === 200
-        && saveWallet(strtolower(TtsAddress::normalize('0x' . bin2hex(random_bytes(20)))))['status'] === 302
-        && (int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantA]) === 0, 'Manager B writes only its own merchant, merchant parameter ignored');
-    check($db->createCommand()->delete('merchant_tts_wallets', ['merchant_id' => $merchantB])->execute() === 1, 'Manager B wallet stored on merchant B (removed again for the no-wallet case)');
+    check(web(walletUrl($foreign))['status'] === 404 && web(walletUrl('not-encrypted'))['status'] === 404 && !str_contains(web(walletUrl(null))['body'], 'TTS A1')
+        && storeWallet($storeA) === false, 'Manager B: stores of merchant A not listed, foreign or malformed store key 404');
+    check(saveWallet(strtolower(TtsAddress::normalize('0x' . bin2hex(random_bytes(20)))))['status'] === 302 && storeWallet($storeB) !== false
+        && $db->createCommand()->delete('store_tts_wallets', ['store_id' => $storeB])->execute() === 1, 'Single store opened by default: wallet stored on store B (removed again for the no-wallet case)');
     webLogin('merchant@example.invalid');
-    check(web('/merchant-wallet/index')['status'] === 200, 'Manager opens the TTS wallet page');
+    $choose = web(walletUrl(null));
+    check($choose['status'] === 200 && str_contains($choose['body'], 'name="store"') && str_contains($choose['body'], 'TTS A2') && !str_contains($choose['body'], 'TTS B1')
+        && !str_contains($choose['body'], 'TtsWalletForm[address]'), 'Manager with two stores chooses the store first, only own stores listed');
+    $keyA = storeKey('TTS A1');
+    check(web(walletUrl($keyA))['status'] === 200, 'Manager opens the TTS wallet of a store');
     $wallet = TtsAddress::normalize('0x' . bin2hex(random_bytes(20)));
     $badCase = $wallet; $pos = strcspn(substr($badCase, 2), 'abcdefABCDEF') + 2; $badCase[$pos] = ctype_upper($badCase[$pos]) ? strtolower($badCase[$pos]) : strtoupper($badCase[$pos]);
     foreach (['not-an-address' => 'malformed', $badCase => 'checksum mismatch', '0x' . str_repeat('0', 40) => 'zero address'] as $bad => $label) {
-        $r = saveWallet($bad);
-        check($r['status'] === 200 && (int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets') === 0, 'Wallet refused: ' . $label);
+        $r = saveWallet($bad, $keyA);
+        check($r['status'] === 200 && (int) scalar('SELECT COUNT(*) FROM store_tts_wallets') === 0, 'Wallet refused: ' . $label);
     }
-    $r = saveWallet(strtolower($wallet));
-    check($r['status'] === 302 && scalar('SELECT address FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantA]) === $wallet
-        && (int) scalar('SELECT updated_by FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantA]) === $managerA, 'Lowercase address stored in EIP-55 form with author');
-    $page = web('/merchant-wallet/index')['body'];
+    $r = saveWallet(strtolower($wallet), $keyA);
+    check($r['status'] === 302 && storeWallet($storeA) === $wallet && storeWallet($storeA2) === false
+        && (int) scalar('SELECT updated_by FROM store_tts_wallets WHERE store_id=:s', [':s' => $storeA]) === $managerA, 'Lowercase address stored in EIP-55 form on that store only, with author');
+    $page = web(walletUrl($keyA))['body'];
     check(str_contains($page, $wallet) && str_contains($page, 'data-copy-target') && !str_contains($page, 'TtsWalletForm[address]')
-        && str_contains($page, '/merchant-wallet/delete'), 'Saved address shown read-only with copy, edit and delete');
-    check(str_contains(web('/merchant-wallet/index?edit=1')['body'], 'TtsWalletForm[address]'), 'Edit shows the form again');
-    check(logged('Wallet TTS del merchant ' . $merchantA) === 1, 'Wallet change audited');
-    check((int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets WHERE merchant_id=:m', [':m' => $merchantB]) === 0, 'Manager A cannot touch merchant B');
+        && str_contains($page, '/store-wallet/delete'), 'Saved address shown read-only with copy, edit and delete');
+    check(str_contains(web(walletUrl($keyA) . '&edit=1')['body'], 'TtsWalletForm[address]'), 'Edit shows the form again');
+    check(logged('Wallet TTS del negozio ' . $storeA) === 1, 'Wallet change audited');
+    $storePage = web('/stores/view?id=' . urlencode($keyA))['body'];
+    check(str_contains($storePage, 'data-store-tts-wallet') && str_contains($storePage, $wallet) && str_contains($storePage, '/store-wallet/index?store='), 'Store page shows its TTS wallet with the manage link');
 
     // --- API: sessioni e aperture
     $u = apiLogin('tt-op-u@example.invalid'); $u2 = apiLogin('tt-op-u@example.invalid'); $b = apiLogin('tt-op-b@example.invalid');
     fresh();
     $open = fn(string $token, string $terminalId) => api('POST', 'terminals/' . $terminalId . '/openings', $token, ['instance_id' => uuid()], uuid())['json'];
-    $oA = $open($u, $tA); $oB = $open($b, $tB);
-    check(($oA['state'] ?? null) === 'active' && ($oB['state'] ?? null) === 'active', 'Terminals opened for both merchants');
+    $oA = $open($u, $tA); $oB = $open($b, $tB); $oA2 = $open($u2, $tA2);
+    check(($oA['state'] ?? null) === 'active' && ($oB['state'] ?? null) === 'active' && ($oA2['state'] ?? null) === 'active', 'Terminals opened for both merchants');
     $r = pay($b, $oB, 1000);
-    check($r['status'] === 503 && code($r) === 'payment_unavailable' && noLeak($r), 'Merchant without wallet: 503 payment_unavailable');
+    check($r['status'] === 503 && code($r) === 'payment_unavailable' && noLeak($r), 'Store without wallet: 503 payment_unavailable');
+    $r = pay($u2, $oA2, 1000);
+    check($r['status'] === 503 && code($r) === 'payment_unavailable', 'Second store of the same merchant without wallet: 503 (the other store wallet is not used)');
 
     // --- Validazione: nulla viene creato
     foreach ([0, -5, 100001, '1000', 10.5, null] as $bad) {
@@ -251,7 +272,7 @@ if ($phase === 'setup') {
         ['label' => 'other_to', 'to' => $other, 'cents' => 900, 'ref' => $ref('other_to')],
         ['label' => 'cancel', 'to' => $wallet, 'cents' => 100, 'ref' => $ref('cancel')],
     ];
-    file_put_contents($stateFile, json_encode(['u' => $u, 'manager' => 'merchant@example.invalid', 'terminal' => $tA, 'opening' => $oA, 'payments' => $created, 'plan' => $plan, 'wallet' => $wallet]));
+    file_put_contents($stateFile, json_encode(['u' => $u, 'manager' => 'merchant@example.invalid', 'terminal' => $tA, 'opening' => $oA, 'payments' => $created, 'plan' => $plan, 'wallet' => $wallet, 'store' => $storeA]));
     file_put_contents('/tmp/napay-tts-plan.json', json_encode($plan));
     printf("PASS %d TTS payment setup checks\n", $checks);
     exit(0);
@@ -329,8 +350,8 @@ if ($phase === 'verify') {
     check(preg_match('~data-dashboard="today"[\s\S]*?' . preg_quote($euro($paidCents), '~') . '~', $home) === 1
         && preg_match('~data-dashboard="balance"[\s\S]*?' . preg_quote($euro($toWallet), '~') . '~', $home) === 1, 'Dashboard: collected today and on-chain wallet balance kept separate');
     $sidebar = preg_match('~<aside class="navbar navbar-vertical[\s\S]*?</aside>~', $home, $aside) === 1 ? $aside[0] : '';
-    check(str_contains($home, 'data-napay-tts-wallet-link') && $sidebar !== '' && !str_contains($sidebar, '/merchant-wallet/index') && str_contains($sidebar, '/pos-payments/index'),
-        'TTS wallet in the profile menu, payments in the sidebar');
+    check(!str_contains($home, 'data-napay-tts-wallet-link') && preg_match('~data-dashboard="balance" ?[^>]*~', $home) === 1 && str_contains($home, '/store-wallet/index')
+        && $sidebar !== '' && str_contains($sidebar, '/pos-payments/index'), 'TTS wallet no longer in the profile menu: balance tile links to the store wallets, payments in the sidebar');
     webLogin('tt-op-u@example.invalid');
     check(web('/pos-payments/index')['status'] === 403, 'Operator cannot open the payments page');
     webLogin('tt-manager-b@example.invalid');
@@ -339,12 +360,13 @@ if ($phase === 'verify') {
     webLogin($state['manager']);
 
     // rimozione del wallet: nuove richieste rifiutate, quelle create tengono l'indirizzo congelato
-    $page = web('/merchant-wallet/index');
-    check(web('/merchant-wallet/delete', [])['status'] === 400 && web('/merchant-wallet/delete')['status'] === 405, 'Wallet removal needs POST with CSRF');
-    $r = web('/merchant-wallet/delete', ['_csrf' => csrf($page)]);
-    check($r['status'] === 302 && (int) scalar('SELECT COUNT(*) FROM merchant_tts_wallets') === 0 && logged('rimosso (era ' . $state['wallet']) === 1
+    $keyA = storeKey('TTS A1');
+    $page = web(walletUrl($keyA));
+    check(web(walletUrl($keyA, 'delete'), [])['status'] === 400 && web(walletUrl($keyA, 'delete'))['status'] === 405, 'Wallet removal needs POST with CSRF');
+    $r = web(walletUrl($keyA, 'delete'), ['_csrf' => csrf($page)]);
+    check($r['status'] === 302 && (int) scalar('SELECT COUNT(*) FROM store_tts_wallets') === 0 && logged('Wallet TTS del negozio ' . $state['store'] . ' rimosso (era ' . $state['wallet']) === 1
         && payment($p['ok']['id'])['to_address'] === $state['wallet'], 'Manager removes the wallet: audited, existing payments keep their address');
-    check(str_contains(web('/merchant-wallet/index')['body'], 'TtsWalletForm[address]'), 'Without a wallet the page shows the form');
+    check(str_contains(web(walletUrl($keyA))['body'], 'TtsWalletForm[address]'), 'Without a wallet the page shows the form');
     printf("PASS %d TTS payment verify checks\n", $checks);
     exit(0);
 }
