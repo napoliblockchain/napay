@@ -42,7 +42,7 @@ $this->params['breadcrumbs'][] = $this->title;
                         <?php
                         $items = [
                             [
-                                'label' => Yii::t('app', 'Generale'),
+                                'label' => Yii::t('app', 'General'),
                                 'encode' => false,
                                 // 'active' => !$modelSegnalazione->getIsAnnullata(),
                                 'options' => ['id' => 'tab-general'],
@@ -61,36 +61,6 @@ $this->params['breadcrumbs'][] = $this->title;
                                 'encode' => false,
                                 'options' => ['id' => 'tab-tts-wallet'],
                                 'content' => $this->render('_details-tts-wallet', ['model' => $model, 'ttsWallet' => $ttsWallet]),
-                            ],
-                            [
-                                'label' => Yii::t('app', 'Tassi di cambio'),
-                                'encode' => false,
-                                'options' => ['id' => 'tab-rates'],
-                                'content' => $this->render('_details-rates', ['model' => $model, 'rates' => $rates]),
-                                'visible' => User::isMerchant(),
-                            ],
-                            [
-                                'label' => Yii::t('app', 'Ricevute'),
-                                'encode' => false,
-                                // 'active' => $modelSegnalazione->getIsAnnullata(),
-                                'options' => ['id' => 'tab-checkout'],
-                                'content' => $this->render('_details-checkout', ['model' => $model]),
-                                'visible' => User::isMerchant(),
-                            ],
-                            [
-                                'label' => Yii::t('app', 'Criteri'),
-                                'encode' => false,
-                                // 'active' => $modelSegnalazione->getIsAnnullata(),
-                                'options' => ['id' => 'tab-criteria'],
-                                'content' => $this->render('_details-criteria', ['model' => $model]),
-                                'visible' => User::isMerchant(),
-                            ],
-                            [
-                                'label' => Yii::t('app', 'Webhook'),
-                                'encode' => false,
-                                'options' => ['id' => 'tab-webhook'],
-                                'content' => $this->render('_details-webhook', ['model' => $model]),
-                                'visible' => User::isMerchant(),
                             ],
                         ];
                         echo TabsX::widget([

@@ -34,6 +34,9 @@ use yii\helpers\Html;
  */
 class StoresController extends Controller
 {
+    /** Valute selezionabili per il negozio; il resto delle impostazioni BTCPay è fisso. */
+    public const CURRENCIES = ['EUR' => 'EUR', 'USD' => 'USD'];
+
     /**
      * {@inheritdoc}
      */
@@ -56,10 +59,6 @@ class StoresController extends Controller
                             'export',
                             'create',
                             'update-general',
-                            'update-rates',
-                            'update-checkout',
-                            'update-criteria',
-                            'update-webhook',
                             'delete',
                         ],
                         'allow' => true,
@@ -220,11 +219,8 @@ class StoresController extends Controller
     }
 
     /**
-     * Updates an existing Stores model.
-     * If update is successful, the browser will be redirected to the 'view' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
+     * Nome e valuta del negozio (SIP-030 punto 4): le altre impostazioni BTCPay restano quelle fisse di defaultSettings().
+     * @param string $id ID cifrato
      */
     public function actionUpdateGeneral($id)
     {
@@ -232,402 +228,88 @@ class StoresController extends Controller
         if (!$this->linked($model)) return $this->notLinked($model);
         $store = $model->storesettings;
 
-        if ($store->load(Yii::$app->request->post())){
-            // Begin a database transaction
-            $transaction = Yii::$app->db->beginTransaction();
+        if (Yii::$app->request->isPost) {
+            $postStore = Yii::$app->request->post('Stores');
+            $postSettings = Yii::$app->request->post('Storesettings');
+            $description = is_array($postStore) && is_string($postStore['description'] ?? null) ? trim($postStore['description']) : '';
+            $currency = is_array($postSettings) && is_string($postSettings['defaultCurrency'] ?? null) ? $postSettings['defaultCurrency'] : '';
+            $model->description = $description;
+            $store->defaultCurrency = $currency;
+            if ($description === '') $model->addError('description', Yii::t('app', 'Description is required.'));
+            if (!array_key_exists($currency, self::CURRENCIES)) $store->addError('defaultCurrency', Yii::t('app', 'Select a currency.'));
 
-            try {
-                if ($store->save()){
-                    $storesettings = [
-                        "name" => $model->description,
-                        "website" => $store->website,
-                        "defaultCurrency" => $store->defaultCurrency,
-                        "invoiceExpiration" => (int) $store->invoiceExpiration,
-                        "displayExpirationTimer" => $store->displayExpirationTimer,
-                        "monitoringExpiration" => $store->monitoringExpiration,
-                        "speedPolicy" => $store->speedPolicy,
-                        "lightningDescriptionTemplate" => $store->lightningDescriptionTemplate,
-                        "paymentTolerance" => $store->paymentTolerance,
-                        "anyoneCanCreateInvoice" => $store->anyoneCanCreateInvoice,
-                        "requiresRefundEmail" => $store->requiresRefundEmail,
-                        "checkoutType" => $store->checkoutType,
-                        "receipt" => json_decode($store->receipt, true),
-                        "lightningAmountInSatoshi" => $store->lightningAmountInSatoshi,
-                        "lightningPrivateRouteHints" => $store->lightningPrivateRouteHints,
-                        "onChainWithLnInvoiceFallback" => $store->onChainWithLnInvoiceFallback,
-                        "redirectAutomatically" => $store->redirectAutomatically,
-                        "showRecommendedFee" => $store->showRecommendedFee,
-                        "recommendedFeeBlockTarget" => $store->recommendedFeeBlockTarget,
-                        "defaultLang" => $store->defaultLang,
-                        'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
-                        'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
-                        "htmlTitle" => $store->htmlTitle,
-                        "networkFeeMode" => $store->networkFeeMode,
-                        "payJoinEnabled" => $store->payJoinEnabled,
-                        "lazyPaymentMethods" => $store->lazyPaymentMethods,
-                        "defaultPaymentMethod" => $store->defaultPaymentMethod,
-                    ];
-
-                    $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-
-                    // inizializzo la classe BTCPayServer
-                    $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-
-                    $result = $BTCPayServer->updateStore($store->bps_storeid, $storesettings);
-
-                    if (!is_array($result)) {
-                        // Commit the transaction
-                        $transaction->commit();
-                        Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio aggiornato correttamente'));
-
-                        $message_log = Yii::t('app', 'User {user} has updated general {item} settings: {itemname}', [
-                            'user' => Yii::$app->user->identity->username,
-                            'item' => Yii::$app->controller->id,
-                            'itemname' => $model->description
-                        ]);
-                        Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-
-                        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+            if (!$model->hasErrors() && !$store->hasErrors()) {
+                $store->htmlTitle = Html::encode($description);
+                $transaction = Yii::$app->db->beginTransaction();
+                try {
+                    if ($model->save(true, ['description']) && $store->save(true, ['defaultCurrency', 'htmlTitle'])) {
+                        $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
+                        $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
+                        $result = $BTCPayServer->updateStore($store->bps_storeid, $this->btcpayStoreSettings($model, $store));
+                        if (!is_array($result)) {
+                            $transaction->commit();
+                            Yii::$app->session->setFlash('success', Yii::t('app', 'Store updated.'));
+                            Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has updated general {item} settings: {itemname}', [
+                                'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
+                            ]));
+                            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+                        }
+                        Yii::$app->session->setFlash('error', Yii::t('app', 'BTCPay could not update the store. Try again later.'));
                     } else {
-                        Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE BtcPay: Impossibile aggiornare il negozio'));
-                        $transaction->rollBack();
+                        Yii::$app->session->setFlash('error', Yii::t('app', 'Store not saved. Try again.'));
                     }
-                } else {
-                    Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: Impossibile aggiornare il negozio'));
-                    $transaction->rollBack();
+                    if ($transaction->isActive) $transaction->rollBack();
+                } catch (\Throwable $e) {
+                    if ($transaction->isActive) $transaction->rollBack();
+                    // solo la classe: messaggi e query possono contenere dati
+                    Yii::error('Store update failed: ' . get_class($e), __METHOD__);
+                    Yii::$app->session->setFlash('error', Yii::t('app', 'Store not saved. Try again.'));
                 }
-
-            } catch (\Exception $e) {
-                $transaction->rollBack();
-                Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($e->getMessage(), true) . "</pre>"));
             }
-
-        } else {
-            Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($store->getErrors(), true) . "</pre>"));
-
         }
 
         return $this->render('update', [
             'model' => $model,
-            'merchants_list' => ArrayHelper::map(Merchants::find()->all(), 'id', 'description'),
+            'merchants_list' => [],
             '_form' => '_form-general',
-            'title' => Yii::t('app', 'Update Stores: {name}', [
-                'name' => $model->storesettings->bps_storeid,
-            ]),
+            'title' => Yii::t('app', 'Edit store: {name}', ['name' => $model->description]),
         ]);
     }
 
-    /**
-     * Updates an existing Stores model.
-     * If update is successful, the browser will be redirected to the 'view' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
-     */
-    public function actionUpdateRates($id)
+    /** Impostazioni inviate a BTCPay: valori fissi salvati alla creazione, più nome e valuta scelti dal merchant. */
+    private function btcpayStoreSettings(Stores $model, Storesettings $store): array
     {
-        $model = $this->findModel(Crypt::decrypt($id));
-        if (!$this->linked($model)) return $this->notLinked($model);
-        $store = $model->storesettings;
-
-        if ($store->load(Yii::$app->request->post())) {
-            // Begin a database transaction
-            $transaction = Yii::$app->db->beginTransaction();
-
-            try {
-                $store->save();
-
-                $params = [
-                    "spread" => $store->spread,
-                    "preferredSource" => $store->preferredSource,
-                    "isCustomScript" => false,
-                    "effectiveScript" => '',
-                ];
-
-                $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');                
-                // inizializzo la classe BTCPayServer
-                $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-                
-                $result = $BTCPayServer->updateRates($store->bps_storeid, $params);
-
-                if (!is_array($result)) {
-                    // Commit the transaction
-                    $transaction->commit();
-                    
-                    Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio aggiornato correttamente'));
-
-                    $message_log = Yii::t('app', 'User {user} has updated rates {item} settings: {itemname}', [
-                        'user' => Yii::$app->user->identity->username,
-                        'item' => Yii::$app->controller->id,
-                        'itemname' => $model->description
-                    ]);
-                    Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-                    return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
-                }
-
-            } catch (\Exception $e) {
-                // Roll back the transaction if an error occurred
-                $transaction->rollBack();
-                Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($e->getMessage(), true) . "</pre>"));
-            }
-
-        }
-        return $this->render('update', [
-            'model' => $model,
-            'merchants_list' => ArrayHelper::map(Merchants::find()->all(), 'id', 'description'),
-            '_form' => '_form-rates',
-            'title' => Yii::t('app', 'Update Stores: {name}', [
-                'name' => $model->storesettings->bps_storeid,
-            ]),
-        ]);
-
+        return [
+            'name' => $model->description,
+            'website' => $store->website,
+            'defaultCurrency' => $store->defaultCurrency,
+            'invoiceExpiration' => (int) $store->invoiceExpiration,
+            'displayExpirationTimer' => $store->displayExpirationTimer,
+            'monitoringExpiration' => $store->monitoringExpiration,
+            'speedPolicy' => $store->speedPolicy,
+            'lightningDescriptionTemplate' => $store->lightningDescriptionTemplate,
+            'paymentTolerance' => $store->paymentTolerance,
+            'anyoneCanCreateInvoice' => $store->anyoneCanCreateInvoice,
+            'requiresRefundEmail' => $store->requiresRefundEmail,
+            'checkoutType' => $store->checkoutType,
+            'receipt' => json_decode((string) $store->receipt, true),
+            'lightningAmountInSatoshi' => $store->lightningAmountInSatoshi,
+            'lightningPrivateRouteHints' => $store->lightningPrivateRouteHints,
+            'onChainWithLnInvoiceFallback' => $store->onChainWithLnInvoiceFallback,
+            'redirectAutomatically' => $store->redirectAutomatically,
+            'showRecommendedFee' => $store->showRecommendedFee,
+            'recommendedFeeBlockTarget' => $store->recommendedFeeBlockTarget,
+            'defaultLang' => $store->defaultLang,
+            'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
+            'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
+            'htmlTitle' => $store->htmlTitle,
+            'networkFeeMode' => $store->networkFeeMode,
+            'payJoinEnabled' => $store->payJoinEnabled,
+            'lazyPaymentMethods' => $store->lazyPaymentMethods,
+            'defaultPaymentMethod' => $store->defaultPaymentMethod,
+        ];
     }
 
-    /**
-     * Updates an existing Stores model.
-     * If update is successful, the browser will be redirected to the 'view' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
-     */
-    public function actionUpdateCheckout($id)
-    {
-        $model = $this->findModel(Crypt::decrypt($id));
-        if (!$this->linked($model)) return $this->notLinked($model);
-        $store = $model->storesettings;
-
-        if ($store->load(Yii::$app->request->post())) {
-            $post = Yii::$app->request->post();
-
-            $receipt = json_encode([
-                'enabled' => (int) $post['Storesettings']['receipt_enabled'],
-                'showPayments' => (int) $post['Storesettings']['receipt_showPayments'],
-                'showQR' => (int) $post['Storesettings']['receipt_showQR'],
-            ],);
-            $store->receipt = $receipt;
-
-            // Begin a database transaction
-            $transaction = Yii::$app->db->beginTransaction();
-
-            try {
-                if ($model->save() && $store->save()) {
-                    $storesettings = [
-                        "name" => $model->description, // obbligatorio
-                        "requiresRefundEmail" => (int) $store->requiresRefundEmail,
-                        "receipt" => json_decode($store->receipt, true),
-                    ];
-
-                 
-
-                    $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-
-                    // inizializzo la classe BTCPayServer
-                    $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-                    $result = $BTCPayServer->updateStore($store->bps_storeid, $storesettings);
-
-                    if (!is_array($result)) {
-                        // Commit the transaction
-                        $transaction->commit();
-                        Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio aggiornato correttamente'));
-
-                        $message_log = Yii::t('app', 'User {user} has updated checkout {item} settings: {itemname}', [
-                            'user' => Yii::$app->user->identity->username,
-                            'item' => Yii::$app->controller->id,
-                            'itemname' => $model->description
-                        ]);
-                        Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-
-                        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
-                    } else {
-                        Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE BtcPay: Impossibile aggiornare il negozio'));
-                        $transaction->rollBack();
-                    }
-                } else {
-                    Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: Impossibile aggiornare il negozio'));
-                    $transaction->rollBack();
-                }
-            } catch (\Exception $e) {
-                $transaction->rollBack();
-                Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($e->getMessage(), true) . "</pre>"));
-            }
-        } 
-       
-
-        return $this->render('update', [
-            'model' => $model,
-            'merchants_list' => ArrayHelper::map(Merchants::find()->all(), 'id', 'description'),
-            '_form' => '_form-checkout',
-            'title' => Yii::t('app', 'Modifica Aspetto del pagamento: {name}', [
-                'name' => $model->storesettings->bps_storeid,
-            ]),
-        ]);
-    }
-
-    /**
-     * Updates an existing Stores model.
-     * If update is successful, the browser will be redirected to the 'view' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
-     */
-    public function actionUpdateCriteria($id)
-    {
-        $model = $this->findModel(Crypt::decrypt($id));
-        if (!$this->linked($model)) return $this->notLinked($model);
-        $store = $model->storesettings;
-        
-        if ($store->load(Yii::$app->request->post())) {
-            $post = Yii::$app->request->post();
-
-            $paymentMethodCriteria = json_encode([
-                0 => [
-                    'paymentMethod' => 'BTC', 
-                    'currencyCode' => $store->defaultCurrency, 
-                    'above' => (bool) $post['Storesettings']['paymentMethod_BTC_above'],
-                    'amount' => $post['Storesettings']['paymentMethod_BTC_amount'], 
-                ],
-                1 => [
-                    'paymentMethod' => 'BTC-LightningNetwork', 
-                    'currencyCode' => $store->defaultCurrency, 
-                    'above' => (bool) $post['Storesettings']['paymentMethod_LN_above'],
-                    'amount' => $post['Storesettings']['paymentMethod_LN_amount'], 
-                ],
-                2 => [
-                    'paymentMethod' => 'BTC-LNURLPAY', 
-                    'currencyCode' => $store->defaultCurrency,
-                    'above' => (bool) $post['Storesettings']['paymentMethod_LN_above'],
-                    'amount' => $post['Storesettings']['paymentMethod_LN_amount'], 
-                ],
-            ]);
-          
-            $store->paymentMethodCriteria = $paymentMethodCriteria;
-
-            // Begin a database transaction
-            $transaction = Yii::$app->db->beginTransaction();
-
-            try {
-                if ($store->save()) {
-                    $storesettings = [
-                        "name" => $model->description, // obbligatorio
-                        "paymentMethodCriteria" => json_decode($store->paymentMethodCriteria)
-                    ];
-
-                    $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-
-                    // inizializzo la classe BTCPayServer
-                    $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-
-                    $result = $BTCPayServer->updateStore($store->bps_storeid, $storesettings);
-
-                    if (!is_array($result)) {
-                        // Commit the transaction
-                        $transaction->commit();
-                        Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio aggiornato correttamente'));
-                        $message_log = Yii::t('app', 'User {user} has updated criteria {item} settings: {itemname}', [
-                            'user' => Yii::$app->user->identity->username,
-                            'item' => Yii::$app->controller->id,
-                            'itemname' => $model->description
-                        ]);
-                        Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-
-                        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
-                    } else {
-                        Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE BtcPay: '. $result['message']));
-                        $transaction->rollBack();
-                    }
-                } else {
-                    Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: Impossibile aggiornare il negozio'));
-                    $transaction->rollBack();
-                }
-            } catch (\Exception $e) {
-                $transaction->rollBack();
-                Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($e->getMessage(), true) . "</pre>"));
-            }
-        }
-        
-
-        return $this->render('update', [
-            'model' => $model,
-            'merchants_list' => ArrayHelper::map(Merchants::find()->all(), 'id', 'description'),
-            '_form' => '_form-criteria',
-            'title' => Yii::t('app', 'Modifica Criteri di pagamento: {name}', [
-                'name' => $model->storesettings->bps_storeid,
-            ]),
-        ]);
-    }
-
-    /**
-     * Updates an existing Stores model.
-     * If update is successful, the browser will be redirected to the 'view' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
-     */
-    public function actionUpdateWebhook($id)
-    {
-        $store = $this->findModel(Crypt::decrypt($id));
-        if (!$this->linked($store)) return $this->notLinked($store);
-        $webhookModel = $store->webhook;
-
-        if ($webhookModel->load(Yii::$app->request->post())) {
-            // Begin a database transaction
-            $transaction = Yii::$app->db->beginTransaction();
-
-            try {
-                if ($webhookModel->save()) {
-                    $settings = (object) ArrayHelper::map(Settings::find()->all(), 'code', 'value');
-
-                    // inizializzo la classe BTCPayServer
-                    $BTCPayServer = new BTCPayServer($settings->btcpayHost, $settings->btcpayApiKey);
-
-                    /**
-                     * Adesso impostiamo i WebHooks 
-                     */
-                    $webHook = $BTCPayServer->setWebhook();
-
-                    $webHookResult = $webHook->updateWebhook(
-                        $store->storesettings->bps_storeid,
-                        $webhookModel->url,
-                        $webhookModel->webhookId,
-                        null
-                    );
-
-                    if (null !== $webHookResult) {
-                        // Commit the transaction
-                        $transaction->commit();
-                        Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio aggiornato correttamente'));
-                        $message_log = Yii::t('app', 'User {user} has updated webhook {item} settings: {itemname}', [
-                            'user' => Yii::$app->user->identity->username,
-                            'item' => Yii::$app->controller->id,
-                            'itemname' => $store->description
-                        ]);
-                        Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-
-                        return $this->redirect(['view', 'id' => Crypt::encrypt($store->id)]);
-                    } else {
-                        Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE BtcPay: ' . $result['message']));
-                        $transaction->rollBack();
-                    }
-                } else {
-                    Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: Impossibile aggiornare il negozio'));
-                    $transaction->rollBack();
-                }
-            } catch (\Exception $e) {
-                $transaction->rollBack();
-                Yii::$app->session->setFlash('error', Yii::t('app', 'ERRORE: ' . "<pre>" . print_r($e->getMessage(), true) . "</pre>"));
-            }
-        }
-
-        return $this->render('update', [
-            'model' => $store,
-            'merchants_list' => ArrayHelper::map(Merchants::find()->all(), 'id', 'description'),
-            '_form' => '_form-webhook',
-            'title' => Yii::t('app', 'Modifica Webhook: {name}', [
-                'name' => $store->storesettings->bps_storeid,
-            ]),
-        ]);
-    }
-    
     /**
      * Deletes an existing Stores model.
      * If deletion is successful, the browser will be redirected to the 'index' page.

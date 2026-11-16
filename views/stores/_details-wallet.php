@@ -1,6 +1,6 @@
 <?php
 
-/* Wallet BTC del negozio (derivazione BTCPay), in sola lettura: la modifica passa dal provisioning (SIP-022). */
+/* Wallet BTC del negozio, in sola lettura. Schema di derivazione e key path gestiti internamente da Napay (SIP-022), mai mostrati. */
 
 use yii\helpers\Html;
 use kartik\detail\DetailView;
@@ -13,10 +13,10 @@ use kartik\detail\DetailView;
     'hover' => true,
     'mode' => DetailView::MODE_VIEW,
     'enableEditMode' => FALSE,
-    'panel' => [
-        'heading' => Yii::t('app', 'Wallet'),
-        'type' => DetailView::TYPE_INFO,
-    ],
+    // 'panel' => [
+    //     'heading' => Yii::t('app', 'Wallet'),
+    //     'type' => DetailView::TYPE_INFO,
+    // ],
     'labelColOptions' => ['style' => 'width:40%'],
     'valueColOptions' => ['style' => 'width:60%'],
     'attributes' => [
@@ -25,19 +25,6 @@ use kartik\detail\DetailView;
             'format' => 'raw',
             'value' => Html::encode($model->storesettings->label),
         ],
-        
-        [
-            'attribute' => 'derivationScheme',
-            'format' => 'raw',
-            'value' => Html::encode($model->storesettings->derivationScheme)
-        ],
-        [
-            'attribute' => 'derivationAccountKeyPath',
-            'format' => 'raw',
-            'value' => Html::encode($model->storesettings->accountKeyPath)
-        ],
-
-       
 
     ],
 ]) ?>

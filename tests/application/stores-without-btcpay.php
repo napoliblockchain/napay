@@ -80,10 +80,16 @@ foreach (['' => 'missing description', '   ' => 'blank description'] as $descrip
     $r = web('/stores/create', ['_csrf' => csrf($page), 'Stores' => $fields]);
     check($r['status'] === 200 && str_contains($r['body'], 'Descrizione obbligatoria') && $counts() === $baseline, 'Form shown again with error, nothing saved: ' . $label);
 }
-foreach (['update-general', 'update-rates', 'update-checkout', 'update-criteria', 'update-webhook'] as $action) {
-    $r = web('/stores/' . $action . '?id=' . urlencode($id));
-    check($r['status'] === 302 && str_contains(location($r), 'stores/view'), 'BTCPay settings page waits for the link: ' . $action);
+$r = web('/stores/update-general?id=' . urlencode($id));
+check($r['status'] === 302 && str_contains(location($r), 'stores/view'), 'BTCPay settings page waits for the link: update-general');
+// SIP-030 punto 4: cambi, ricevute, criteri e webhook fissi, pagine rimosse per tutti
+foreach (['update-rates', 'update-checkout', 'update-criteria', 'update-webhook'] as $action) {
+    check(in_array(web('/stores/' . $action . '?id=' . urlencode($id))['status'], [403, 404], true), 'Removed BTCPay settings page: ' . $action);
 }
+$storePage = web('/stores/view?id=' . urlencode($id))['body'];
+check(str_contains($storePage, 'tab-general') && !str_contains($storePage, 'tab-rates') && !str_contains($storePage, 'tab-checkout') && !str_contains($storePage, 'tab-criteria') && !str_contains($storePage, 'tab-webhook'), 'Store page without rates, receipts, criteria and webhook tabs');
+$walletTab = (string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/_details-wallet.php');
+check(!str_contains($walletTab, 'derivationScheme') && !str_contains($walletTab, 'accountKeyPath'), 'BTC wallet tab hides derivation scheme and account key path');
 check(str_contains(web('/pos-management/index')['body'], 'Negozio senza BTCPay'), 'New store available for POS terminals');
 
 // --- scope: il gestore non vede negozi di altri merchant (prima: qualunque ID cifrato valido)
