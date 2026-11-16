@@ -517,4 +517,10 @@ return [
     'Terms of use' => 'condizioni di utilizzo',
     'I agree to the processing of my data for marketing purposes.' => 'Acconsento al trattamento dei dati per finalità di marketing.',
     'Already registered? Sign in' => 'Già registrato? Accedi',
+    'Choose a new password' => 'Scegli una nuova password',
+    'Enter the new password twice to confirm it.' => 'Inserisci due volte la nuova password per confermarla.',
+    'Save password' => 'Salva la password',
+    'Confirm account activation' => 'Conferma l\'attivazione dell\'account',
+    'Confirm to activate your account. The link expires after 48 hours.' => 'Conferma per attivare il tuo account. Il link scade dopo 48 ore.',
+    'New password saved.' => 'Nuova password salvata.',
 ];

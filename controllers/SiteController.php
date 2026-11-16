@@ -275,7 +275,7 @@ class SiteController extends Controller
      */
     public function actionActivate($id = "", $sign = "")
     {
-        $this->layout = "login";
+        $this->layout = "auth";
         $plain = "";
         if (is_string($id) && strlen($id) <= 2048 && is_string($sign) && strlen($sign) === 88) {
             try { $plain = @Crypt::sqlDecrypt($id); } catch (\Throwable $error) { }
@@ -346,7 +346,7 @@ class SiteController extends Controller
      */
     public function actionResetPassword($token = '')
     {
-        $this->layout = 'login';
+        $this->layout = 'auth';
 
         try {
             $model = new ResetPasswordForm($token);
