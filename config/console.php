@@ -5,6 +5,9 @@ $db = require __DIR__ . '/db.php';
 
 $config = [
     'id' => 'basic-console',
+    'name' => 'Napay',
+    // comandi del container cron che inviano mail (promemoria della quota): stessa lingua, fuso e mailer del web
+    'language' => 'it-IT',
     'basePath' => dirname(__DIR__),
     'runtimePath' => env('NAPAY_CONSOLE_RUNTIME_PATH', dirname(__DIR__) . '/runtime'),
     'bootstrap' => ['log'],
@@ -15,6 +18,10 @@ $config = [
         '@tests' => '@app/tests',
     ],
     'components' => [
+        'formatter' => [
+            'defaultTimeZone' => $params['defaultTimeZone'],
+        ],
+        'mailer' => require __DIR__ . '/mailer.php',
         'cache' => [
             'class' => 'yii\caching\FileCache',
         ],

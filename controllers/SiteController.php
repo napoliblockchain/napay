@@ -24,6 +24,7 @@ use app\components\User;
 use yii\web\BadRequestHttpException;
 use yii\base\InvalidArgumentException;
 
+use app\models\search\MembersSearch;
 use app\models\search\MerchantsSearch;
 use app\models\search\StoresSearch;
 use app\models\search\PosSearch;
@@ -157,6 +158,8 @@ class SiteController extends Controller
             'payments' => $scope === null ? null : \app\components\pos\tts\PaymentTotals::dashboard($scope),
             // SIP-030: richieste di iscrizione da approvare (solo admin)
             'requests' => User::isAdministrator() ? \app\components\association\MembershipRequests::count() : null,
+            // soci per stato della quota (solo admin): al clic la lista Soci con lo stesso filtro
+            'members' => User::isAdministrator() ? self::memberCounts() : null,
             // 'dataMerchants' => $dataMerchants,
             // 'dataStores' => $dataStores,
             // 'dataPos' => $dataPos,
@@ -223,6 +226,16 @@ class SiteController extends Controller
         return $this->redirect(['site/login']);
 
         // return $this->goHome();
+    }
+
+    /** Soci iscritti, in regola, in scadenza e scaduti: stessi filtri della lista Soci (MembersSearch). */
+    private static function memberCounts(): array
+    {
+        $counts = [];
+        foreach (['' => 'all', 'active' => 'active', 'expiring' => 'expiring', 'expired' => 'expired'] as $status => $key) {
+            $counts[$key] = (int) (new MembersSearch())->search(['MembersSearch' => ['status' => $status]])->getTotalCount();
+        }
+        return $counts;
     }
 
     /**

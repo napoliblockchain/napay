@@ -6,6 +6,12 @@ services:
       NAPAY_DB_ROLE_MODE: "true"
       NAPAY_DB_ROLE: web
       NAPAY_DB_PASSWORD_FILE: ""
+  # il cron usa l'utente DB del web (stesse tabelle: soci, promemoria, pagamenti TTS, registro)
+  cron:
+    environment:
+      NAPAY_DB_ROLE_MODE: "true"
+      NAPAY_DB_ROLE: web
+      NAPAY_DB_PASSWORD_FILE: ""
   bootstrap:
     environment:
       NAPAY_DB_ROLE_MODE: "true"

@@ -135,7 +135,7 @@ try {
     $profile = request($userPath);
     check($profile['status'] === 200, 'Admin reads another permitted profile');
     check(!str_contains($profile['body'], '<svg onload=') && str_contains($profile['body'], '&lt;svg'), 'Profile names encoded against stored XSS');
-    check(str_contains($profile['body'], 'type="submit"') && str_contains($profile['body'], '/users/update'), 'Status edit form submits to update endpoint');
+    check(str_contains($profile['body'], 'data-user-status') && str_contains($profile['body'], '/users/disable') && !str_contains($profile['body'], '/users/enable'), 'Active account: status tab offers the disable button only');
     check(request($adminPath)['status'] === 200, 'Admin reads own profile');
     check(request('/users/view?id=invalid!')['status'] === 404, 'Altered encrypted ID returns controlled 404');
     check(request('/users/view?id[]=1')['status'] === 404, 'Array ID rejected');

@@ -22,6 +22,7 @@ $items = [
     ['label'=>Yii::t('app', 'Associazione'), 'icon'=>'users', 'visible'=>$admin, 'items'=>[
         ['label'=>Yii::t('app', 'Soci'), 'url'=>['association/members'], 'active'=>$on('association', ['members','member','member-update'])],
         ['label'=>Yii::t('app', 'Membership requests'), 'url'=>['membership-requests/index'], 'active'=>$on('membership-requests')],
+        ['label'=>Yii::t('app', 'Fee reminders'), 'url'=>['membership-reminders/index'], 'active'=>$on('membership-reminders')],
         ['label'=>Yii::t('app', 'Quote associative'), 'url'=>['association/payments'], 'active'=>$on('association', ['payments','receipt','payment-create','payment-update','payment-delete','export'])],
         ['label'=>Yii::t('app', 'Verbali'), 'url'=>['association/minutes'], 'active'=>$on('association', ['minutes','minute-file','minute-create','minute-update','minute-delete'])],
         ['label'=>Yii::t('app', 'Tabelle associazione'), 'url'=>['association/tables'], 'active'=>$on('association', ['tables','table-edit','table-delete'])],

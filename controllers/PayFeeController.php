@@ -35,7 +35,7 @@ class PayFeeController extends Controller
         return [
             'verbs' => [
                 'class' => VerbFilter::class,
-                'actions' => ['index' => ['GET'], 'start' => ['POST'], 'paypal-return' => ['GET'], 'paypal-capture' => ['POST'], 'paypal-cancel' => ['GET'],
+                'actions' => ['index' => ['GET'], 'start' => ['POST'], 'reminders' => ['POST'], 'paypal-return' => ['GET'], 'paypal-capture' => ['POST'], 'paypal-cancel' => ['GET'],
                     'btcpay-return' => ['GET'], 'btcpay-refresh' => ['POST']],
             ],
             'access' => [
@@ -59,7 +59,18 @@ class PayFeeController extends Controller
             'readOnly' => LegacyImporter::active(),
             'payments' => MembershipPayments::find()->where(['user_id' => $user->id])->with(['method', 'fee'])
                 ->orderBy(['registered_on' => SORT_DESC, 'id' => SORT_DESC])->all(),
+            'remindersOff' => (int) MemberProfiles::find()->select('reminders_opt_out')->where(['user_id' => $user->id])->scalar() === 1,
         ]);
+    }
+
+    /** SIP-030: il socio attiva o disattiva i promemoria di scadenza della quota. */
+    public function actionReminders()
+    {
+        $off = Yii::$app->request->post('reminders') !== 'on';
+        MemberProfiles::updateAll(['reminders_opt_out' => $off ? 1 : 0], ['user_id' => (int) Yii::$app->user->id]);
+        Log::event($off ? 'Promemoria della quota disattivati dal socio' : 'Promemoria della quota attivati dal socio', Log::TYPE_DATA);
+        Yii::$app->session->setFlash('success', $off ? Yii::t('app', 'Fee reminders turned off.') : Yii::t('app', 'Fee reminders turned on.'));
+        return $this->redirect(['index']);
     }
 
     /** Crea il pagamento in corso e l'ordine PayPal o la fattura BTCPay, poi reindirizza solo verso il gateway */

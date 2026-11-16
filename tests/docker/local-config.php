@@ -11,9 +11,11 @@ function localCheck(bool $condition): void {
 $services = $config['services'];
 $names = array_keys($services); sort($names);
 $roles = ($services['web']['environment']['NAPAY_DB_ROLE_MODE'] ?? '') === 'true';
-localCheck($names === ($roles ? ['bootstrap', 'egress', 'mysql', 'web', 'worker-db-check'] : ['bootstrap', 'egress', 'mysql', 'web']));
+localCheck($names === ($roles ? ['bootstrap', 'cron', 'egress', 'mysql', 'web', 'worker-db-check'] : ['bootstrap', 'cron', 'egress', 'mysql', 'web']));
 if ($roles) {
     localCheck(empty($services['web']['secrets']) && empty($services['web']['environment']['NAPAY_WEB_DB_PASSWORD']));
+    // cron: stesso utente DB del web, nessun segreto
+    localCheck(($services['cron']['environment']['NAPAY_DB_ROLE'] ?? '') === 'web' && empty($services['cron']['secrets']));
     localCheck(array_keys($services['worker-db-check']['networks']) === ['database']);
     localCheck(array_column($services['worker-db-check']['secrets'], 'source') === ['napay_db_worker_password']);
 }
@@ -52,4 +54,14 @@ foreach ($services['web']['volumes'] as $mount) {
     localCheck($mount['target'] !== '/import');
 }
 localCheck($services['web']['depends_on']['bootstrap']['condition'] === 'service_completed_successfully');
+// cron: niente porte né Internet (solo database e chain di sviluppo), codice in sola lettura, stessa sandbox del web
+$cron = $services['cron'];
+$cronNetworks = array_keys($cron['networks']); sort($cronNetworks);
+localCheck(empty($cron['ports']) && $cronNetworks === ['database', 'napay_local_chain']);
+localCheck($cron['environment']['DB_DATABASE'] === 'napay_browser_local' && $cron['environment']['MAIL_TRANSPORT'] === 'file'
+    && $cron['environment']['WEBAPP_LINK'] === 'https://napay.local');
+foreach ($cron['volumes'] as $mount) {
+    if ($mount['target'] === '/var/www/html') localCheck($mount['read_only'] === true);
+    localCheck($mount['target'] !== '/import');
+}
 echo "PASS {$checks} local sandbox configuration checks\n";

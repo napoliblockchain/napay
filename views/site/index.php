@@ -13,6 +13,7 @@ use yii\helpers\Html;
 /* @var $dataProvider yii\data\ActiveDataProvider */
 /* @var $payments array|null riepilogo incassi (PaymentTotals::dashboard), null fuori dallo scope esercenti */
 /* @var $requests int|null richieste di iscrizione da approvare, null se non admin */
+/* @var $members array|null soci per stato della quota (all, active, expiring, expired), null se non admin */
 
 Icon::map($this);
 
@@ -23,6 +24,24 @@ $member = AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
 ?>
 
 <div class="body-content">
+    <?php if (($members ?? null) !== null): ?>
+    <div class="row g-3 mt-1" data-dashboard="members">
+        <?php foreach ([
+            'all' => [Yii::t('app', 'Members'), '', 'bg-primary'],
+            'active' => [Yii::t('app', 'In regola'), 'active', 'bg-success'],
+            'expiring' => [Yii::t('app', 'In scadenza'), 'expiring', 'bg-warning'],
+            'expired' => [Yii::t('app', 'Scaduto'), 'expired', 'bg-danger'],
+        ] as $key => [$label, $status, $badge]): ?>
+            <div class="col-6 col-lg-3">
+                <a href="<?= Url::to($status === '' ? ['association/members'] : ['association/members', 'MembersSearch' => ['status' => $status]]) ?>"
+                   class="card card-sm h-100 p-3 text-reset text-decoration-none" data-members="<?= $key ?>">
+                    <span class="text-secondary"><span class="badge <?= $badge ?> me-2"></span><?= Html::encode($label) ?></span>
+                    <span class="h2 mb-0 mt-1"><?= (int) $members[$key] ?></span>
+                </a>
+            </div>
+        <?php endforeach; ?>
+    </div>
+    <?php endif; ?>
     <?php if (($requests ?? 0) > 0): ?>
         <a href="<?= Url::to(['membership-requests/index']) ?>" class="alert alert-warning d-flex align-items-center mt-2 text-decoration-none" data-dashboard="requests">
             <i class="fas fa-user-clock me-2" aria-hidden="true"></i>

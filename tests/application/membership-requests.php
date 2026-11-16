@@ -68,6 +68,8 @@ $member = function (string $name, int $active, string $state, ?int $requested, ?
         'timestamp_statuto' => $t, 'timestamp_privacy' => $t, 'timestamp_condizioni' => $t, 'timestamp_marketing' => $t])->execute();
     return $id;
 };
+// carica predefinita all'approvazione: presente nel dataset, creata per il test se manca
+if (scalar("SELECT COUNT(*) FROM association_roles WHERE description='Socio ordinario'") == 0) $db->createCommand()->insert('association_roles', ['description' => 'Socio ordinario'])->execute();
 $a = $member('req-a', 1, 'pending', $now - 300);
 $b = $member('req-b', 1, 'pending', $now - 200, null, 1);
 $c = $member('req-c', 1, 'pending', $now - 100);
@@ -105,6 +107,8 @@ check($r['status'] === 302 && !MemberProfiles::isPending($a) && !MemberProfiles:
     && (int) scalar('SELECT approved_by FROM member_profiles WHERE user_id=:u', [':u' => $a]) === (int) scalar("SELECT id FROM users WHERE email='admin@example.invalid'"),
     'Approve: only listed pending requests change, with the approving admin');
 check((int) scalar('SELECT is_active FROM users WHERE id=:u', [':u' => $legacy]) === 1, 'Old-Napay request approved: account activated as in the old Napay');
+check(scalar('SELECT r.description FROM member_profiles p JOIN association_roles r ON r.id = p.association_role_id WHERE p.user_id=:u', [':u' => $a]) === 'Socio ordinario',
+    'Approved member gets the "Socio ordinario" role');
 check(count($sent) === 2 && str_contains(mailTo($sent, 'req-a@example.invalid'), 'approvata') && str_contains(mailTo($sent, 'req-a@example.invalid'), '/pay-fee/index'),
     'Approval mail with the link to pay the fee');
 check((int) scalar("SELECT COUNT(*) FROM logs WHERE description=:d", [':d' => 'Iscrizione approvata: utente ' . $a]) === 1, 'Approval audited');

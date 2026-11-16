@@ -67,9 +67,6 @@ class UsersController extends Controller
                     [
                         'actions' => [
                             'index',
-                            'update',
-                            'disable',
-                            'enable',
                             'export',
                         ],
                         'allow' => true,
@@ -77,6 +74,17 @@ class UsersController extends Controller
                         'matchCallback' => function ($rule, $action) {
                             return User::canManageUsers();
                         },
+                    ],
+                    // attivare e disattivare un account: solo l'amministratore
+                    [
+                        'actions' => [
+                            'update',
+                            'disable',
+                            'enable',
+                        ],
+                        'allow' => true,
+                        'roles' => ['@'],
+                        'matchCallback' => static fn() => User::isAdministrator(),
                     ],
                 ]
             ]

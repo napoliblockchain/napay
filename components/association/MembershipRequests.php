@@ -17,6 +17,8 @@ use app\models\Users;
 final class MembershipRequests
 {
     public const UNVERIFIED_DAYS = 7;
+    /** Carica assegnata all'approvazione a chi non ne ha una, come la registrazione del vecchio Napay. */
+    public const DEFAULT_ROLE = 'Socio ordinario';
 
     /**
      * Richieste in lista: email verificata (account attivo) oppure socio v1 importato mai approvato,
@@ -54,6 +56,10 @@ final class MembershipRequests
                 }
                 $db->createCommand()->update('{{%member_profiles}}', ['approval_state' => MemberProfiles::APPROVAL_APPROVED, 'approved_at' => time(), 'approved_by' => $adminId],
                     ['user_id' => $userId, 'approval_state' => MemberProfiles::APPROVAL_PENDING])->execute();
+                $role = (new Query())->select('id')->from('{{%association_roles}}')->where(['description' => self::DEFAULT_ROLE])->scalar();
+                if ($role !== false) {
+                    $db->createCommand()->update('{{%member_profiles}}', ['association_role_id' => (int) $role], ['user_id' => $userId, 'association_role_id' => null])->execute();
+                }
                 // socio v1 mai approvato: nella v1 l'approvazione attivava l'account
                 if ((int) $row['is_active'] === Users::STATUS_INSERTED) {
                     $db->createCommand()->update('{{%users}}', ['is_active' => Users::STATUS_ACTIVE, 'activationCode' => null], ['id' => $userId, 'is_active' => Users::STATUS_INSERTED])->execute();

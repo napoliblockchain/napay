@@ -9,6 +9,7 @@ use app\components\Crypt;
 /* @var $bitcoin bool */
 /* @var $readOnly bool */
 /* @var $payments app\models\MembershipPayments[] */
+/* @var $remindersOff bool il socio ha disattivato i promemoria della quota (SIP-030) */
 
 $this->title = Yii::t('app', 'Paga quota');
 $this->params['breadcrumbs'][] = $this->title;
@@ -51,6 +52,17 @@ $pendingBitcoin = array_filter($payments, fn($p) => $p->status === 'pending' && 
                 <?php else: ?>
                     <p class="text-secondary"><?= Yii::t('app', 'Nessuna quota da pagare online: contatta l\'associazione.') ?></p>
                 <?php endif; ?>
+            </div>
+        </div>
+        <div class="card mt-3" data-fee-reminders>
+            <div class="card-body">
+                <?= Html::beginForm(['reminders'], 'post', ['class' => 'd-flex align-items-center justify-content-between gap-3']) ?>
+                <label class="form-check form-switch mb-0">
+                    <input type="checkbox" class="form-check-input" name="reminders" value="on" <?= $remindersOff ? '' : 'checked' ?>>
+                    <span class="form-check-label"><?= Html::encode(Yii::t('app', 'Email me before the fee expires')) ?></span>
+                </label>
+                <?= Html::submitButton(Html::encode(Yii::t('app', 'Save')), ['class' => 'btn btn-sm btn-outline-secondary']) ?>
+                <?= Html::endForm() ?>
             </div>
         </div>
     </div>

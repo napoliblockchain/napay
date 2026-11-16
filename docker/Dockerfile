@@ -3,6 +3,8 @@ FROM php:8.3.36-apache
 
 COPY docker/install-php-extensions.sh /usr/local/bin/napay-install-php-extensions
 RUN sh /usr/local/bin/napay-install-php-extensions \
+    # demone cron per il container cron (docker/cron-entry.sh); flock è già in util-linux
+    && apt-get update && apt-get install -y --no-install-recommends cron && rm -rf /var/lib/apt/lists/* \
     && a2enmod rewrite \
     && { \
         echo 'opcache.memory_consumption=128'; \

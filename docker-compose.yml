@@ -28,6 +28,31 @@ services:
       - default
       - database
 
+  # comandi pianificati (docker/cron-entry.sh): promemoria quote, pulizia account mai verificati, scadenza pagamenti TTS
+  cron:
+    image: napay/napay:dev
+    env_file:
+      - ${NAPAY_ENV_FILE:-.env}
+    restart: unless-stopped
+    entrypoint: ["bash", "/var/www/html/docker/cron-entry.sh"]
+    volumes:
+      - .:/var/www/html
+    depends_on:
+      mysql:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+      web:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "pgrep -x cron >/dev/null"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    networks:
+      - default
+      - database
+
   bootstrap:
     image: napay/bootstrap:dev
     user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"

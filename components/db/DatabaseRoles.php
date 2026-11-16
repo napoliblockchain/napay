@@ -11,7 +11,7 @@ final class DatabaseRoles
         'membership_fees', 'payment_methods', 'member_profiles', 'membership_payments',
         'assembly_minutes', 'pos_operator_sessions', 'paypal_webhook_events',
         'btcpay_webhook_events', 'pos_operators', 'pos_store_operators', 'pos_terminals',
-        'pos_operator_invitations',
+        'pos_operator_invitations', 'membership_reminders',
     ];
     private const B1_TABLES = [
         'btcpay_merchant_accounts', 'btcpay_merchant_credentials', 'btcpay_store_links',
