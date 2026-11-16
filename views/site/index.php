@@ -148,28 +148,4 @@ $member = AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
         </div>
     </div>
 
-    <div class="row mt-2">
-        <div class="col-lg-12 col-12">
-            <div class="container-fluid">
-                <div class="row">
-                    <div class="<?php echo (User::can(40)) ? 'col-lg-6' : 'col-md-12'; ?>">
-                        <?php //echo $this->render('dashboard/invoices', ['dataInvoices' => $dataInvoices]); ?>
-                    </div>
-                    <?php if (User::can(40)) : ?>
-                        <div class="col-lg-6 col-md-12 ">
-                            <?php //echo $this->render('dashboard/merchants', ['dataMerchants' => $dataMerchants]); ?>
-                        </div>
-                    <?php endif; ?>
-                    <?php if (User::can(30)) : ?>
-                        <div class="col-lg-6 col-md-12 ">
-                            <?php //echo $this->render('dashboard/stores', ['dataStores' => $dataStores]); ?>
-                        </div>
-                    <?php endif; ?>
-                    <div class="col-lg-6 col-md-12 ">
-                        <?php //echo $this->render('dashboard/pos', ['dataPos' => $dataPos]); ?>
-                    </div>
-                </div>
-            </div>
-        </div>
-    </div>
 </div>

@@ -31,7 +31,7 @@ class AdminController extends Controller
                         'allow' => true,
                         'roles' => ['@'],
                         'matchCallback' => function ($rule, $action) {
-                            return User::can(40);
+                            return User::canManageUsers();
                         },
                     ],
                 ]

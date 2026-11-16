@@ -32,7 +32,7 @@ $speedPolicy = [
                         <div class="d-flex flex-wrap align-items-center gap-2 w-100">
                             <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
 
-                            <?php if (User::can(User::ROLE_MERCHANT)) : ?>
+                            <?php if (User::hasRoleAtLeast(User::ROLE_MERCHANT)) : ?>
                                 <div class="ms-auto p-1">
                                     <?php $form = ActiveForm::begin([
                                         'id' => 'export-form',
@@ -102,7 +102,8 @@ $speedPolicy = [
                                 [
                                     'attribute' => 'merchantName',
                                     'value' => 'merchant.description',
-                                    'visible' => User::can(40),
+                                    // colonna merchant solo per chi vede i negozi di tutti
+                                    'visible' => User::isAdministrator(),
                                 ],
                                 'description',
                                 [

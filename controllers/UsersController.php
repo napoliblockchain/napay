@@ -75,7 +75,7 @@ class UsersController extends Controller
                         'allow' => true,
                         'roles' => ['@'],
                         'matchCallback' => function ($rule, $action) {
-                            return User::can(40);
+                            return User::canManageUsers();
                         },
                     ],
                 ]
@@ -217,7 +217,7 @@ class UsersController extends Controller
     public function actionIndex()
     {
         
-        if (User::can(40)){
+        if (User::canManageUsers()) {
             $searchModel = new UsersSearch();
             $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
             $dataProvider->sort->defaultOrder = ['last_name' => SORT_ASC];
@@ -243,7 +243,7 @@ class UsersController extends Controller
     public function actionView($id)
     {
         $model = $this->findModel($id);
-        $merchants_list = User::can(40)
+        $merchants_list = User::canManageUsers()
             ? ArrayHelper::map(Merchants::find()->all(), 'id', 'description') : [];
         asort($merchants_list);
 

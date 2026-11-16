@@ -10,7 +10,7 @@ $own = (int) $model->id === (int) Yii::$app->user->id;
 $name = trim($model->first_name . ' ' . $model->last_name);
 $name = $name !== '' ? $name : $model->email;
 $this->title = $own ? Yii::t('app', 'Il mio profilo') : Yii::t('app', 'Profilo utente');
-if (User::can(40)) {
+if (User::canManageUsers()) {
     $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Utenti'), 'url' => ['index']];
 }
 $this->params['breadcrumbs'][] = $this->title;
@@ -54,7 +54,7 @@ if ($own) {
         <section class="card h-100">
             <div class="card-header flex-wrap gap-2">
                 <h3 class="card-title"><?= Html::encode($this->title) ?></h3>
-                <?php if (User::can(40)): ?>
+                <?php if (User::canManageUsers()): ?>
                     <div class="card-actions"><?= Html::a(Html::encode(Yii::t('app', 'Torna agli utenti')), ['index'], ['class' => 'btn btn-outline-secondary']) ?></div>
                 <?php endif; ?>
             </div>

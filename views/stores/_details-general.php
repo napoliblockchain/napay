@@ -25,7 +25,7 @@ use kartik\detail\DetailView;
             'attribute' => 'merchant_id',
             'format' => 'raw',
             'value' => Html::encode($model->merchant->description ?? null),
-            'visible' => User::can(30),
+            'visible' => User::hasRoleAtLeast(User::ROLE_MERCHANT),
         ],
         [
             'label' => $model->getAttributeLabel('bps_storeid'),

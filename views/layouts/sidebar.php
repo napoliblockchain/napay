@@ -10,7 +10,7 @@ use app\components\pos\management\Scope;
 $admin = !Yii::$app->user->isGuest && User::isAdministrator();
 $scope = Yii::$app->user->isGuest ? null : Scope::current();
 $member = !Yii::$app->user->isGuest && AccountEligibility::isMemberAccount((int)Yii::$app->user->id);
-$usersAllowed = !Yii::$app->user->isGuest && User::can(40);
+$usersAllowed = User::canManageUsers();
 $on = static fn($controller, array $actions=[]) => Yii::$app->controller->id === $controller
     && ($actions === [] || in_array(Yii::$app->controller->action->id, $actions, true));
 $items = [

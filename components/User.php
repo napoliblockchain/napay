@@ -6,19 +6,21 @@ use yii\base\Component;
 use app\models\Users;
 
 /**
- * ### Ruoli utente dal README
- * 
- * 1 - Administrator    ROLE_ADMIN       50  => Full control su applicazione
- * 2 - User             ROLE_USER         0  => Full control sui dati di tutti gli esercenti
- * 3 - Merchant         ROLE_MERCHANT    30  => Visualizza tutti i propri negozi/pos/invoices
+ * Livelli di privilegio (tabella privileges, gerarchici: un livello più alto può tutto quello dei livelli sotto).
+ * Nel codice si usano solo queste costanti o i metodi con nome, mai numeri.
+ *
+ * - ROLE_USER      0  socio (o operatore POS): nessuna gestione
+ * - ROLE_MERCHANT 30  gestore del proprio merchant: negozi, terminali, operatori
+ * - ROLE_STAFF    40  gestione utenti (profili intermedi creati in "Profili e privilegi"; nessuno nei dati attuali)
+ * - ROLE_ADMIN    50  amministratore della piattaforma
  */
-
 class User extends Component
-{   
+{
     const ROLE_ADMIN = 50;
+    const ROLE_STAFF = 40;
     const ROLE_MERCHANT = 30;
     const ROLE_USER = 0;
-    
+
     /**
      * Restituisce l'id del Merchant 
      */
@@ -39,48 +41,41 @@ class User extends Component
             ->all();
     }
     
-    /**
-     * Verifica se un utente può fare qualcosa in base al level
-     * del privilegio
-     */
-    public static function can($level): bool
+    /** Livello di privilegio dell'utente collegato o, se indicato, di un altro utente (null se non esiste). */
+    public static function privilegeLevel($id = null): ?int
     {
-        $p = Users::findOne(Yii::$app->user->identity->id);
-        if ($p->privilege->level >= $level) return true;
-        return false;
+        // utente collegato: identità e privilegio già caricati per la richiesta, nessuna query in più
+        $user = $id === null ? Yii::$app->user->identity : Users::findOne($id);
+        $level = $user?->privilege?->level;
+        return $level === null ? null : (int) $level;
     }
 
-
-    /**
-     * Restituisce il livello di privilegio di un utente
-     */
-    public static function privilegeLevel($id = null)
+    /** L'utente collegato ha almeno il livello indicato (usare le costanti ROLE_*). */
+    public static function hasRoleAtLeast(int $role): bool
     {
-        if (null === $id) $id = Yii::$app->user->identity->id;
-
-        $p = Users::findOne($id);
-        return $p->privilege->level;
+        return !Yii::$app->user->isGuest && (self::privilegeLevel() ?? -1) >= $role;
     }
 
-    // utente amministratore 
-    public static function isAdministrator()
+    /** Lista utenti, pannello admin e dettagli utente: dal livello ROLE_STAFF in su. */
+    public static function canManageUsers(): bool
     {
-        $p = Users::findOne(Yii::$app->user->identity->id);
-        return ($p->privilege->level === 50);
+        return self::hasRoleAtLeast(self::ROLE_STAFF);
     }
 
-    // utente merchant admin
-    public static function isMerchant()
+    public static function isAdministrator(): bool
     {
-        $p = Users::findOne(Yii::$app->user->identity->id);
-        return ($p->privilege->level === 30);
+        return !Yii::$app->user->isGuest && self::privilegeLevel() === self::ROLE_ADMIN;
     }
 
-    // utente merchant junior
-    public static function isUser()
+    /** Gestore di merchant (livello esatto ROLE_MERCHANT). */
+    public static function isMerchant(): bool
     {
-        $p = Users::findOne(Yii::$app->user->identity->id);
-        return ($p->privilege->level === 0);    
+        return !Yii::$app->user->isGuest && self::privilegeLevel() === self::ROLE_MERCHANT;
     }
 
+    /** Socio o operatore POS (livello esatto ROLE_USER). */
+    public static function isUser(): bool
+    {
+        return !Yii::$app->user->isGuest && self::privilegeLevel() === self::ROLE_USER;
+    }
 }
