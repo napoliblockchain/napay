@@ -20,6 +20,7 @@ use app\components\legacy\LegacyImporter;
 use app\components\payments\PayPal;
 use app\components\payments\PayPalException;
 use app\models\MembershipPayments;
+use app\models\MemberProfiles;
 use app\models\PaymentMethods;
 
 /**
@@ -41,7 +42,8 @@ class PayFeeController extends Controller
                 'class' => AccessControl::class,
                 'rules' => [[
                     'allow' => true, 'roles' => ['@'],
-                    'matchCallback' => static fn() => AccountEligibility::isMemberAccount((int)Yii::$app->user->id),
+                    // SIP-030: solo soci con iscrizione approvata
+                    'matchCallback' => static fn() => AccountEligibility::isMemberAccount((int)Yii::$app->user->id) && !MemberProfiles::isPending((int)Yii::$app->user->id),
                 ]],
             ],
         ];

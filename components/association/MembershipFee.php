@@ -28,6 +28,8 @@ final class MembershipFee
         $result = ['payable' => false, 'reason' => null, 'fee' => null, 'amount' => null, 'year' => null,
             'starts_on' => null, 'expires_on' => null, 'paid_until' => null];
         if (!AccountEligibility::isMemberAccount((int)$user->id)) return ['reason'=>'not_member'] + $result;
+        // SIP-030: quota pagabile solo dopo l'approvazione dell'iscrizione
+        if (MemberProfiles::isPending((int) $user->id)) return ['reason' => 'not_approved'] + $result;
         $paidUntil = MembershipPayments::find()->where(['user_id' => $user->id, 'status' => 'paid'])->max('expires_on');
         $result['paid_until'] = $paidUntil ?: null;
 

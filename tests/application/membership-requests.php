@@ -86,6 +86,8 @@ check(login('req-g@example.invalid')['status'] === 302 && web('/membership-reque
     && web('/membership-requests/approve', ['_csrf' => csrf(web('/site/index')), 'selection' => [$a]])['status'] === 403 && !MemberProfiles::isPending($approved) && MemberProfiles::isPending($a),
     'Approved member logs in but cannot see or approve requests (403)');
 check(login('req-b@example.invalid')['status'] === 200 && str_contains(login('req-b@example.invalid')['body'], 'in attesa di approvazione'), 'Pending member cannot log in');
+check(app\components\association\MembershipFee::quote(app\models\Users::findOne($b))['reason'] === 'not_approved'
+    && app\components\association\MembershipFee::quote(app\models\Users::findOne($approved))['reason'] !== 'not_approved', 'Fee payable only after approval');
 
 // --- Admin: lista, approvazione, rifiuto
 check(login('admin@example.invalid')['status'] === 302, 'Admin logs in');
