@@ -63,6 +63,20 @@ if [[ $action == prepare-roles && $role_mode == 0 ]]; then
     role_mode=1
 fi
 if [[ $role_mode == 1 ]]; then compose+=(-f "$root/docker-compose.roles.yml"); fi
+# SIP-022 B5: worker BTCPay verso il regtest locale, solo se la chiave del provisioner è nella cartella privata.
+# Il portachiavi di cifratura delle chiavi merchant nasce qui una sola volta (mai sovrascritto).
+if [[ $role_mode == 1 && ( -e $state/btcpay-provisioner-key || -L $state/btcpay-provisioner-key ) ]]; then
+    napay_private_input "$state/btcpay-provisioner-key" file "$(id -u)"
+    [[ -e $state/btcpay-kek-keyring || -L $state/btcpay-kek-keyring ]] \
+        || (set -o noclobber; printf '{"current":"k1","keys":{"k1":"%s"}}\n' "$(openssl rand -base64 32)" > "$state/btcpay-kek-keyring")
+    napay_private_input "$state/btcpay-kek-keyring" file "$(id -u)"
+    napay_private_input "$state/caddy-root.crt" file "$(id -u)"
+    export BTCPAY_PROVISION_ORIGIN=https://btcpay.local
+    BTCPAY_PROVISION_INSTANCE=$(printf %s "$BTCPAY_PROVISION_ORIGIN" | sha256sum | cut -c1-64)
+    export BTCPAY_PROVISION_INSTANCE BTCPAY_PROVISIONER_KEY_SECRET_FILE=$state/btcpay-provisioner-key
+    export BTCPAY_KEK_KEYRING_SECRET_FILE=$state/btcpay-kek-keyring NAPAY_LOCAL_BTCPAY_CA=$state/caddy-root.crt
+    compose+=(-f "$root/docker-compose.btcpay-worker.yml" -f "$root/docker/local/btcpay-worker.yml")
+fi
 if [[ $action =~ ^(up|init|check|prepare-roles)$ ]]; then
     [[ $role_mode == 1 ]] || { echo 'Run prepare-roles once before starting this existing sandbox.' >&2; exit 1; }
     bash "$root/docker/up.sh" "$state/local.env" --check

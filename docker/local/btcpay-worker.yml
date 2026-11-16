@@ -1,0 +1,11 @@
+# Sandbox: worker BTCPay verso il regtest locale (https://btcpay.local tramite napay-gateway), CA locale del gateway.
+# Incluso da docker/local.sh solo se esiste la chiave del provisioner nella cartella privata della sandbox.
+services:
+  btcpay-worker:
+    environment:
+      BTCPAY_PROVISION_CA_FILE: /run/btcpay-ca.crt
+    volumes:
+      - ${NAPAY_LOCAL_BTCPAY_CA:?Set local gateway CA}:/run/btcpay-ca.crt:ro
+    depends_on:
+      egress:
+        condition: service_healthy

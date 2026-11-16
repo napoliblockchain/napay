@@ -11,7 +11,27 @@ function localCheck(bool $condition): void {
 $services = $config['services'];
 $names = array_keys($services); sort($names);
 $roles = ($services['web']['environment']['NAPAY_DB_ROLE_MODE'] ?? '') === 'true';
-localCheck($names === ($roles ? ['bootstrap', 'cron', 'egress', 'mysql', 'web', 'worker-db-check'] : ['bootstrap', 'cron', 'egress', 'mysql', 'web']));
+$expected = $roles ? ['bootstrap', 'cron', 'egress', 'mysql', 'web', 'worker-db-check'] : ['bootstrap', 'cron', 'egress', 'mysql', 'web'];
+// SIP-022 B5: worker BTCPay opzionale (solo con la chiave del provisioner), sempre con i ruoli separati
+$btcpayWorker = isset($services['btcpay-worker']);
+if ($btcpayWorker) { $expected[] = 'btcpay-worker'; sort($expected); }
+localCheck($names === $expected);
+if ($btcpayWorker) {
+    localCheck($roles);
+    $bw = $services['btcpay-worker']; $bwEnv = $bw['environment'];
+    $bwNetworks = array_keys($bw['networks']); sort($bwNetworks);
+    $bwSecrets = array_column($bw['secrets'], 'source'); sort($bwSecrets);
+    localCheck($bwNetworks === ['database', 'egress'] && $bwSecrets === ['btcpay_kek_keyring', 'btcpay_provisioner_key', 'napay_db_worker_password']);
+    localCheck(empty($bw['ports']) && $bw['read_only'] === true && $bw['cap_drop'] === ['ALL']);
+    localCheck($bwEnv['NAPAY_DB_ROLE'] === 'worker' && $bwEnv['DB_DATABASE'] === 'napay_browser_local' && $bwEnv['PAYMENT_PROXY'] === 'http://egress:3128'
+        && $bwEnv['BTCPAY_PROVISION_ORIGIN'] === 'https://btcpay.local' && $bwEnv['BTCPAY_PROVISION_CA_FILE'] === '/run/btcpay-ca.crt' && !isset($bwEnv['DB_PASSWORD']));
+    foreach ($bw['volumes'] as $mount) {
+        if ($mount['target'] === '/app') localCheck($mount['read_only'] === true);
+        localCheck($mount['target'] !== '/import');
+    }
+    // il web vede solo il digest pubblico dell'origine, mai i segreti del worker
+    localCheck(($services['web']['environment']['BTCPAY_PROVISION_INSTANCE'] ?? '') === hash('sha256', 'https://btcpay.local') && empty($services['web']['secrets']));
+}
 if ($roles) {
     localCheck(empty($services['web']['secrets']) && empty($services['web']['environment']['NAPAY_WEB_DB_PASSWORD']));
     // cron: stesso utente DB del web, nessun segreto
