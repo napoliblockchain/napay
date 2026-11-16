@@ -85,3 +85,8 @@ html[data-bs-theme="dark"] .napay-app .datepicker table tr td.day:hover { backgr
 }
 .napay-app .grid-view > .card-footer > .ms-auto { min-width: 0; max-width: 100%; }
 .napay-app .grid-view > .card-footer .pagination { flex-wrap: wrap; row-gap: .25rem; }
+
+/* Marchio Napay come sul POS (anche in site.css per la pagina di accesso): icona e scritta na (nero) pay (verde) in serif */
+.napay-app .napay-brand-icon { height: 2rem; width: 2rem; border-radius: .45rem; }
+.napay-app .napay-wordmark { font: 700 1.6rem/1 Georgia, "DejaVu Serif", serif; letter-spacing: -.04em; color: #162626; }
+.napay-app .napay-wordmark span { color: #64763e; }
