@@ -7,7 +7,8 @@ module.exports = {
     'manifest.json',
     'favicon.ico',
     'bundles/site/images/logo.png',
-    'bundles/sw/src/images/icons/app-icon-*.png',
+    // icone dell'app (stile Napay, 2026-11-16)
+    'brand/*.{png,svg}',
   ],
   swSrc: 'web/sw-src.js',
   swDest: 'web/sw.js',

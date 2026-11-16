@@ -25,7 +25,10 @@ $this->registerJsFile('@web/bundles/site/js/napay-theme-init.js', ['position' =>
     <?php
     $this->registerMetaTag(['name' => 'description', 'content' => $this->params['meta_description'] ?? '']);
     $this->registerMetaTag(['name' => 'keywords', 'content' => $this->params['meta_keywords'] ?? '']);
-    $this->registerLinkTag(['rel' => 'icon', 'type' => 'image/x-icon', 'href' => Yii::getAlias('@web/favicon.ico')]);
+    $this->registerLinkTag(['rel' => 'icon', 'type' => 'image/svg+xml', 'href' => Yii::getAlias('@web/brand/icon.svg')]);
+    $this->registerLinkTag(['rel' => 'icon', 'type' => 'image/x-icon', 'sizes' => '48x48', 'href' => Yii::getAlias('@web/favicon.ico')]);
+    $this->registerLinkTag(['rel' => 'apple-touch-icon', 'href' => Yii::getAlias('@web/brand/apple-touch-icon.png')]);
+    $this->registerMetaTag(['name' => 'theme-color', 'content' => '#162626']);
     ?>
     <link rel="manifest" href="/manifest.json">
     <?php $this->head() ?>
