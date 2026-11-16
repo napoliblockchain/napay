@@ -7,9 +7,9 @@ use app\components\Crypt;
 /* @var $model app\models\Stores */
 
 $this->title = $title;
-$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Negozi'), 'url' => ['index']];
-$this->params['breadcrumbs'][] = ['label' => substr($model->storesettings->bps_storeid, 0, 15) . '…', 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
-$this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
+$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Stores'), 'url' => ['index']];
+$this->params['breadcrumbs'][] = ['label' => $model->description, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
+$this->params['breadcrumbs'][] = Yii::t('app', 'Edit');
 ?>
     <div class="row row-cards">
         <div class="col-lg-8">

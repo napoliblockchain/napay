@@ -90,6 +90,7 @@ $storePage = web('/stores/view?id=' . urlencode($id))['body'];
 check(str_contains($storePage, 'tab-general') && !str_contains($storePage, 'tab-rates') && !str_contains($storePage, 'tab-checkout') && !str_contains($storePage, 'tab-criteria') && !str_contains($storePage, 'tab-webhook'), 'Store page without rates, receipts, criteria and webhook tabs');
 $walletTab = (string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/_details-wallet.php');
 check(!str_contains($walletTab, 'derivationScheme') && !str_contains($walletTab, 'accountKeyPath'), 'BTC wallet tab hides derivation scheme and account key path');
+foreach (['_details-general.php', 'update.php', 'view.php'] as $file) check(!str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/' . $file), 'bps_storeid'), 'BTCPay store ID never shown: ' . $file);
 check(str_contains(web('/pos-management/index')['body'], 'Negozio senza BTCPay'), 'New store available for POS terminals');
 
 // --- scope: il gestore non vede negozi di altri merchant (prima: qualunque ID cifrato valido)

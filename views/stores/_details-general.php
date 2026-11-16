@@ -28,14 +28,6 @@ use kartik\detail\DetailView;
             'visible' => User::hasRoleAtLeast(User::ROLE_MERCHANT),
         ],
         [
-            'label' => $model->getAttributeLabel('bps_storeid'),
-            'format' => 'raw',
-            'value' =>  call_user_func(function ($data) {
-                return Html::encode($data->bps_storeid);
-            }, $model->storesettings),
-        ],
-        
-        [
             'attribute' => 'description',
             'format' => 'raw',
             'value' => Html::encode($model->description ?? null)
