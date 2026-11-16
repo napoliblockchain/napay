@@ -17,7 +17,8 @@ final class DatabaseRoles
         'btcpay_merchant_accounts', 'btcpay_merchant_credentials', 'btcpay_store_links',
         'btcpay_pos_links', 'btcpay_provisioning_jobs',
     ];
-    private const WEB_HISTORY = ['pos_terminal_openings', 'pos_tts_payments'];
+    // SIP-031: le segnalazioni di wallet perso non si cancellano (solo ritrovamento)
+    private const WEB_HISTORY = ['pos_terminal_openings', 'pos_tts_payments', 'tts_lost_wallets'];
     /** wallet TTS del negozio: il gestore può anche rimuoverlo (le richieste create tengono l'indirizzo congelato) */
     private const WEB_DELETABLE = ['store_tts_wallets'];
     private const WEB_READ = [

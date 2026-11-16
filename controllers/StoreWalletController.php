@@ -8,12 +8,14 @@ use yii\web\ForbiddenHttpException;
 use yii\web\NotFoundHttpException;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
+use yii\db\Query;
 use yii\db\Transaction;
 
 use app\components\Log;
 use app\components\pos\management\ManagementException;
 use app\components\pos\management\PosManagement;
 use app\components\pos\management\Scope;
+use app\components\pos\tts\LostWallets;
 use app\models\forms\pos\TtsWalletForm;
 
 /**
@@ -27,7 +29,7 @@ class StoreWalletController extends Controller
     public function behaviors()
     {
         return [
-            'verbs' => ['class' => VerbFilter::class, 'actions' => ['index' => ['GET', 'POST'], 'delete' => ['POST']]],
+            'verbs' => ['class' => VerbFilter::class, 'actions' => ['index' => ['GET', 'POST'], 'delete' => ['POST'], 'report-lost' => ['POST']]],
             'access' => [
                 'class' => AccessControl::class,
                 'rules' => [['allow' => true, 'roles' => ['@'], 'matchCallback' => fn($rule, $action) => Scope::current() !== null]],
@@ -67,9 +69,12 @@ class StoreWalletController extends Controller
         $current = $target === null ? false : Yii::$app->db->createCommand('SELECT address, updated_at FROM {{%store_tts_wallets}} WHERE store_id=:s', [':s' => $target['id']])->queryOne();
         $current = $current === false ? null : $current;
         if ($current !== null && $form->address === null) $form->address = $current['address'];
+        $lost = $target === null ? [] : (new Query())->select(['address', 'reported_at', 'recovered_at'])->from(LostWallets::TABLE)
+            ->where(['store_id' => $target['id']])->orderBy(['reported_at' => SORT_DESC])->limit(20)->all();
         return $this->render('index', [
             'form' => $form,
             'current' => $current,
+            'lost' => $lost,
             'editing' => $current === null || $edit === '1' || $form->hasErrors(),
             'stores' => $stores,
             'store' => $target === null ? null : $store,
@@ -101,6 +106,32 @@ class StoreWalletController extends Controller
         return $this->redirect(['index', 'store' => $store]);
     }
 
+    /**
+     * SIP-031: seed perso. Doppia conferma (parola CONFERMA/CONFIRM nella lingua dell'utente) e motivazione; non si annulla.
+     * Blocca subito gli incassi TTS: indirizzo tolto dai negozi del merchant, richieste in attesa annullate.
+     */
+    public function actionReportLost(?string $store = null)
+    {
+        $target = $this->target($store);
+        if ($target === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        $request = Yii::$app->request;
+        $reason = trim((string) $request->post('reason', ''));
+        $confirm = mb_strtoupper(trim((string) $request->post('confirm', '')));
+        if ($confirm !== Yii::t('app', 'CONFIRM') || mb_strlen($reason) < 3 || mb_strlen($reason) > 1000) {
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'Not reported: write the reason and type {word} to confirm.', ['word' => Yii::t('app', 'CONFIRM')]));
+            return $this->redirect(['index', 'store' => $store]);
+        }
+        try {
+            $result = LostWallets::report($this->scope, $target['id'], $target['merchant_id'], $reason);
+            Yii::$app->session->setFlash('warning', Yii::t('app', 'Lost seed reported: TTS payments on this address are blocked ({stores} stores), {cancelled} pending requests cancelled. Save a new address to collect again.',
+                ['stores' => $result['stores'], 'cancelled' => $result['cancelled']]));
+        } catch (ManagementException $e) {
+            if ($e->getMessage() === ManagementException::NOT_FOUND) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'Operation failed. Please retry.'));
+        }
+        return $this->redirect(['index', 'store' => $store]);
+    }
+
     /** Negozio della pagina: null se non indicato; fuori scope, inesistente o malformato = 404. */
     private function target(?string $store): ?array
     {
@@ -126,6 +157,8 @@ class StoreWalletController extends Controller
             if ($previous === false) $db->createCommand()->insert('{{%store_tts_wallets}}', ['store_id' => $target['id'], 'merchant_id' => $target['merchant_id']] + $row)->execute();
             else $db->createCommand()->update('{{%store_tts_wallets}}', $row, ['store_id' => $target['id']])->execute();
             Log::event(sprintf('Wallet TTS del negozio %d impostato a %s (precedente %s)', $target['id'], $address, $previous === false ? 'nessuno' : $previous), Log::TYPE_DATA);
+            // SIP-031: indirizzo segnalato perso e salvato di nuovo = seed ritrovato
+            LostWallets::recover($db, $target['merchant_id'], $address, $this->scope->actorId);
             $transaction->commit();
         } catch (\Throwable $error) {
             if ($transaction->isActive) $transaction->rollBack();

@@ -378,4 +378,36 @@ $r = $view('other_to');
 check($r['status'] === 200 && $r['json']['state'] === 'pending', 'Chain unreachable: pending payment unchanged, never expired by guess');
 $r = api('POST', 'payments/' . $p['other_to']['id'] . '/cancel', $u, ['instance_id' => $oA['instance_id'], 'generation' => $oA['generation']]);
 check($r['status'] === 503 && code($r) === 'payment_unavailable' && payment($p['other_to']['id'])['state'] === 'pending', 'Chain unreachable: cancel refused, no blind cancellation');
+
+// --- SIP-031: seed perso (non serve la chain). Il wallet del negozio A torna e poi viene segnalato perso.
+$euro = static fn(int $cents) => number_format($cents / 100, 2, ',', '.') . ' TTS';
+$paidCents = (int) scalar("SELECT SUM(amount_cents) FROM pos_tts_payments WHERE state='paid'");
+webLogin($state['manager']);
+$keyA = storeKey('TTS A1');
+check(saveWallet($state['wallet'], $keyA)['status'] === 302 && storeWallet($state['store']) === $state['wallet'], 'Store A wallet saved again');
+$page = web(walletUrl($keyA));
+check(str_contains($page['body'], 'data-store-wallet-lost') && str_contains($page['body'], 'CONFERMA'), 'Wallet page offers the lost-seed report with the confirmation word');
+$report = static fn(array $fields) => web(walletUrl($keyA, 'report-lost'), ['_csrf' => csrf(web(walletUrl($keyA)))] + $fields);
+check(web(walletUrl($keyA, 'report-lost'))['status'] === 405 && web(walletUrl($keyA, 'report-lost'), ['reason' => 'x', 'confirm' => 'CONFERMA'])['status'] === 400, 'Report needs POST with CSRF');
+foreach (['no confirmation word' => ['reason' => 'Seed perso', 'confirm' => ''], 'word of another language' => ['reason' => 'Seed perso', 'confirm' => 'CONFIRM'],
+    'no reason' => ['reason' => ' ', 'confirm' => 'CONFERMA']] as $label => $fields) {
+    check($report($fields)['status'] === 302 && storeWallet($state['store']) === $state['wallet'] && (int) scalar('SELECT COUNT(*) FROM tts_lost_wallets') === 0, 'Report refused: ' . $label);
+}
+check(payment($p['other_to']['id'])['state'] === 'pending', 'A request is still pending before the report');
+check($report(['reason' => 'Telefono perso con il seed', 'confirm' => ' conferma '])['status'] === 302, 'Report sent with the confirmation word (case and spaces ignored)');
+$other = payment($p['other_to']['id']);
+check(storeWallet($state['store']) === false && (int) scalar('SELECT COUNT(*) FROM store_tts_wallets WHERE address=:a', [':a' => $state['wallet']]) === 0, 'Lost address removed from the stores: TTS collection blocked at once');
+check($other['state'] === 'cancelled' && $other['closed_at'] !== null, 'Pending request to the lost address cancelled (its QR is no longer valid)');
+check(scalar('SELECT reason FROM tts_lost_wallets WHERE address=:a AND recovered_at IS NULL', [':a' => $state['wallet']]) === 'Telefono perso con il seed'
+    && logged('segnalato perso') === 1, 'Report stored with reason and audited');
+$list = web('/pos-payments/index')['body'];
+check(preg_match('~data-total-lost>' . preg_quote($euro($paidCents), '~') . '<~', $list) === 1 && preg_match('~data-total-paid>' . preg_quote($euro(0), '~') . '<~', $list) === 1
+    && str_contains($list, 'Pagato: fondi persi'), 'Payments page: paid on the lost wallet counted as lost funds, not as collected');
+check(str_contains(web('/pos-payments/export?state=paid')['body'], ';Sì;'), 'CSV marks lost funds');
+check(str_contains(web(walletUrl($keyA))['body'], 'Segnalazioni di seed perso') && str_contains(web(walletUrl($keyA))['body'], 'TtsWalletForm[address]'), 'Report listed; the store asks for a new address');
+check(saveWallet($state['wallet'], $keyA)['status'] === 302 && storeWallet($state['store']) === $state['wallet']
+    && scalar('SELECT recovered_at FROM tts_lost_wallets WHERE address=:a', [':a' => $state['wallet']]) !== null && logged('ritrovato') === 1, 'Same address saved again: seed recovered, audited');
+$list = web('/pos-payments/index')['body'];
+check(!str_contains($list, 'data-total-lost') && preg_match('~data-total-paid>' . preg_quote($euro($paidCents), '~') . '<~', $list) === 1, 'Recovered address: payments back in the collected total');
+check((int) scalar('SELECT COUNT(*) FROM tts_lost_wallets') === 1, 'The report is kept (never deleted)');
 printf("PASS %d TTS payment offline checks\n", $checks);

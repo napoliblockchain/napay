@@ -10,6 +10,7 @@ use app\assets\StoreWalletAsset;
 /* @var $stores array ID negozio cifrato => nome (in scope) */
 /* @var $store string|null negozio selezionato (ID cifrato) */
 /* @var $editing bool form visibile: nessun indirizzo, modifica richiesta o errori */
+/* @var $lost array segnalazioni di seed perso del negozio (SIP-031): address, reported_at, recovered_at */
 
 StoreWalletAsset::register($this);
 $back = ['index', 'store' => $store];
@@ -65,5 +66,41 @@ $this->params['breadcrumbs'][] = $this->title;
             <?php ActiveForm::end(); ?>
         <?php endif; ?>
     </div>
+    <?php if ($current !== null): ?>
+    <!-- SIP-031: seed perso, doppia conferma, non si annulla -->
+    <div class="card-body border-top" data-store-wallet-lost>
+        <details>
+            <summary class="text-danger fw-semibold"><?= Html::encode(Yii::t('app', 'Lost the seed of this wallet?')) ?></summary>
+            <p class="text-secondary mt-2"><?= Html::encode(Yii::t('app', 'Reporting blocks TTS payments on this address right away: it is removed from the stores that use it, pending requests are cancelled and past payments are counted as lost funds. The report cannot be undone; if you find the seed again, save the same address.')) ?></p>
+            <?= Html::beginForm(['report-lost', 'store' => $store], 'post') ?>
+            <div class="mb-3">
+                <label class="form-label" for="lost-reason"><?= Html::encode(Yii::t('app', 'Reason')) ?></label>
+                <?= Html::textarea('reason', '', ['id' => 'lost-reason', 'class' => 'form-control', 'rows' => 2, 'maxlength' => 1000, 'required' => true]) ?>
+            </div>
+            <div class="mb-3">
+                <label class="form-label" for="lost-confirm"><?= Html::encode(Yii::t('app', 'Type {word} to confirm', ['word' => Yii::t('app', 'CONFIRM')])) ?></label>
+                <?= Html::textInput('confirm', '', ['id' => 'lost-confirm', 'class' => 'form-control', 'autocomplete' => 'off', 'required' => true]) ?>
+            </div>
+            <?= Html::submitButton('<i class="fas fa-exclamation-triangle me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Report lost seed')), ['class' => 'btn btn-danger']) ?>
+            <?= Html::endForm() ?>
+        </details>
+    </div>
+    <?php endif; ?>
+    <?php if ($lost !== []): ?>
+    <div class="card-body border-top">
+        <h4 class="mb-2"><?= Html::encode(Yii::t('app', 'Lost seed reports')) ?></h4>
+        <ul class="list-unstyled mb-0 small">
+            <?php foreach ($lost as $row): ?>
+                <li class="d-flex flex-wrap gap-2 align-items-center mb-1">
+                    <span class="font-monospace" title="<?= Html::encode($row['address']) ?>"><?= Html::encode(substr($row['address'], 0, 10) . '…' . substr($row['address'], -8)) ?></span>
+                    <span class="text-secondary"><?= Html::encode(Yii::$app->formatter->asDatetime((int) $row['reported_at'], 'php:d/m/Y H:i')) ?></span>
+                    <?= $row['recovered_at'] === null
+                        ? Html::tag('span', Html::encode(Yii::t('app', 'Lost')), ['class' => 'badge bg-dark-lt'])
+                        : Html::tag('span', Html::encode(Yii::t('app', 'Recovered on {date}', ['date' => Yii::$app->formatter->asDate((int) $row['recovered_at'], 'php:d/m/Y')])), ['class' => 'badge bg-success-lt']) ?>
+                </li>
+            <?php endforeach; ?>
+        </ul>
+    </div>
+    <?php endif; ?>
 </div>
 <?php endif; ?>

@@ -62,8 +62,9 @@ if ($admin) array_unshift($columns, ['label' => Yii::t('app', 'Merchant'), 'valu
     </div>
     <div class="card-body border-bottom">
         <div class="row g-3">
-            <?php foreach (['paid' => ['text-success', 'Collected'], 'pending' => ['text-blue', 'Pending'], 'expired' => ['text-secondary', 'Expired'], 'cancelled' => ['text-danger', 'Cancelled']] as $state => [$color, $label]): ?>
-                <div class="col-6 col-md-3">
+            <?php foreach (['paid' => ['text-success', 'Collected'], 'pending' => ['text-blue', 'Pending'], 'expired' => ['text-secondary', 'Expired'], 'cancelled' => ['text-danger', 'Cancelled'], 'lost' => ['text-dark', 'Lost funds']] as $state => [$color, $label]): ?>
+                <?php if ($state === 'lost' && $totals['lost']['count'] === 0) continue; ?>
+                <div class="col-6 col-md">
                     <div class="text-secondary small"><?= Html::encode(Yii::t('app', $label)) ?> <span class="badge bg-secondary-lt ms-1"><?= (int) $totals[$state]['count'] ?></span></div>
                     <div class="h3 mb-0 <?= $color ?>" data-total-<?= $state ?>><?= Html::encode(PaymentTotals::format($totals[$state]['cents'])) ?></div>
                 </div>

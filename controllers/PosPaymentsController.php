@@ -4,6 +4,7 @@ namespace app\controllers;
 
 use Yii;
 use app\components\pos\management\Scope;
+use app\components\pos\tts\LostWallets;
 use app\components\pos\tts\PaymentTotals;
 use app\components\pos\tts\TtsPayments;
 use app\models\Merchants;
@@ -77,13 +78,14 @@ class PosPaymentsController extends Controller
         $out = fopen('php://temp', 'w+');
         fwrite($out, "\xEF\xBB\xBF");
         $header = [Yii::t('app', 'Date'), Yii::t('app', 'Store'), Yii::t('app', 'POS'), Yii::t('app', 'Operator'), Yii::t('app', 'Amount'),
-            Yii::t('app', 'Currency'), Yii::t('app', 'Status'), Yii::t('app', 'Paid at'), Yii::t('app', 'Transaction'), Yii::t('app', 'ID')];
+            Yii::t('app', 'Currency'), Yii::t('app', 'Status'), Yii::t('app', 'Paid at'), Yii::t('app', 'Transaction'), Yii::t('app', 'Lost funds'), Yii::t('app', 'ID')];
         if ($this->scope->isAdmin()) array_unshift($header, Yii::t('app', 'Merchant'));
         fputcsv($out, $header, ';', '"', '');
         foreach ($query->limit(self::EXPORT_LIMIT)->each(500) as $row) {
             $line = [date('Y-m-d H:i:s', (int) $row['created_at']), $row['store'], $row['terminal'], trim($row['first_name'] . ' ' . $row['last_name']),
                 number_format((int) $row['amount_cents'] / 100, 2, ',', ''), 'TTS', $row['state'],
-                $row['paid_at'] === null ? '' : date('Y-m-d H:i:s', (int) $row['paid_at']), (string) $row['tx_hash'], $row['public_id']];
+                $row['paid_at'] === null ? '' : date('Y-m-d H:i:s', (int) $row['paid_at']), (string) $row['tx_hash'],
+                $row['state'] === 'paid' && (int) $row['lost'] === 1 ? Yii::t('app', 'Yes') : '', $row['public_id']];
             if ($this->scope->isAdmin()) array_unshift($line, $row['merchant']);
             // celle che iniziano con = + - @ non diventano formule in Excel
             fputcsv($out, array_map(static fn($v) => preg_match('/^[=+\-@\t\r]/', (string) $v) ? "'" . $v : $v, $line), ';', '"', '');
@@ -97,7 +99,9 @@ class PosPaymentsController extends Controller
     {
         $query = (new Query())
             ->select(['p.public_id', 'p.amount_cents', 'p.state', 'p.to_address', 'p.tx_hash', 'p.paid_block', 'p.paid_at', 'p.closed_at', 'p.created_at', 'p.expires_at',
-                'store' => 's.description', 'terminal' => 't.name', 'u.first_name', 'u.last_name', 'merchant' => 'm.description'])
+                'store' => 's.description', 'terminal' => 't.name', 'u.first_name', 'u.last_name', 'merchant' => 'm.description',
+                // SIP-031: pagato su un wallet segnalato perso e non ritrovato
+                'lost' => LostWallets::lostCondition('p')])
             ->from(['p' => '{{%pos_tts_payments}}'])
             ->innerJoin(['s' => Stores::tableName()], 's.id=p.store_id')
             ->innerJoin(['t' => PosTerminals::tableName()], 't.id=p.terminal_id')
