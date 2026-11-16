@@ -44,8 +44,8 @@ $items = [
     <div class="container-fluid">
         <div class="navbar-brand d-flex align-items-center justify-content-between">
             <a class="text-reset text-decoration-none d-flex align-items-center gap-2" href="<?= Url::to(['site/index'], true) ?>">
-                <?= Html::img('@web/bundles/site/images/logo.png', ['alt' => '', 'class' => 'navbar-brand-image']) ?>
-                <span class="napay-brand-text"><?= Html::encode(Yii::$app->name) ?></span>
+                <?= Html::img('@web/brand/icon.svg', ['alt' => '', 'class' => 'navbar-brand-image napay-brand-icon']) ?>
+                <span class="napay-brand-text napay-wordmark" aria-label="<?= Html::encode(Yii::$app->name) ?>">na<span>pay</span></span>
             </a>
             <button class="navbar-toggler d-lg-none" type="button" data-bs-toggle="collapse"
                     data-bs-target="#napay-sidebar-menu" aria-controls="napay-sidebar-menu"

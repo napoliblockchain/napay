@@ -163,3 +163,10 @@ a.desc:after {
 #toast-container > .toast-error { background-color: #c62828; }
 #toast-container > .toast-info { background-color: #1565c0; }
 #toast-container > .toast-warning { background-color: #b45309; }
+
+/* Marchio Napay come sul POS: icona "n." e scritta na (nero) pay (verde) in serif */
+.napay-brand-icon { height: 2rem; width: 2rem; border-radius: .45rem; }
+.napay-wordmark { font: 700 1.6rem/1 Georgia, "DejaVu Serif", serif; letter-spacing: -.04em; color: #162626; }
+.napay-wordmark span { color: #64763e; }
+.napay-wordmark--dark { color: #f6f3e9; }
+.napay-wordmark--dark span { color: #9bb85a; }

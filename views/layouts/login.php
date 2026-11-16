@@ -51,7 +51,7 @@ ServiceWorkerAsset::register($this);
     <header id="header">
         <?php
         NavBar::begin([
-            'brandLabel' => Html::img('/bundles/site/images/logo-60.png') . '<span class="h1 pt-1 ml-3">' . Yii::$app->name . '</span>',
+            'brandLabel' => Html::img('/brand/icon.svg', ['alt' => '', 'class' => 'napay-brand-icon']) . '<span class="napay-wordmark napay-wordmark--dark ml-3" aria-label="' . Html::encode(Yii::$app->name) . '">na<span>pay</span></span>',
             // 'brandImage' => '/bundles/site/images/logo-70.png',
             'brandUrl' => Url::to(['site/index'], true),
             'options' => ['class' => 'navbar-expand-md navbar-dark bg-dark fixed-top valign-center']

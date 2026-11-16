@@ -1,4 +1,9 @@
 /* Application-only compatibility layer. Login and exports retain their own assets. */
+/* Colore dell'app: verde Napay (POS blu, wallet giallo). Tabler ne ricava varianti chiare, scure e bordi. */
+:root {
+    --tblr-primary: #5a7630;
+    --tblr-primary-rgb: 90, 118, 48;
+}
 .napay-app {
     min-width: 0;
     background: linear-gradient(145deg, rgba(var(--tblr-primary-rgb), .035), transparent 45%), var(--tblr-body-bg);
