@@ -32,7 +32,7 @@ GRANT SELECT (user_id) ON membership_payments TO 'napay_b1b_worker'@'%';
 GRANT SELECT (user_id) ON pos_operators TO 'napay_b1b_worker'@'%';
 GRANT SELECT (id, user_id) ON merchants TO 'napay_b1b_worker'@'%';
 GRANT SELECT (id, merchant_id, description, archived_at) ON stores TO 'napay_b1b_worker'@'%';
-GRANT SELECT (store_id, website, defaultCurrency, invoiceExpiration, displayExpirationTimer, monitoringExpiration, speedPolicy, lightningDescriptionTemplate, paymentTolerance, anyoneCanCreateInvoice, requiresRefundEmail, checkoutType, receipt, lightningAmountInSatoshi, lightningPrivateRouteHints, onChainWithLnInvoiceFallback, redirectAutomatically, showRecommendedFee, recommendedFeeBlockTarget, defaultLang, customLogo, customCSS, htmlTitle, networkFeeMode, payJoinEnabled, lazyPaymentMethods, defaultPaymentMethod) ON storesettings TO 'napay_b1b_worker'@'%';
+GRANT SELECT (store_id, website, defaultCurrency, invoiceExpiration, displayExpirationTimer, monitoringExpiration, speedPolicy, lightningDescriptionTemplate, paymentTolerance, anyoneCanCreateInvoice, requiresRefundEmail, checkoutType, receipt, lightningAmountInSatoshi, lightningPrivateRouteHints, onChainWithLnInvoiceFallback, redirectAutomatically, showRecommendedFee, recommendedFeeBlockTarget, defaultLang, customLogo, customCSS, htmlTitle, networkFeeMode, payJoinEnabled, lazyPaymentMethods, defaultPaymentMethod, derivationScheme) ON storesettings TO 'napay_b1b_worker'@'%';
 GRANT SELECT (id, store_id, merchant_id) ON pos_terminals TO 'napay_b1b_worker'@'%';
 GRANT INSERT ON logs TO 'napay_b1b_worker'@'%';
 SQL

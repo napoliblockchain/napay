@@ -6,6 +6,7 @@ use app\components\btcpay\StoreSettingsPayload;
 use app\components\btcpay\provisioning\steps\StepOutcome;
 use app\components\btcpay\provisioning\steps\StoreArchiveStep;
 use app\components\btcpay\provisioning\steps\StoreSettingsStep;
+use app\components\btcpay\provisioning\steps\StoreWalletStep;
 use app\components\identity\AccountEligibility;
 use yii\db\Connection;
 
@@ -16,13 +17,15 @@ use yii\db\Connection;
  * - `store_archive` (negozio eliminato in Napay): DELETE delle app POS collegate (404 = già rimossa), poi nome
  *   "archiviato" sullo store, mapping chiusi (`suspended`, `store_archived`). Lo store non viene mai cancellato.
  *   Store mai collegato: niente da fare. Creazione ancora incerta: decide l'admin.
+ * - `store_wallet` (xpub del merchant, decisione A): metodo di pagamento on-chain impostato con la xpub salvata in
+ *   Napay al momento dell'esecuzione, oppure rimosso se il merchant l'ha tolta. Napay non custodisce chiavi private.
  * - Stesso lock di risorsa dello store_link (istanza+negozio): mai in parallelo con la creazione dello store.
  * - Scope ricontrollato in ogni transazione della coda; nessuna transazione aperta durante l'HTTP. Esito ignoto =
  *   nuovo tentativo (operazioni idempotenti), mai riconciliazione. 401/403: lavoro fallito e account in revisione.
  */
 final class ProvisioningSettingsWorker
 {
-    private const KINDS = ['store_update', 'store_archive'];
+    private const KINDS = ['store_update', 'store_archive', 'store_wallet'];
     private const LOCK_WAIT = 5;
     private const ARCHIVED_SUFFIX = ' - archiviato';
 
@@ -31,7 +34,7 @@ final class ProvisioningSettingsWorker
     public function __construct(#[\SensitiveParameter] private readonly Connection $db, #[\SensitiveParameter] private readonly ProvisioningJobs $jobs,
         #[\SensitiveParameter] private readonly ProvisioningStore $store, #[\SensitiveParameter] private readonly StoreSettingsStep $step,
         private readonly string $instance, #[\SensitiveParameter] ?\Closure $clock = null, private readonly RetryPolicy $retry = new RetryPolicy(),
-        #[\SensitiveParameter] private readonly ?StoreArchiveStep $archiveStep = null)
+        #[\SensitiveParameter] private readonly ?StoreArchiveStep $archiveStep = null, #[\SensitiveParameter] private readonly ?StoreWalletStep $walletStep = null)
     {
         if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1) throw new \InvalidArgumentException('invalid_instance');
         $this->clock = $clock ?? static fn(): int => time();
@@ -62,7 +65,11 @@ final class ProvisioningSettingsWorker
             return true;
         }
         try {
-            $job['kind'] === 'store_archive' ? $this->archive($job) : $this->sync($job);
+            match ($job['kind']) {
+                'store_archive' => $this->archive($job),
+                'store_wallet' => $this->wallet($job),
+                default => $this->sync($job),
+            };
         } finally {
             $this->db->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->queryScalar();
         }
@@ -79,6 +86,37 @@ final class ProvisioningSettingsWorker
         $result = $this->step->update($snapshot['remote_store_id'], $snapshot['payload'], $snapshot['key']);
         unset($snapshot);
         $this->finish($job, $version, $result, null);
+    }
+
+    /** store_wallet: xpub impostata o metodo on-chain rimosso, secondo il valore attuale in Napay. */
+    private function wallet(array $job): void
+    {
+        if ($this->walletStep === null) throw new \LogicException('wallet_step_missing');
+        $snapshot = null;
+        $version = $this->outcome($job, $job['version'], fn(#[\SensitiveParameter] $m) => $this->jobs->prepare($job['id'], $job['version'], $m),
+            function () use ($job, &$snapshot) { $snapshot = $this->walletSnapshot($job); });
+        if ($version === null) return;
+        if ($snapshot['waiting'] !== null) { $this->later($job, $version, $snapshot['waiting'], null); return; }
+        $result = $snapshot['scheme'] === null
+            ? $this->walletStep->remove($snapshot['remote_store_id'], $snapshot['key'])
+            : $this->walletStep->set($snapshot['remote_store_id'], $snapshot['scheme'], $snapshot['key']);
+        unset($snapshot);
+        $this->finish($job, $version, $result, null);
+    }
+
+    /** Snapshot di store_wallet: store collegato, chiave corrente e xpub attuale (null = da rimuovere). */
+    private function walletSnapshot(array $job): array
+    {
+        $link = $this->store->storeLink($job['entity_id']);
+        if ($link !== null && $link['merchant_id'] !== $job['merchant_id']) throw new SettingsIneligible('scope_mismatch');
+        if ($link !== null && $link['state'] === 'suspended') throw new SettingsIneligible('store_archived');
+        [$key, $waiting] = $this->currentKey($job);
+        if ($waiting !== null) return ['waiting' => $waiting];
+        if ($link === null || $link['state'] !== 'synced' || $link['remote_store_id'] === null) return ['waiting' => 'store_not_ready'];
+        $scheme = $this->db->createCommand('SELECT derivationScheme FROM {{%storesettings}} WHERE store_id=:s', [':s' => $job['entity_id']])->queryScalar();
+        if ($scheme === false) throw new SettingsIneligible('settings_missing');
+        $scheme = is_string($scheme) ? trim($scheme) : '';
+        return ['waiting' => null, 'remote_store_id' => $link['remote_store_id'], 'scheme' => $scheme === '' ? null : $scheme, 'key' => $key];
     }
 
     /** store_archive: app POS rimosse una per volta (mapping chiuso dopo ognuna), poi store rinominato e mapping chiuso. */

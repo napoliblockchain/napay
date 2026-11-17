@@ -74,6 +74,17 @@ try {
         $db->createCommand()->insert('storesettings', ['store_id' => $store, 'defaultCurrency' => 'EUR'])->execute();
         $db->transaction(fn() => ProvisioningOutbox::enqueueStore($db, $store, $m['id'], $m['owner'])) || exit(1);
         echo $store, "\n";
+    } elseif (($argv[1] ?? '') === '--set-wallet') {
+        // SIP-022 xpub: come StoresController::saveWallet (chiave salvata, lavoro store_wallet nella stessa transazione)
+        $storeId = (int) ($argv[2] ?? 0); $scheme = (string) ($argv[3] ?? '');
+        $row = $db->createCommand('SELECT s.merchant_id, m.user_id FROM stores s JOIN merchants m ON m.id = s.merchant_id WHERE s.id=:s', [':s' => $storeId])->queryOne();
+        if ($row === false) exit(1);
+        $db->transaction(function () use ($db, $storeId, $scheme, $row) {
+            $db->createCommand()->update('storesettings', ['derivationScheme' => $scheme === '' ? null : $scheme], ['store_id' => $storeId])->execute();
+            ProvisioningOutbox::enqueueStoreWallet($db, $storeId, (int) $row['merchant_id'], (int) $row['user_id']) || exit(1);
+        });
+    } elseif (($argv[1] ?? '') === '--preview') {
+        echo json_encode(app\components\btcpay\XpubAddresses::parse((string) ($argv[2] ?? ''), (string) ($argv[3] ?? ''))->receiveAddresses(5)), "\n";
     } elseif (($argv[1] ?? '') === '--archive-store') {
         // SIP-022 passo 3b: come StoresController::actionDelete (negozio archiviato, terminali disabilitati, lavoro store_archive)
         $storeId = (int) ($argv[2] ?? 0);

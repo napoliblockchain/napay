@@ -80,6 +80,15 @@ final class ProvisioningOutbox
         return self::enqueueNext($db, 'store_archive', $storeId, $merchantId, $actorId);
     }
 
+    /**
+     * SIP-022 xpub: wallet BTC del negozio impostato, cambiato o rimosso (storesettings.derivationScheme, stessa transazione).
+     * Il worker imposta o toglie il metodo di pagamento on-chain dello store BTCPay con il valore letto all'esecuzione.
+     */
+    public static function enqueueStoreWallet(#[\SensitiveParameter] Connection $db, int $storeId, int $merchantId, int $actorId): bool
+    {
+        return self::enqueueNext($db, 'store_wallet', $storeId, $merchantId, $actorId);
+    }
+
     /** Lavoro di negozio con la generazione successiva (le richieste si accumulano, il worker legge i dati all'esecuzione). */
     private static function enqueueNext(#[\SensitiveParameter] Connection $db, string $kind, int $storeId, int $merchantId, int $actorId): bool
     {
@@ -110,12 +119,13 @@ final class ProvisioningOutbox
     /** Ultimo lavoro (generazione più alta) dell'entità (merchant, negozio o terminale), null se nessuno o funzione spenta. */
     public static function lastJob(#[\SensitiveParameter] Connection $db, string $kind, int $entityId): ?array
     {
-        if (!in_array($kind, ['merchant_account', 'store_link', 'pos_link'], true) || $entityId < 1) return null;
+        if (!in_array($kind, ['merchant_account', 'store_link', 'pos_link', 'store_wallet'], true) || $entityId < 1) return null;
         $instance = self::instance();
         if ($instance === null) return null;
-        $row = $db->createCommand('SELECT merchant_id, generation, state FROM {{%' . self::TABLE . '}} WHERE kind=:k AND instance=:i AND entity_id=:e ORDER BY generation DESC LIMIT 1',
+        $row = $db->createCommand('SELECT merchant_id, generation, state, last_error_code FROM {{%' . self::TABLE . '}} WHERE kind=:k AND instance=:i AND entity_id=:e ORDER BY generation DESC LIMIT 1',
             [':k' => $kind, ':i' => $instance, ':e' => $entityId])->queryOne();
-        return $row === false ? null : ['merchant_id' => (int) $row['merchant_id'], 'generation' => (int) $row['generation'], 'state' => (string) $row['state']];
+        return $row === false ? null : ['merchant_id' => (int) $row['merchant_id'], 'generation' => (int) $row['generation'], 'state' => (string) $row['state'],
+            'last_error_code' => $row['last_error_code'] === null ? null : (string) $row['last_error_code']];
     }
 
     /**

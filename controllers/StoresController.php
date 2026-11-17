@@ -23,6 +23,7 @@ use app\components\btcpay\provisioning\ProvisioningOutbox;
 use app\components\btcpay\StoresBtcpay;
 use app\components\btcpay\provisioning\ProvisioningStatus;
 use app\components\btcpay\StoreSettingsPayload;
+use app\components\btcpay\XpubAddresses;
 
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -47,6 +48,9 @@ class StoresController extends Controller
                 'class' => VerbFilter::class,
                 'actions' => [
                     'delete' => ['POST'],
+                    'wallet-preview' => ['POST'],
+                    'wallet-set' => ['POST'],
+                    'wallet-remove' => ['POST'],
                 ],
             ],
             'access' => [
@@ -60,6 +64,10 @@ class StoresController extends Controller
                             'create',
                             'update-general',
                             'delete',
+                            // SIP-022 xpub: dove arrivano i BTC lo decide solo il merchant (l'admin vede la chiave abbreviata)
+                            'wallet-preview',
+                            'wallet-set',
+                            'wallet-remove',
                         ],
                         'allow' => true,
                         'roles' => ['@'],
@@ -283,6 +291,90 @@ class StoresController extends Controller
             '_form' => '_form-general',
             'title' => Yii::t('app', 'Edit store: {name}', ['name' => $model->description]),
         ]);
+    }
+
+    /**
+     * SIP-022 xpub, passo 1 di 2: il merchant incolla la chiave pubblica estesa del suo wallet e vede i primi indirizzi di
+     * ricezione che BTCPay genererà, prima di confermare. Nessun salvataggio e nessuna chiamata a BTCPay qui.
+     */
+    public function actionWalletPreview($id)
+    {
+        $model = $this->findModel(Crypt::decrypt($id));
+        if ($this->legacy($model) || $model->storesettings === null) return $this->walletUnavailable($model);
+        $scheme = Yii::$app->request->post('xpub');
+        try {
+            $parsed = XpubAddresses::parse(is_string($scheme) ? $scheme : '', self::btcNetwork());
+            $addresses = $parsed->receiveAddresses(5);
+        } catch (\InvalidArgumentException $e) {
+            Yii::$app->session->setFlash('error', self::xpubError($e->getMessage()));
+            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-wallet']);
+        }
+        return $this->render('wallet-confirm', ['model' => $model, 'scheme' => trim($scheme), 'addresses' => $addresses]);
+    }
+
+    /** SIP-022 xpub, passo 2 di 2: chiave confermata, salvata e inviata a BTCPay dal worker (stessa transazione). */
+    public function actionWalletSet($id)
+    {
+        $model = $this->findModel(Crypt::decrypt($id));
+        if ($this->legacy($model) || $model->storesettings === null) return $this->walletUnavailable($model);
+        $scheme = Yii::$app->request->post('xpub');
+        try {
+            XpubAddresses::parse(is_string($scheme) ? $scheme : '', self::btcNetwork());
+        } catch (\InvalidArgumentException $e) {
+            Yii::$app->session->setFlash('error', self::xpubError($e->getMessage()));
+            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-wallet']);
+        }
+        return $this->saveWallet($model, trim($scheme), Yii::t('app', 'BTC wallet saved: BTCPay will use it shortly.'));
+    }
+
+    /** Wallet BTC rimosso: il negozio non riceve più pagamenti BTC on-chain finché non ne imposta un altro. */
+    public function actionWalletRemove($id)
+    {
+        $model = $this->findModel(Crypt::decrypt($id));
+        if ($this->legacy($model) || $model->storesettings === null) return $this->walletUnavailable($model);
+        return $this->saveWallet($model, null, Yii::t('app', 'BTC wallet removed: BTC payments are disabled for this store.'));
+    }
+
+    private function saveWallet(Stores $model, ?string $scheme, string $done)
+    {
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            Yii::$app->db->createCommand()->update('{{%storesettings}}', ['derivationScheme' => $scheme], ['store_id' => (int) $model->id])->execute();
+            $queued = ProvisioningOutbox::enqueueStoreWallet(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            if ($transaction->isActive) $transaction->rollBack();
+            Yii::error('Store wallet update failed: ' . get_class($e), __METHOD__);
+            Yii::$app->session->setFlash('error', Yii::t('app', 'Store not saved. Try again.'));
+            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-wallet']);
+        }
+        Log::event(sprintf('Wallet BTC del negozio %d %s', (int) $model->id, $scheme === null ? 'rimosso' : 'impostato'), Log::TYPE_DATA);
+        Yii::$app->session->setFlash($queued ? 'success' : 'warning', $queued ? $done : Yii::t('app', 'BTC wallet saved, but the BTCPay link is not active.'));
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-wallet']);
+    }
+
+    private function walletUnavailable(Stores $model)
+    {
+        Yii::$app->session->setFlash('warning', Yii::t('app', 'The BTC wallet of this store is managed directly on BTCPay.'));
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+    }
+
+    /** Rete Bitcoin del server BTCPay (BTCPAY_BTC_NETWORK: mainnet, testnet o regtest; predefinita mainnet). */
+    public static function btcNetwork(): string
+    {
+        $network = (string) getenv('BTCPAY_BTC_NETWORK');
+        return in_array($network, XpubAddresses::NETWORKS, true) ? $network : 'mainnet';
+    }
+
+    /** Messaggio per il merchant dal codice di validazione (mai il valore inserito). */
+    private static function xpubError(string $code): string
+    {
+        return match ($code) {
+            'xpub_checksum' => Yii::t('app', 'The key contains a typo: check it and paste it again.'),
+            'xpub_not_public' => Yii::t('app', 'This is not an extended public key. Never paste a private key: use only the xpub of your wallet.'),
+            'xpub_network' => Yii::t('app', 'The key belongs to a different Bitcoin network than this server.'),
+            default => Yii::t('app', 'Not a valid extended public key (xpub, ypub, zpub, tpub, upub or vpub).'),
+        };
     }
 
     /** Impostazioni inviate a BTCPay (negozi v1): valori fissi salvati alla creazione, più nome e valuta scelti dal merchant. */

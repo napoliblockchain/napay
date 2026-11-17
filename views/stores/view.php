@@ -54,7 +54,6 @@ $this->params['breadcrumbs'][] = $this->title;
                                 'encode' => false,
                                 'options' => ['id' => 'tab-wallet'],
                                 'content' => $this->render('_details-wallet', ['model' => $model]),
-                                'visible' => User::isMerchant(),
                             ],
                             [
                                 'label' => Yii::t('app', 'TTS wallet'),

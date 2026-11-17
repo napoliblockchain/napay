@@ -333,6 +333,34 @@ api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
 state
 [ "$(json "[(s['state']) for s in d['stores'] if s['store_id']==$storeA] + [x['state'] for x in d['pos'] if x['store_id']==$storeA]" "$work/w/state.json")" = "['suspended', 'suspended']" ] || fail 'mappings not closed'
 pass 'Deleted shop: POS app removed from BTCPay, store kept and renamed as archived, mappings closed'
+
+# --- 10. wallet BTC del negozio (xpub del merchant, decisione A): indirizzi di Napay = indirizzi di BTCPay
+vpub=vpub5Zf9o1xg1TVJN3pte4sDD73BMq71dLFTZPgqvBxe872nMEiDtoBo99udYHBuxP3wDbhie79PmTtL8GxYR5ana9FgxdKTp13TvV3kU6UaHrP
+storeB=$(json "d['B']['store']" "$work/w/seed.json")
+remoteB=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeB][0]" "$work/w/state.json")
+iB=$(json "[a['merchant_id'] for a in d['accounts']].index($(json "d['B']['merchant']" "$work/w/seed.json"))" "$work/w/state.json")
+userB=$(json "d['accounts'][$iB]['remote_user_id']" "$work/w/state.json")
+printf '%s' '{"label":"e2e-wallet-view","permissions":["btcpay.store.canviewwallet","btcpay.store.canviewstoresettings"]}' > "$work/w/wkey.json"
+api POST "/api/v1/users/$userB/api-keys" wkey.json admin.hdr
+[ "$code" = 200 ] || fail "wallet view key ($code)"
+python3 -I -c "import json,sys; open(sys.argv[2],'w').write('Authorization: token '+json.load(open(sys.argv[1]))['apiKey']+'\\n')" "$work/w/out.json" "$work/w/wallet-$iB.hdr"
+rm -f "$work/w/out.json"
+fixture --set-wallet "$storeB" "$vpub"
+drain links store_wallet
+api GET "/api/v1/stores/$remoteB/payment-methods/BTC-CHAIN" "" "wallet-$iB.hdr"
+[ "$code" = 200 ] && [ "$(json "d.get('enabled')" "$work/w/out.json")" = True ] || fail "on-chain payment method not enabled ($code)"
+api GET "/api/v1/stores/$remoteB/payment-methods/BTC-CHAIN/wallet/preview?count=5" "" "wallet-$iB.hdr"
+[ "$code" = 200 ] || fail "BTCPay address preview ($code)"
+remote=$(json "[a['address'] for a in d['addresses']][:5]" "$work/w/out.json")
+napay=$(fixture --preview "$vpub" regtest | tail -1 | python3 -I -c "import json,sys; print(json.load(sys.stdin))")
+[ "$remote" = "$napay" ] || fail "addresses differ: BTCPay $remote, Napay $napay"
+[ "$(json "'bcrt1qnynpu9auq7msewe4t5lwkv042x6vvp6wxcdmtx' in [a['address'] for a in d['addresses']]" "$work/w/out.json")" = True ] || fail 'expected address missing'
+pass 'Merchant vpub applied to BTCPay by the worker: the 5 addresses shown by Napay are exactly the ones BTCPay generates'
+fixture --set-wallet "$storeB" ""
+drain links store_wallet
+api GET "/api/v1/stores/$remoteB/payment-methods/BTC-CHAIN" "" "wallet-$iB.hdr"
+[ "$code" = 404 ] || fail "on-chain payment method still present after removal ($code)"
+pass 'Wallet removed: BTC payment method gone from the BTCPay store'
 printf 'PASS %s BTCPay provisioning e2e checks (regtest, no real money)\n' "$checks"
 E2E
 sh "$private/runtime.sh"

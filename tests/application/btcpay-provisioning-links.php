@@ -9,7 +9,7 @@ if (env('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !=
 define('YII_ENABLE_ERROR_HANDLER', false);
 require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
 use app\components\btcpay\provisioning\{ProvisioningHttpException as Http, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore};
-use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep};
+use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep};
 
 $password = trim((string) fgets(STDIN));
 if (!preg_match('/^[0-9a-f]{48}$/D', $password)) exit(1);
@@ -488,4 +488,26 @@ $link2 = $enqueue($instance, 'store_link', $storeA2);
 $run->runOnce();
 check($job($link2)['state'] === 'failed' && $job($link2)['last_error_code'] === 'store_archived' && count($http->calls) === $calls, 'Deleted store: no BTCPay store is ever created for it');
 $t -= 3600;
+// --- SIP-022 xpub: store_wallet imposta o rimuove il metodo on-chain con la xpub salvata in Napay
+[$instance, $http, $store, $run] = $scenario();
+$wallets = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock,
+    walletStep: new StoreWalletStep($http->key()));
+$syncStore($store, $storeB2 = $newStore($merchant, 'W3c negozio xpub'), 'st-wal');
+$admin->createCommand()->insert('storesettings', ['store_id' => $storeB2, 'defaultCurrency' => 'EUR', 'derivationScheme' => 'vpub-test-key'])->execute();
+$w1 = $enqueue($instance, 'store_wallet', $storeB2);
+$http->queue = [$r(200, ['enabled' => true])];
+$wallets->runOnce();
+[$m, $p, $b, $k] = end($http->calls);
+check($job($w1)['state'] === 'done' && $m === 'PUT' && $p === '/api/v1/stores/st-wal/payment-methods/BTC-CHAIN' && $b === ['enabled' => true, 'config' => 'vpub-test-key'] && $k === $apiKey,
+    'Wallet: PUT of the on-chain payment method with the saved xpub and the merchant key');
+$w2 = $enqueue($instance, 'store_wallet', $storeB2, 2);
+$http->queue = [$r(422, [['path' => 'config', 'message' => 'Invalid derivation scheme vpub-test-key']])];
+$wallets->runOnce();
+check($job($w2)['state'] === 'failed' && $job($w2)['last_error_code'] === 'wallet_rejected', 'Key refused by BTCPay: failed with a generic code (the key never in the code)');
+$admin->createCommand()->update('storesettings', ['derivationScheme' => null], ['store_id' => $storeB2])->execute();
+$w3 = $enqueue($instance, 'store_wallet', $storeB2, 3);
+$http->queue = [$r(404)];
+$wallets->runOnce();
+[$m, $p] = end($http->calls);
+check($job($w3)['state'] === 'done' && $m === 'DELETE' && $p === '/api/v1/stores/st-wal/payment-methods/BTC-CHAIN', 'Wallet removed: DELETE of the payment method (404 = already absent)');
 echo "PASS $checks BTCPay provisioning link worker checks\n";

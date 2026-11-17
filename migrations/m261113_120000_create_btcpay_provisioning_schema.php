@@ -238,8 +238,8 @@ class m261113_120000_create_btcpay_provisioning_schema extends Migration
                 'ck-btcpay-pos-time' => $time,
             ],
             'btcpay_provisioning_jobs' => [
-                // store_update e store_archive aggiunti da m261117 (DB esistenti): uno schema creato da qui nasce già con i tipi nuovi
-                'ck-btcpay-jobs-kind' => "kind IN ('merchant_account','store_link','pos_link','store_update','store_archive','key_rotation','key_revoke')",
+                // store_update, store_archive e store_wallet aggiunti da m261117 (DB esistenti): uno schema creato da qui nasce già con i tipi nuovi
+                'ck-btcpay-jobs-kind' => "kind IN ('merchant_account','store_link','pos_link','store_update','store_archive','store_wallet','key_rotation','key_revoke')",
                 'ck-btcpay-jobs-instance' => $hex64,
                 'ck-btcpay-jobs-ids' => 'merchant_id >= 1 AND entity_id >= 1 AND generation >= 1',
                 'ck-btcpay-jobs-state' => "state IN ('pending','running','in_flight','retry_wait','deferred','reconcile_required','failed','done')",
@@ -355,7 +355,7 @@ class m261113_120000_create_btcpay_provisioning_schema extends Migration
         'ck-btcpay-jobs-ids' => "((merchant_id >= 1) and (entity_id >= 1) and (generation >= 1))",
         'ck-btcpay-jobs-in-flight' => "(((in_flight_op is null) = (in_flight_started_at is null)) and ((in_flight_op is null) = (in_flight_owner is null)) and ((state <> _utf8mb4'in_flight') or (in_flight_op is not null)) and ((in_flight_owner is null) or (char_length(in_flight_owner) = 36)))",
         'ck-btcpay-jobs-instance' => "regexp_like(instance,_utf8mb4'^[0-9a-f]{64}\$',_utf8mb4'c')",
-        'ck-btcpay-jobs-kind' => "(kind in (_utf8mb4'merchant_account',_utf8mb4'store_link',_utf8mb4'pos_link',_utf8mb4'store_update',_utf8mb4'store_archive',_utf8mb4'key_rotation',_utf8mb4'key_revoke'))",
+        'ck-btcpay-jobs-kind' => "(kind in (_utf8mb4'merchant_account',_utf8mb4'store_link',_utf8mb4'pos_link',_utf8mb4'store_update',_utf8mb4'store_archive',_utf8mb4'store_wallet',_utf8mb4'key_rotation',_utf8mb4'key_revoke'))",
         'ck-btcpay-jobs-lease' => "(((lease_owner is null) = (lease_until is null)) and ((lease_owner is null) or (char_length(lease_owner) = 36)))",
         'ck-btcpay-jobs-operation' => "((in_flight_op is null) or (in_flight_op in (_utf8mb4'create_user',_utf8mb4'create_api_key',_utf8mb4'create_store',_utf8mb4'create_pos_app',_utf8mb4'revoke_api_key')))",
         'ck-btcpay-jobs-state' => "(state in (_utf8mb4'pending',_utf8mb4'running',_utf8mb4'in_flight',_utf8mb4'retry_wait',_utf8mb4'deferred',_utf8mb4'reconcile_required',_utf8mb4'failed',_utf8mb4'done'))",

@@ -39,7 +39,9 @@ final class DatabaseRoles
             'lightningDescriptionTemplate', 'paymentTolerance', 'anyoneCanCreateInvoice', 'requiresRefundEmail', 'checkoutType', 'receipt',
             'lightningAmountInSatoshi', 'lightningPrivateRouteHints', 'onChainWithLnInvoiceFallback', 'redirectAutomatically', 'showRecommendedFee',
             'recommendedFeeBlockTarget', 'defaultLang', 'customLogo', 'customCSS', 'htmlTitle', 'networkFeeMode', 'payJoinEnabled', 'lazyPaymentMethods',
-            'defaultPaymentMethod'],
+            'defaultPaymentMethod',
+            // SIP-022 xpub: chiave pubblica del wallet BTC del merchant (mai chiavi private)
+            'derivationScheme'],
         'pos_terminals' => ['id', 'store_id', 'merchant_id'],
         'migration' => ['version'],
         '_napay_bootstrap' => ['id', 'phase', 'code_sha256', 'schema_sha256'],

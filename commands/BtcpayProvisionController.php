@@ -2,7 +2,7 @@
 namespace app\commands;
 
 use app\components\btcpay\provisioning\{ProvisioningHttpClient, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore, ProvisioningWorker, WorkerSecrets};
-use app\components\btcpay\provisioning\steps\{MerchantAccountStep, PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep};
+use app\components\btcpay\provisioning\steps\{MerchantAccountStep, PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep};
 use app\components\db\V2Bootstrap;
 use yii\console\Controller;
 
@@ -26,7 +26,7 @@ final class BtcpayProvisionController extends Controller
 
     /**
      * W3e: un lavoro store_link/pos_link (con la chiave corrente del merchant, mai quella del provisioner); se non ce ne
-     * sono, un lavoro store_update o store_archive (SIP-022 passi 3 e 3b: impostazioni e archiviazione dello store).
+     * sono, un lavoro store_update, store_archive o store_wallet (SIP-022: impostazioni, archiviazione e xpub dello store).
      */
     public function actionLinks(): int
     {
@@ -35,7 +35,7 @@ final class BtcpayProvisionController extends Controller
         $secrets = WorkerSecrets::keyringOnly(env_required('BTCPAY_KEK_KEYRING_FILE'));
         $store = new ProvisioningStore($db, $instance, $secrets->keyring(), $secrets->current);
         $settings = new ProvisioningSettingsWorker($db, new ProvisioningJobs($db, self::owner()), $store, new StoreSettingsStep($http->withKey(...)), $instance,
-            archiveStep: new StoreArchiveStep($http->withKey(...)));
+            archiveStep: new StoreArchiveStep($http->withKey(...)), walletStep: new StoreWalletStep($http->withKey(...)));
         return $this->report($settings->runOnce());
     }
 

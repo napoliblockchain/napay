@@ -86,7 +86,8 @@ try {
     $worker->query('SELECT ' . implode(',', app\components\btcpay\StoreSettingsPayload::COLUMNS) . ' FROM storesettings')->fetchAll();
     check(true, 'Worker reads the shop name and the BTCPay store settings it applies');
     denied($worker, 'SELECT bps_storeid FROM storesettings', 'Worker cannot read the v1 BTCPay store ID');
-    denied($worker, 'SELECT derivationScheme FROM storesettings', 'Worker cannot read derivation data');
+    $worker->query('SELECT derivationScheme FROM storesettings')->fetchAll(); check(true, 'Worker reads the merchant xpub it applies (public key only)');
+    denied($worker, 'SELECT accountKeyPath, label FROM storesettings', 'Worker cannot read other wallet details');
     denied($worker, 'UPDATE storesettings SET defaultCurrency=defaultCurrency WHERE 1=0', 'Worker cannot change store settings');
     denied($worker, 'UPDATE logs SET description=\'x\' WHERE 1=0', 'Worker cannot rewrite audit history');
     // Exercise the application's actual Yii schema lookup, not only explicit INSERT SQL.

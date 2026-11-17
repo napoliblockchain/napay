@@ -103,7 +103,8 @@ foreach (['update-rates', 'update-checkout', 'update-criteria', 'update-webhook'
 $storePage = web('/stores/view?id=' . urlencode($id))['body'];
 check(str_contains($storePage, 'tab-general') && !str_contains($storePage, 'tab-rates') && !str_contains($storePage, 'tab-checkout') && !str_contains($storePage, 'tab-criteria') && !str_contains($storePage, 'tab-webhook'), 'Store page without rates, receipts, criteria and webhook tabs');
 $walletTab = (string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/_details-wallet.php');
-check(!str_contains($walletTab, 'derivationScheme') && !str_contains($walletTab, 'accountKeyPath'), 'BTC wallet tab hides derivation scheme and account key path');
+check(!str_contains($walletTab, 'accountKeyPath') && str_contains($walletTab, 'XpubAddresses::mask($scheme)') && !preg_match('/Html::encode\(\$scheme\)/', $walletTab),
+    'BTC wallet tab: key path never shown, saved xpub only abbreviated');
 foreach (['_details-general.php', 'update.php', 'view.php'] as $file) check(!str_contains((string) file_get_contents(dirname(__DIR__, 2) . '/views/stores/' . $file), 'bps_storeid'), 'BTCPay store ID never shown: ' . $file);
 check(str_contains(web('/pos-management/index')['body'], 'Negozio senza BTCPay'), 'New store available for POS terminals');
 // SIP-022 B5: il riprova del collegamento BTCPay è solo dell'admin (POST con CSRF), mai del gestore
@@ -129,6 +130,24 @@ check($scoped((int) scalar("SELECT id FROM users WHERE username='runtime-admin'"
 check($scoped($managerA) === null && (int) $find->invoke($controller, (int) $store['id'])->merchant_id === $merchantA, 'Manager loads own store');
 
 check((int) scalar('SELECT COUNT(*) FROM stores') === $before + 2, 'Exactly the expected stores exist');
+// --- SIP-022 xpub: il merchant incolla la chiave pubblica, vede i primi indirizzi, conferma; mai chiavi private
+$zpub = 'zpub6rFR7y4Q2AijBEqTUquhVz398htDFrtymD9xYYfG1m4wAcvPhXNfE3EfH1r1ADqtfSdVCToUG868RvUUkgDKf31mGDtKsAYz2oz2AGutZYs';
+check(web('/stores/wallet-preview?id=' . urlencode($id))['status'] === 405, 'Wallet preview only by POST');
+$page = web('/stores/view?id=' . urlencode($id));
+check(str_contains($page['body'], 'store-xpub') && str_contains($page['body'], 'wallet-preview'), 'Merchant sees the xpub form on the BTC wallet tab');
+$preview = web('/stores/wallet-preview?id=' . urlencode($id), ['_csrf' => csrf($page), 'xpub' => $zpub]);
+check($preview['status'] === 200 && str_contains($preview['body'], 'bc1qcr8te4kr609gcawutmrza0j4xv80jy8z306fyu') && str_contains($preview['body'], 'wallet-set')
+    && scalar('SELECT derivationScheme FROM storesettings WHERE store_id=' . (int) $store['id']) === null, 'Preview shows the first receive addresses, nothing saved yet');
+$bad = web('/stores/wallet-preview?id=' . urlencode($id), ['_csrf' => csrf($page), 'xpub' => 'xprv9s21ZrQH143K3QTDL4LXw2F7HEK3wJUD2nW2nRk4stbPy6cq3jPPqjiChkVvvNKmPGJxWUtg6LnF5kejMRNNU3TGtRBeJgk33yuGBxrMPHi']);
+check($bad['status'] === 302 && !str_contains($bad['body'], 'xprv9s21') && scalar('SELECT derivationScheme FROM storesettings WHERE store_id=' . (int) $store['id']) === null, 'Private key refused, never echoed back');
+$set = web('/stores/wallet-set?id=' . urlencode($id), ['_csrf' => csrf($preview), 'xpub' => $zpub]);
+check($set['status'] === 302 && scalar('SELECT derivationScheme FROM storesettings WHERE store_id=' . (int) $store['id']) === $zpub, 'Confirmed key saved');
+$page = web('/stores/view?id=' . urlencode($id));
+check(str_contains($page['body'], htmlspecialchars(app\components\btcpay\XpubAddresses::mask($zpub))) && !str_contains($page['body'], $zpub) && str_contains($page['body'], 'wallet-remove'),
+    'Saved key shown only abbreviated, with change and remove');
+check(web('/stores/wallet-remove?id=' . urlencode($id), ['_csrf' => csrf($page)])['status'] === 302 && scalar('SELECT derivationScheme FROM storesettings WHERE store_id=' . (int) $store['id']) === null,
+    'Wallet removed');
+
 // --- SIP-022 passo 3b: eliminare un negozio = archiviarlo (mai cancellarlo), terminali disabilitati, nascosto
 $sid = (int) $store['id'];
 $terminal = new app\models\PosTerminals(['merchant_id' => (int) $store['merchant_id'], 'store_id' => $sid, 'name' => 'Cassa da archiviare']);
