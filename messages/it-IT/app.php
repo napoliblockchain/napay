@@ -576,4 +576,5 @@ return [
     'TTS wallet missing: TTS payments are not active for this store.' => 'Manca il wallet TTS: i pagamenti in TTS non sono attivi per questo negozio.',
     'BTC wallet missing: BTC payments are not active for this store.' => 'Manca il wallet BTC: i pagamenti in BTC non sono attivi per questo negozio.',
     'Store created.' => 'Negozio creato.',
+    'Link to BTCPay' => 'Collega a BTCPay',
 ];

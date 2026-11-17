@@ -109,6 +109,21 @@ $tx = $other->beginTransaction();
 try { refuses(fn() => Outbox::enqueueMerchant($other, $merchant, $pg), LogicException::class, 'connection_mismatch', 'Eligibility must be read on the same connection as the transaction'); }
 finally { $tx->rollBack(); $other->close(); }
 
+// --- SIP-022: merchant attivato prima del provisioning (o importato dalla v1): l'admin lo collega con il primo lavoro
+$early = user('w4b-early');
+$earlyMerchant = $withInstance('', fn() => activate($early));
+check($earlyMerchant !== null && $jobs($earlyMerchant) === [], 'Merchant activated while provisioning was off: no job');
+$tx = $db->beginTransaction();
+try { $linked = Outbox::retry($db, 'merchant_account', $earlyMerchant, $admin); $tx->commit(); } catch (Throwable $e) { $tx->rollBack(); throw $e; }
+check($linked === true && $jobs($earlyMerchant) === $expected($earlyMerchant), 'Admin link: first merchant_account job, same as an activation');
+$tx = $db->beginTransaction();
+try { $again = Outbox::retry($db, 'merchant_account', $earlyMerchant, $admin); $tx->commit(); } catch (Throwable $e) { $tx->rollBack(); throw $e; }
+$unqualified = (int) scalar("SELECT id FROM merchants WHERE description='Runtime company other'");
+$tx = $db->beginTransaction();
+try { $refused = Outbox::retry($db, 'merchant_account', $unqualified, $admin); } finally { $tx->rollBack(); }
+check($again === false && count($jobs($earlyMerchant)) === 1 && $refused === false && $jobs($unqualified) === [],
+    'Link again while pending: nothing; merchant without a qualified PG manager: refused');
+
 // --- trace COMPLETA senza Connection né password: chiamate dirette, nessuna closure del test nello stack
 ini_set('zend.exception_ignore_args', '0');
 $secret = (string) $db->password;

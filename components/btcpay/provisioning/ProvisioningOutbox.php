@@ -140,6 +140,15 @@ final class ProvisioningOutbox
         $instance = self::open($db);
         if ($instance === null) return false;
         $last = self::lastJob($db, $kind, $entityId);
+        // merchant mai collegato (attivato prima del provisioning o importato dalla v1): primo lavoro dell'account,
+        // con gli stessi controlli dell'attivazione (gestore PG idoneo con questo solo merchant)
+        if ($last === null && $kind === 'merchant_account') {
+            try {
+                return self::enqueueMerchant($db, $entityId, $adminId);
+            } catch (\InvalidArgumentException $e) {
+                return false;
+            }
+        }
         if ($last === null || !in_array($last['state'], self::RETRYABLE, true)) return false;
         $merchant = $last['merchant_id'];
         if ($kind === 'merchant_account') {

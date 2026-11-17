@@ -40,7 +40,8 @@ use app\components\btcpay\provisioning\ProvisioningStatus;
             'format' => 'raw',
             'value' => ProvisioningStatus::badge($btcpayState = ProvisioningStatus::merchant((int) $model->id))
                 . $this->render('/btcpay-provisioning/_retry', ['kind' => 'merchant_account', 'entityId' => (int) $model->id]),
-            'visible' => $btcpayState !== null,
+            // anche senza stato: l'admin può collegare un merchant mai collegato (pulsante nel valore)
+            'visible' => $btcpayState !== null || app\components\User::isAdministrator(),
         ],
     ],
 ]) ?>
