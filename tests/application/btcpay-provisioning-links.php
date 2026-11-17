@@ -539,4 +539,13 @@ $refused = false;
 try { new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid()), $store, new StoreSettingsStep($http->key()), $instance, webhookStep: new StoreWebhookStep($http->key()), webhookUrl: 'http://plain.example.invalid/h', webhookMaster: $master); }
 catch (InvalidArgumentException $e) { $refused = $e->getMessage() === 'invalid_webhook_config'; }
 check($refused, 'Webhook URL must be HTTPS');
+// --- store collegato: impostazioni e wallet in attesa dello store tornano dovuti subito
+[$instance, $http, $store, $run] = $scenario();
+$wake = $newStore($merchant, 'W3c negozio sveglia');
+$waitSettings = $enqueue($instance, 'store_update', $wake);
+$admin->createCommand()->update('btcpay_provisioning_jobs', ['state' => 'retry_wait', 'next_attempt_at' => $t + 3600, 'last_error_code' => 'store_not_ready'], ['id' => $waitSettings])->execute();
+$create = $enqueue($instance, 'store_link', $wake);
+$http->queue = [$r(200, ['id' => 'st-wake'])];
+$run->runOnce();
+check($job($create)['state'] === 'done' && (int) $job($waitSettings)['next_attempt_at'] <= $t, 'Store linked: settings waiting for it are due now');
 echo "PASS $checks BTCPay provisioning link worker checks\n";

@@ -219,6 +219,8 @@ final class ProvisioningWorker
             if ($current['state'] === 'pending' && !$this->store->verifyKey($fresh, $generation, $current['lock_version'])) throw new \UnexpectedValueException('key_changed');
             if (!$this->store->promoteKey($fresh, $generation)) throw new \UnexpectedValueException('key_not_promoted');
             $this->setAccount($merchant, ['state' => 'synced', 'last_error_code' => null]);
+            // negozi e terminali in attesa dell'account: subito dovuti, senza aspettare il backoff
+            $this->jobs->wakeWaiting($this->instance, $merchant, ['account_not_ready']);
         });
         return null;
     }

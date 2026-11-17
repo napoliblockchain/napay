@@ -309,6 +309,19 @@ $g3 = $retry($instance, 3);
 $run->runOnce();
 check($job($g3)['state'] === 'reconcile_required' && $job($g3)['last_error_code'] === 'generations_exhausted' && count($http->calls) === 5, 'Generations exhausted: no remote call, still for the admin');
 
+// --- dipendenza pronta: i lavori del merchant in attesa dell'account tornano dovuti subito (niente backoff inutile)
+[$instance, $http, $store, $run, $id] = $scenario();
+$admin->createCommand()->insert('btcpay_provisioning_jobs', ['kind' => 'store_link', 'instance' => $instance, 'merchant_id' => $merchant, 'entity_id' => 4242,
+    'state' => 'retry_wait', 'attempts' => 6, 'next_attempt_at' => $t + 3600, 'last_error_code' => 'account_not_ready', 'created_at' => $t, 'updated_at' => $t])->execute();
+$waiting = (int) $admin->lastInsertID;
+$admin->createCommand()->insert('btcpay_provisioning_jobs', ['kind' => 'store_link', 'instance' => $instance, 'merchant_id' => $merchant, 'entity_id' => 4243,
+    'state' => 'retry_wait', 'attempts' => 2, 'next_attempt_at' => $t + 3600, 'last_error_code' => 'rate_limited', 'created_at' => $t, 'updated_at' => $t])->execute();
+$other = (int) $admin->lastInsertID;
+$http->queue = $happy('user-wake');
+$run->runOnce();
+check($store->account($merchant)['state'] === 'synced' && (int) $job($waiting)['next_attempt_at'] <= $t && (int) $job($other)['next_attempt_at'] === $t + 3600,
+    'Account synced: jobs waiting for it are due now, jobs waiting for other reasons untouched');
+
 // --- Connessione e segreti
 $app->set('db', $admin);
 $refused = false;

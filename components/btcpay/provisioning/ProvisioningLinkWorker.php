@@ -328,6 +328,8 @@ final class ProvisioningLinkWorker
         if ($link['state'] === 'synced' && $link[$field] === $remote) return;
         if (!in_array($link['state'], ['pending', 'reconcile_required'], true) || ($link[$field] !== null && $link[$field] !== $remote)) throw new \UnexpectedValueException('link_changed');
         $this->updateLink($job, $link, ['state' => 'synced', $field => $remote, 'last_error_code' => null]);
+        // impostazioni, wallet e app POS in attesa dello store: subito dovuti
+        if ($job['kind'] === 'store_link') $this->jobs->wakeWaiting($this->instance, $job['merchant_id'], ['store_not_ready']);
     }
 
     /** Esito ignoto/ambiguo: mapping in riconciliazione (mai cancellato, nessun nuovo marker). */

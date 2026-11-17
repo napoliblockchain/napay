@@ -212,6 +212,19 @@ final class ProvisioningJobs
      * Con $mutate: transazione interna, riga del lavoro bloccata e owner/versione/lease verificati PRIMA del callback (nessuna
      * chiamata se già invalido), poi CAS con tempo fresco; qualunque fallimento annulla anche le modifiche del callback.
      */
+    /**
+     * Dipendenza appena pronta (account o store del merchant collegati): i lavori dello stesso merchant in attesa per quel
+     * motivo tornano dovuti subito invece di aspettare il backoff. Solo retry_wait con quel codice, mai altri stati.
+     * Da chiamare dentro la transazione dell'esito che rende pronta la dipendenza.
+     */
+    public function wakeWaiting(string $instance, int $merchantId, array $codes): int
+    {
+        if ($merchantId < 1 || $codes === [] || array_diff($codes, ['account_not_ready', 'store_not_ready']) !== []) throw new \InvalidArgumentException('invalid_wake');
+        $now = $this->now();
+        return $this->db->createCommand()->update(self::TABLE, ['next_attempt_at' => $now, 'version' => new \yii\db\Expression('version + 1'), 'updated_at' => $now],
+            ['and', ['instance' => $instance, 'merchant_id' => $merchantId, 'state' => 'retry_wait', 'last_error_code' => $codes], ['>', 'next_attempt_at', $now]])->execute();
+    }
+
     private function cas(int $id, int $version, array $states, bool $noCheckpoint, string $set, array $params, int $now, #[\SensitiveParameter] ?callable $mutate = null): ?int
     {
         if ($id < 1 || $version < 0 || $version >= 2147483647) throw new \InvalidArgumentException('invalid_job');
