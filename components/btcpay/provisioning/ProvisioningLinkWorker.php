@@ -276,10 +276,18 @@ final class ProvisioningLinkWorker
             if ($link === null) return $wait('link_missing');
             if ($link['merchant_id'] !== $job['merchant_id'] || $link['store_id'] !== $terminal['store_id']) throw new LinkIneligible('scope_mismatch');
             if ($create) $link = $this->reopenForRetry($job, $link);
-            $snapshot = ['terminal_name' => 'Cassa ' . $job['entity_id'], 'remote_store_id' => $storeLink['remote_store_id'], 'remote_app_id' => $link['remote_app_id']];
+            $currency = $this->db->createCommand('SELECT defaultCurrency FROM {{%storesettings}} WHERE store_id=:s', [':s' => $terminal['store_id']])->queryScalar();
+            $snapshot = ['terminal_name' => self::terminalName($job['entity_id']), 'remote_store_id' => $storeLink['remote_store_id'], 'remote_app_id' => $link['remote_app_id'],
+                'currency' => is_string($currency) ? $currency : null];
         }
         return [$snapshot + ['waiting' => null, 'state' => $link['state'], 'marker' => $link['marker'], 'account_state' => $account['state'],
             'uncertain' => $link['state'] === 'reconcile_required' || $this->otherInFlight($job), 'in_flight' => false], $current['key']];
+    }
+
+    /** Nome dell'app POS su BTCPay (senza dati del negozio; il marker lo aggiunge PosLinkStep). @internal anche per store_update */
+    public static function terminalName(int $terminalId): string
+    {
+        return 'Cassa ' . $terminalId;
     }
 
     /** Riprova dell'admin: mapping chiuso (failed/suspended) senza ID remoto torna in riconciliazione; altrimenti invariato. */

@@ -4,8 +4,10 @@ namespace app\components\btcpay\provisioning;
 use Yii;
 use app\components\btcpay\StoreSettingsPayload;
 use app\components\btcpay\StoreWebhookSecret;
+use app\components\btcpay\provisioning\steps\PosLinkStep;
 use app\components\btcpay\provisioning\steps\StepOutcome;
 use app\components\btcpay\provisioning\steps\StoreArchiveStep;
+use app\components\btcpay\provisioning\steps\StoreLinkStep;
 use app\components\btcpay\provisioning\steps\StoreSettingsStep;
 use app\components\btcpay\provisioning\steps\StoreWalletStep;
 use app\components\btcpay\provisioning\steps\StoreWebhookStep;
@@ -16,7 +18,8 @@ use yii\db\Connection;
  * SIP-022 passi 3 e 3b: esecutore dei lavori sullo store BTCPay di un negozio già collegato, un lavoro per chiamata,
  * con la chiave corrente del merchant e valori letti da Napay all'esecuzione (mai dal lavoro).
  * - `store_update`: nome del negozio (senza marker: l'ID remoto è salvato), valuta e impostazioni fisse (PUT idempotente),
- *   poi il webhook dello store verso Napay se configurato (passo 4: segreto derivato per store, mai salvato).
+ *   poi il webhook dello store verso Napay se configurato (passo 4: segreto derivato per store, mai salvato), poi la
+ *   configurazione completa delle app POS sincronizzate del negozio (SIP-033: importo libero, valuta del negozio).
  * - `store_archive` (negozio eliminato in Napay): DELETE delle app POS collegate (404 = già rimossa), poi nome
  *   "archiviato" sullo store, mapping chiusi (`suspended`, `store_archived`). Lo store non viene mai cancellato.
  *   Store mai collegato: niente da fare. Creazione ancora incerta: decide l'admin.
@@ -39,7 +42,7 @@ final class ProvisioningSettingsWorker
         private readonly string $instance, #[\SensitiveParameter] ?\Closure $clock = null, private readonly RetryPolicy $retry = new RetryPolicy(),
         #[\SensitiveParameter] private readonly ?StoreArchiveStep $archiveStep = null, #[\SensitiveParameter] private readonly ?StoreWalletStep $walletStep = null,
         #[\SensitiveParameter] private readonly ?StoreWebhookStep $webhookStep = null, private readonly ?string $webhookUrl = null,
-        #[\SensitiveParameter] private readonly ?string $webhookMaster = null)
+        #[\SensitiveParameter] private readonly ?string $webhookMaster = null, #[\SensitiveParameter] private readonly ?PosLinkStep $posStep = null)
     {
         if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1) throw new \InvalidArgumentException('invalid_instance');
         if ($webhookStep !== null && (!is_string($webhookUrl) || preg_match('#^https://[^\s/]+(/[^\s]*)?$#D', $webhookUrl) !== 1 || !StoreWebhookSecret::valid($webhookMaster))) {
@@ -95,6 +98,12 @@ final class ProvisioningSettingsWorker
         if ($result->kind === StepOutcome::DONE && $this->webhookStep !== null) {
             $result = $this->webhookStep->ensure($snapshot['remote_store_id'], (string) $this->webhookUrl,
                 StoreWebhookSecret::derive((string) $this->webhookMaster, $this->instance, $job['entity_id']), $snapshot['key']);
+        }
+        if ($result->kind === StepOutcome::DONE && $this->posStep !== null) {
+            foreach ($snapshot['apps'] as $terminalId => [$appId, $marker]) {
+                $result = $this->posStep->configure($appId, StoreLinkStep::name(ProvisioningLinkWorker::terminalName($terminalId), $marker), $snapshot['currency'], $snapshot['key']);
+                if ($result->kind !== StepOutcome::DONE) break;
+            }
         }
         unset($snapshot);
         $this->finish($job, $version, $result, null);
@@ -184,7 +193,17 @@ final class ProvisioningSettingsWorker
         if ($waiting !== null) return $wait($waiting);
         if ($link === null || $link['state'] !== 'synced' || $link['remote_store_id'] === null) return $wait('store_not_ready');
         [$name, $settings] = $this->settings($job['entity_id']);
-        return ['waiting' => null, 'remote_store_id' => $link['remote_store_id'], 'payload' => StoreSettingsPayload::build($name, $settings), 'key' => $key];
+        $apps = [];
+        foreach ($this->syncedApps($job['entity_id']) as $row) $apps[(int) $row['terminal_id']] = [(string) $row['remote_app_id'], (string) $row['marker']];
+        return ['waiting' => null, 'remote_store_id' => $link['remote_store_id'], 'payload' => StoreSettingsPayload::build($name, $settings), 'key' => $key,
+            'apps' => $apps, 'currency' => is_string($settings['defaultCurrency'] ?? null) ? $settings['defaultCurrency'] : null];
+    }
+
+    /** App POS del negozio collegate su BTCPay (mapping synced con ID remoto). */
+    private function syncedApps(int $storeId): array
+    {
+        return $this->db->createCommand("SELECT terminal_id, remote_app_id, marker FROM {{%btcpay_pos_links}} WHERE instance=:i AND store_id=:s AND state='synced' AND remote_app_id IS NOT NULL ORDER BY id",
+            [':i' => $this->instance, ':s' => $storeId])->queryAll();
     }
 
     /** Piano di store_archive: app POS ancora collegate, payload col nome "archiviato", chiave; o niente da fare. */
@@ -199,10 +218,7 @@ final class ProvisioningSettingsWorker
         [$key, $waiting] = $this->currentKey($job);
         if ($waiting !== null) return ['nothing' => false, 'waiting' => $waiting];
         $apps = [];
-        foreach ($this->db->createCommand("SELECT terminal_id, remote_app_id FROM {{%btcpay_pos_links}} WHERE instance=:i AND store_id=:s AND state='synced' AND remote_app_id IS NOT NULL ORDER BY id",
-            [':i' => $this->instance, ':s' => $job['entity_id']])->queryAll() as $row) {
-            $apps[(int) $row['terminal_id']] = (string) $row['remote_app_id'];
-        }
+        foreach ($this->syncedApps($job['entity_id']) as $row) $apps[(int) $row['terminal_id']] = (string) $row['remote_app_id'];
         [$name, $settings] = $this->settings($job['entity_id']);
         $name = mb_substr(trim($name), 0, 50 - mb_strlen(self::ARCHIVED_SUFFIX)) . self::ARCHIVED_SUFFIX;
         return ['nothing' => false, 'waiting' => null, 'apps' => $apps, 'remote_store_id' => $link['remote_store_id'],

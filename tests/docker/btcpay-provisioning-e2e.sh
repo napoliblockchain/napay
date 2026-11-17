@@ -50,6 +50,10 @@ api() {
     if [ -n "$3" ] && [ -n "$4" ]; then
         code=$(docker run --rm --user "$(id -u):$(id -g)" --network "$BTCPAY_EDGE_NETWORK" -v "$work/w:/w" --entrypoint curl "$client" \
             -s -o /w/out.json -w '%{http_code}' -X "$1" --max-time 30 -K /w/request.cfg -H "@/w/$4" -H 'Content-Type: application/json' --data-binary "@/w/$3") || code=000
+    elif [ -z "$3" ] && [ -z "$4" ]; then
+        # richiesta anonima (pagine pubbliche della fattura)
+        code=$(docker run --rm --user "$(id -u):$(id -g)" --network "$BTCPAY_EDGE_NETWORK" -v "$work/w:/w" --entrypoint curl "$client" \
+            -s -o /w/out.json -w '%{http_code}' -X "$1" --max-time 30 -K /w/request.cfg) || code=000
     elif [ -n "$4" ]; then
         code=$(docker run --rm --user "$(id -u):$(id -g)" --network "$BTCPAY_EDGE_NETWORK" -v "$work/w:/w" --entrypoint curl "$client" \
             -s -o /w/out.json -w '%{http_code}' -X "$1" --max-time 30 -K /w/request.cfg -H "@/w/$4") || code=000
@@ -244,6 +248,29 @@ api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
 [ "$code" = 200 ] && [ "$(json "(d['name'], d['defaultCurrency'])" "$work/w/out.json")" = "('E2E negozio rinominato', 'USD')" ] || fail "store edit not applied ($code)"
 state; cp "$work/w/state.json" "$work/w/final.json"
 pass 'Name and currency changed in Napay reach BTCPay through a store_update job (no web call)'
+appA=$(json "[x['remote_app_id'] for x in d['pos'] if x['store_id']==$storeA][0]" "$work/w/final.json")
+api GET "/api/v1/apps/pos/$appA" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "(d['currency'], d['showCustomAmount'], d['defaultView'])" "$work/w/out.json")" = "('USD', True, 'Light')" ] || fail "POS app not configured ($code)"
+pass 'SIP-033: the POS app follows the shop currency and accepts custom amounts on the keypad view'
+# SIP-033: fattura dall'app POS senza chiave (POST anonimo), stato pubblico con indirizzo della xpub del merchant.
+posVpub=vpub5Zf9o1xg1TVJN3pte4sDD73BMq71dLFTZPgqvBxe872nMEiDtoBo99udYHBuxP3wDbhie79PmTtL8GxYR5ana9FgxdKTp13TvV3kU6UaHrP
+fixture --set-wallet "$storeA" "$posVpub"
+drain links store_wallet
+posAddresses=$(fixture --preview "$posVpub" regtest | tail -1 | python3 -I -c "import json,sys; print(json.load(sys.stdin))")
+# Regtest senza Internet: cambi fissi impostati per la sola prova con la chiave di verifica del merchant.
+printf '%s' '{"isCustomScript":true,"effectiveScript":"BTC_EUR = 50000;\nBTC_USD = 60000;"}' > "$work/w/rates.json"
+api PUT "/api/v1/stores/$remoteA/rates/configuration" rates.json "verify-$iA.hdr"
+[ "$code" = 200 ] || fail "test rates ($code)"
+printf 'url = "http://btcpay-regtest:49392/apps/%s/pos"\n' "$appA" > "$work/w/request.cfg"
+printf 'amount=12.34' > "$work/w/pos-form.txt"
+code=$(docker run --rm --user "$(id -u):$(id -g)" --network "$BTCPAY_EDGE_NETWORK" -v "$work/w:/w" --entrypoint curl "$client" \
+    -s -o /dev/null -D /w/pos-head.txt -w '%{http_code}' -X POST --max-time 30 -K /w/request.cfg -H 'Content-Type: application/x-www-form-urlencoded' --data-binary @/w/pos-form.txt) || code=000
+invoice=$(sed -n 's#^[Ll]ocation: */i/\([A-Za-z0-9]*\).*#\1#p' "$work/w/pos-head.txt" | tr -d '\r')
+[ "$code" = 302 ] && [ -n "$invoice" ] || fail "anonymous POS invoice ($code)"
+api GET "/i/$invoice/BTC-CHAIN/status"
+[ "$code" = 200 ] && [ "$(json "(d['invoiceId'], d['status'], d['invoiceCurrency'], '12' in d['orderAmountFiat'] and '34' in d['orderAmountFiat'], d['address'] in $posAddresses, d['invoiceBitcoinUrl'].startswith('bitcoin:' + d['address'] + '?amount='))" "$work/w/out.json")" = "('$invoice', 'New', 'USD', True, True, True)" ] \
+    || fail "public invoice status ($code)"
+pass 'SIP-033: POS app invoice created without any key; public status pays to an address of the merchant xpub (BIP21 for the QR)'
 
 # --- 5c. webhook dello store (SIP-022 passo 4): registrato dal worker, consegne verificate da Napay per negozio
 api GET "/api/v1/stores/$remoteA/webhooks" "" "verify-$iA.hdr"

@@ -116,7 +116,8 @@ foreach ([
 $stores = new StoreLinkStep($http->key());
 $marker = str_repeat('b', 32);
 $snap = ['state' => 'pending', 'marker' => $marker, 'remote_store_id' => null, 'in_flight' => false, 'account_state' => 'synced', 'store_name' => "Negozio\nRoma"];
-$name = 'Negozio Roma [napay-' . $marker . ']';
+// nome sanificato e troncato per restare nei 50 caratteri di BTCPay insieme al marker (41)
+$name = mb_substr('Negozio Roma', 0, 50 - 41) . ' [napay-' . $marker . ']';
 $http->reset([]);
 check($is($stores->create(array_replace($snap, ['account_state' => 'key_saved']), $newKey), O::PENDING, 'account_not_ready') && $is($stores->create($snap, null), O::PENDING, 'account_not_ready') && $http->calls === [], 'Store: account not ready -> pending, no call');
 check($is($stores->create(array_replace($snap, ['state' => 'synced', 'remote_store_id' => 'st-1']), $newKey), O::DONE, null, ['remote_store_id' => 'st-1']) && $http->calls === [], 'Store already synced: no call');
@@ -178,7 +179,32 @@ foreach ([
     $http->reset($queue);
     check($is($apps->create($psnap, $newKey), $kind, $code, $data) && count($http->calls) === 1, "App create $label -> $kind");
 }
-check($http->calls[0][1] === '/api/v1/stores/st-1/apps/pos' && $http->calls[0][2] === ['appName' => $appName], 'App POST in the linked store with the marker name');
+check($http->calls[0][1] === '/api/v1/stores/st-1/apps/pos' && $http->calls[0][2] === ['appName' => $appName, 'defaultView' => 'Light', 'showCustomAmount' => true],
+    'App POST in the linked store with the marker name, custom amounts on keypad view');
+$http->reset([$r(200, ['id' => 'app-1', 'appType' => 'PointOfSale'])]);
+$apps->create(array_replace($psnap, ['currency' => 'EUR']), $newKey);
+$withCurrency = $http->calls[0][2]['currency'] ?? null;
+$http->reset([$r(200, ['id' => 'app-1', 'appType' => 'PointOfSale'])]);
+$apps->create(array_replace($psnap, ['currency' => 'eur"']), $newKey);
+check($withCurrency === 'EUR' && !array_key_exists('currency', $http->calls[0][2]), 'App currency = shop currency; an invalid value is never sent (store default)');
+// SIP-033: configurazione completa di un'app già collegata (PUT idempotente)
+foreach ([
+    '200' => [[$r(200, ['id' => 'app-1'])], O::DONE, null],
+    '404' => [[$r(404)], O::FAILED, 'app_missing'],
+    '403' => [[$r(403)], O::FAILED, 'merchant_key_denied'],
+    '422' => [[$r(422, [['path' => 'currency', 'message' => 'x']])], O::FAILED, 'app_update_rejected'],
+    '429' => [[$r(429, null, '7')], O::RETRY, 'rate_limited'],
+    '502' => [[$r(502)], O::RETRY, 'app_update_unavailable'],
+    'unknown' => [[$unknown], O::RETRY, 'app_update_unavailable'],
+] as $label => [$queue, $kind, $code]) {
+    $http->reset($queue);
+    check($is($apps->configure('app-1', $appName, 'EUR', $newKey), $kind, $code) && count($http->calls) === 1, "App configure $label -> $kind");
+}
+check($http->calls[0][0] === 'PUT' && $http->calls[0][1] === '/api/v1/apps/pos/app-1' && $http->calls[0][3] === 'key:' . $newKey
+    && $http->calls[0][2] === ['appName' => $appName, 'defaultView' => 'Light', 'showCustomAmount' => true, 'currency' => 'EUR'], 'App configure: one full PUT (BTCPay replaces the whole configuration)');
+$http->reset([]);
+$refused = false; try { $apps->configure('../x', $appName, 'EUR', $newKey); } catch (InvalidArgumentException $e) { $refused = true; }
+check($refused && $is($apps->configure('app-1', $appName, 'EUR', null), O::PENDING, 'account_not_ready') && $http->calls === [], 'App configure: bad ID refused, no key waits, no call');
 $http->reset([$r(200, [['id' => 'app-6', 'appName' => $appName, 'appType' => 'Crowdfund'], ['id' => 'app-7', 'appName' => $appName, 'appType' => 'PointOfSale'], ['id' => 'app-8', 'appName' => 'Altra', 'appType' => 'PointOfSale']])]);
 check($is($apps->create(array_replace($psnap, ['in_flight' => true]), $newKey), O::DONE, null, ['remote_app_id' => 'app-7']) && count($http->calls) === 1
     && $http->calls[0][0] === 'GET' && $http->calls[0][1] === '/api/v1/stores/st-1/apps', 'Uncertain app: only GET of the store apps, unique marker adopted');

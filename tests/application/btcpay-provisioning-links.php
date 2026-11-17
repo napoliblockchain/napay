@@ -108,7 +108,8 @@ $http->queue = [$r(200, ['id' => 'app-1', 'appType' => 'PointOfSale'])];
 $run->runOnce();
 $pos = $store->posLink($terminalA);
 check($job($id)['state'] === 'done' && $pos['state'] === 'synced' && $pos['remote_app_id'] === 'app-1' && $pos['store_link_id'] === $link['id'], 'POS link synced in the store link, job done');
-check(end($http->calls)[1] === '/api/v1/stores/st-1/apps/pos' && end($http->calls)[2] === ['appName' => 'Cassa ' . $terminalA . ' [napay-' . $pos['marker'] . ']'], 'POS app created in the synced remote store with a generic name');
+check(end($http->calls)[1] === '/api/v1/stores/st-1/apps/pos' && end($http->calls)[2] === ['appName' => 'Cassa ' . $terminalA . ' [napay-' . $pos['marker'] . ']', 'defaultView' => 'Light', 'showCustomAmount' => true],
+    'POS app created in the synced remote store with a generic name, ready for custom amounts (no currency without store settings)');
 
 // --- dipendenze mancanti: retry_wait senza HTTP né nuovi mapping
 [$instance, $http, $store, $run] = $scenario(false);
@@ -539,6 +540,29 @@ $refused = false;
 try { new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid()), $store, new StoreSettingsStep($http->key()), $instance, webhookStep: new StoreWebhookStep($http->key()), webhookUrl: 'http://plain.example.invalid/h', webhookMaster: $master); }
 catch (InvalidArgumentException $e) { $refused = $e->getMessage() === 'invalid_webhook_config'; }
 check($refused, 'Webhook URL must be HTTPS');
+// --- SIP-033: store_update riallinea le app POS sincronizzate (PUT completo: importo libero, valuta del negozio)
+[$instance, $http, $store, $run] = $scenario();
+$configurer = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock,
+    posStep: new PosLinkStep($http->key()));
+$syncStore($store, $storeA, 'st-cfg');
+$cfgLink = $store->ensurePosLink($store->storeLink($storeA), $terminalA);
+$store->updatePosLink($cfgLink, ['state' => 'synced', 'remote_app_id' => 'app-cfg']);
+$c1 = $enqueue($instance, 'store_update', $storeA);
+$http->queue = [$r(200, ['id' => 'st-cfg']), $r(200, ['id' => 'app-cfg'])];
+$configurer->runOnce();
+[$putStore, $putApp] = array_slice($http->calls, -2);
+check($job($c1)['state'] === 'done' && $putStore[1] === '/api/v1/stores/st-cfg' && $putApp[0] === 'PUT' && $putApp[1] === '/api/v1/apps/pos/app-cfg' && $putApp[3] === $apiKey
+    && $putApp[2] === ['appName' => 'Cassa ' . $terminalA . ' [napay-' . $cfgLink['marker'] . ']', 'defaultView' => 'Light', 'showCustomAmount' => true, 'currency' => 'EUR'],
+    'Store update then each synced POS app gets the full configuration with the shop currency (merchant key)');
+$c2 = $enqueue($instance, 'store_update', $storeA, 2);
+$http->queue = [$r(200, ['id' => 'st-cfg']), $r(503)];
+$configurer->runOnce();
+check($job($c2)['state'] === 'retry_wait' && $job($c2)['last_error_code'] === 'app_update_unavailable', 'App update 5xx: whole idempotent job retried later');
+$t += 3600;
+$http->queue = [$r(200, ['id' => 'st-cfg']), $r(404)];
+$configurer->runOnce();
+check($job($c2)['state'] === 'failed' && $job($c2)['last_error_code'] === 'app_missing', 'App gone from BTCPay: job failed with a code for the admin');
+$t -= 3600;
 // --- store collegato: impostazioni e wallet in attesa dello store tornano dovuti subito
 [$instance, $http, $store, $run] = $scenario();
 $wake = $newStore($merchant, 'W3c negozio sveglia');

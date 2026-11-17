@@ -35,7 +35,8 @@ final class BtcpayProvisionController extends Controller
         $secrets = WorkerSecrets::keyringOnly(env_required('BTCPAY_KEK_KEYRING_FILE'));
         $store = new ProvisioningStore($db, $instance, $secrets->keyring(), $secrets->current);
         $settings = new ProvisioningSettingsWorker($db, new ProvisioningJobs($db, self::owner()), $store, new StoreSettingsStep($http->withKey(...)), $instance,
-            ...['archiveStep' => new StoreArchiveStep($http->withKey(...)), 'walletStep' => new StoreWalletStep($http->withKey(...))] + $this->webhookConfig($http));
+            ...['archiveStep' => new StoreArchiveStep($http->withKey(...)), 'walletStep' => new StoreWalletStep($http->withKey(...)),
+                'posStep' => new PosLinkStep($http->withKey(...))] + $this->webhookConfig($http));
         return $this->report($settings->runOnce());
     }
 
