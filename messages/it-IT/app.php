@@ -572,4 +572,8 @@ return [
     'These are the first receive addresses BTCPay will use. Check that they are the same as the first receive addresses shown by your wallet.' => 'Questi sono i primi indirizzi di ricezione che BTCPay userà. Controlla che siano gli stessi primi indirizzi di ricezione mostrati dal tuo wallet.',
     'If they differ, do not confirm: the payments would go to addresses you do not control.' => 'Se sono diversi non confermare: i pagamenti andrebbero a indirizzi che non controlli.',
     'Confirm wallet' => 'Conferma il wallet',
+    'This store cannot receive payments yet: set both the TTS wallet and the BTC wallet.' => 'Questo negozio non può ancora ricevere pagamenti: imposta sia il wallet TTS sia il wallet BTC.',
+    'TTS wallet missing: TTS payments are not active for this store.' => 'Manca il wallet TTS: i pagamenti in TTS non sono attivi per questo negozio.',
+    'BTC wallet missing: BTC payments are not active for this store.' => 'Manca il wallet BTC: i pagamenti in BTC non sono attivi per questo negozio.',
+    'Store created.' => 'Negozio creato.',
 ];

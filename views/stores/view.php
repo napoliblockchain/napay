@@ -6,8 +6,8 @@ use app\components\User;
 
 /* @var $this yii\web\View */
 /* @var $model app\models\Stores */
-/* @var $linked bool negozio già collegato a uno store BTCPay */
 /* @var $ttsWallet string|null indirizzo wallet TTS del negozio (SIP-030) */
+/* @var $btcWallet bool wallet BTC presente (xpub o negozio v1) */
 
 $this->title = Yii::t('app', 'Negozio') . ': ' . $model->description;
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Stores'), 'url' => ['index']];
@@ -20,9 +20,20 @@ $this->params['breadcrumbs'][] = $this->title;
         <div class="col-lg-8">
             <div class="stores-view">
                 <?= app\widgets\Alert::widget() ?>
-                <?php if (empty($linked)) : ?>
-                    <div class="alert alert-info" role="status">
-                        <?= Html::encode(Yii::t('app', 'Pagamenti BTC da configurare: il collegamento a BTCPay verrà creato automaticamente. Negozio e terminali POS sono già utilizzabili.')) ?>
+                <?php
+                // wallet per incassare: TTS (indirizzo del negozio) e BTC (xpub del merchant o negozio v1 gestito su BTCPay)
+                $hasTts = !empty($ttsWallet);
+                $hasBtc = !empty($btcWallet);
+                $walletNotice = match (true) {
+                    !$hasTts && !$hasBtc => Yii::t('app', 'This store cannot receive payments yet: set both the TTS wallet and the BTC wallet.'),
+                    !$hasTts => Yii::t('app', 'TTS wallet missing: TTS payments are not active for this store.'),
+                    !$hasBtc => Yii::t('app', 'BTC wallet missing: BTC payments are not active for this store.'),
+                    default => null,
+                };
+                ?>
+                <?php if ($walletNotice !== null) : ?>
+                    <div class="alert alert-warning" role="status" data-wallet-notice="<?= $hasTts ? 'btc' : ($hasBtc ? 'tts' : 'both') ?>">
+                        <?= Html::encode($walletNotice) ?>
                     </div>
                 <?php endif; ?>
                 <div class="card">

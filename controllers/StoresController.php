@@ -128,7 +128,7 @@ class StoresController extends Controller
         $model = $this->findModel(Crypt::decrypt($id));
 
         if (!$this->linked($model)) {
-            return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false, 'ttsWallet' => $this->ttsWallet($model)]);
+            return $this->render('view', ['model' => $model, 'rates' => 0, 'linked' => false, 'ttsWallet' => $this->ttsWallet($model), 'btcWallet' => $this->btcWallet($model)]);
         }
         // cambio solo per i negozi v1 (chiave ponte); i negozi del provisioning non chiamano BTCPay dal web
         $BTCPayServer = $this->legacy($model) ? StoresBtcpay::client() : null;
@@ -149,6 +149,7 @@ class StoresController extends Controller
             'rates' => $value,
             'linked' => true,
             'ttsWallet' => $this->ttsWallet($model),
+            'btcWallet' => $this->btcWallet($model),
         ]);
     }
 
@@ -200,7 +201,7 @@ class StoresController extends Controller
                             ProvisioningOutbox::enqueueStore(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
                             ProvisioningOutbox::enqueueStoreSettings(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
                             $transaction->commit();
-                            Yii::$app->session->setFlash('success', Yii::t('app', 'Negozio creato. Pagamenti BTC da configurare: il collegamento a BTCPay verrà creato automaticamente.'));
+                            Yii::$app->session->setFlash('success', Yii::t('app', 'Store created.'));
                             Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has created a new {item}: {itemname}', [
                                 'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
                             ]));
@@ -583,6 +584,13 @@ class StoresController extends Controller
             ]),
 
         ]);
+    }
+
+    /** Wallet BTC presente: xpub del merchant (SIP-022) oppure negozio v1 con il wallet gestito su BTCPay. */
+    private function btcWallet(Stores $model): bool
+    {
+        $settings = $model->storesettings;
+        return $settings !== null && ($this->legacy($model) || trim((string) $settings->derivationScheme) !== '');
     }
 
     /** Indirizzo wallet TTS del negozio (SIP-030), null se non impostato. */

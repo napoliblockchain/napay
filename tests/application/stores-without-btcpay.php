@@ -75,7 +75,7 @@ check($settings !== false && $settings['bps_storeid'] === null && $settings['def
 check(str_contains(location($created), 'stores/view') && preg_match('/[?&]id=([^&]+)/', location($created), $match), 'Redirect to the new store');
 $id = $match[1];
 $view = web('/stores/view?id=' . urlencode($id));
-check($view['status'] === 200 && str_contains($view['body'], 'Pagamenti BTC da configurare'), 'Store page explains that BTC payments are pending');
+check($view['status'] === 200 && str_contains($view['body'], 'data-wallet-notice="both"'), 'New store: page says both the TTS and the BTC wallet are missing');
 // Input malformati: rifiuto controllato, nessun negozio o impostazione creati.
 $counts = static fn(): array => [(int) scalar('SELECT COUNT(*) FROM stores'), (int) scalar('SELECT COUNT(*) FROM storesettings')];
 $baseline = $counts();
@@ -143,6 +143,11 @@ check($bad['status'] === 302 && !str_contains($bad['body'], 'xprv9s21') && scala
 $set = web('/stores/wallet-set?id=' . urlencode($id), ['_csrf' => csrf($preview), 'xpub' => $zpub]);
 check($set['status'] === 302 && scalar('SELECT derivationScheme FROM storesettings WHERE store_id=' . (int) $store['id']) === $zpub, 'Confirmed key saved');
 $page = web('/stores/view?id=' . urlencode($id));
+check(str_contains($page['body'], 'data-wallet-notice="tts"') && !str_contains($page['body'], 'data-wallet-notice="both"'), 'With the BTC wallet set, only the missing TTS wallet is reported');
+$db->createCommand()->insert('store_tts_wallets', ['store_id' => (int) $store['id'], 'merchant_id' => (int) $store['merchant_id'], 'address' => '0x' . str_repeat('ab', 20),
+    'updated_by' => $managerA, 'updated_at' => time()])->execute();
+check(!str_contains(web('/stores/view?id=' . urlencode($id))['body'], 'data-wallet-notice'), 'Both wallets set: no notice');
+$db->createCommand()->delete('store_tts_wallets', ['store_id' => (int) $store['id']])->execute();
 check(str_contains($page['body'], htmlspecialchars(app\components\btcpay\XpubAddresses::mask($zpub))) && !str_contains($page['body'], $zpub) && str_contains($page['body'], 'wallet-remove'),
     'Saved key shown only abbreviated, with change and remove');
 check(web('/stores/wallet-remove?id=' . urlencode($id), ['_csrf' => csrf($page)])['status'] === 302 && scalar('SELECT derivationScheme FROM storesettings WHERE store_id=' . (int) $store['id']) === null,
