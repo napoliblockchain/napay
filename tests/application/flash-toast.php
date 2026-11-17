@@ -29,6 +29,7 @@ $session->setFlash('warning', ['Primo avviso', 'Secondo avviso']);
 $session->setFlash('custom', 'non mostrato');
 $view = $render();
 $js = $ready($view);
+check(isset($view->assetBundles[app\assets\ToastrTablerAsset::class]) && isset($view->assetBundles['jambtc\ToastrWidget\assets\ToastrAsset']), 'Readable toast colours under Tabler loaded with the messages');
 check(str_contains($js, 'toastr.success("Operazione completata: è così");'), 'Success flash shown as toast, UTF-8 text readable in the page');
 check(str_contains($js, '"positionClass":"toast-bottom-right"') && str_contains($js, '"timeOut":"15000"'), 'Toastr options: bottom-right, 15 s');
 check(substr_count($js, 'toastr.warning(') === 2, 'Every message of a flash list shown');

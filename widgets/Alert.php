@@ -10,6 +10,10 @@ class Alert extends \yii\bootstrap5\Widget
 {
     public function run()
     {
-        return \jambtc\ToastrWidget\Toast::widget();
+        $output = \jambtc\ToastrWidget\Toast::widget();
+        // colori leggibili sotto Tabler (la .toast di Bootstrap rendeva il testo bianco su bianco), solo se ci sono toast
+        $view = $this->getView();
+        if (isset($view->assetBundles[\jambtc\ToastrWidget\assets\ToastrAsset::class])) \app\assets\ToastrTablerAsset::register($view);
+        return $output;
     }
 }
