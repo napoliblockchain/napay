@@ -6,6 +6,8 @@ services:
   web:
     environment:
       BTCPAY_PROVISION_INSTANCE: ${BTCPAY_PROVISION_INSTANCE:?Set SHA-256 of the BTCPay origin}
+      # SIP-022 passo 4: chiave madre dei segreti dei webhook degli store (verifica della firma BTCPay-Sig)
+      BTCPAY_STORE_WEBHOOK_KEY: ${BTCPAY_STORE_WEBHOOK_KEY:?Set store webhook master key}
   btcpay-worker:
     image: napay/bootstrap:dev
     user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"
@@ -33,7 +35,10 @@ services:
       BTCPAY_PROVISIONER_KEY_FILE: /run/secrets/btcpay_provisioner_key
       BTCPAY_KEK_KEYRING_FILE: /run/secrets/btcpay_kek_keyring
       BTCPAY_WORKER_INTERVAL: ${BTCPAY_WORKER_INTERVAL:-30}
-    secrets: [napay_db_worker_password, btcpay_provisioner_key, btcpay_kek_keyring]
+      # URL pubblico di Napay raggiungibile da BTCPay per i webhook degli store
+      BTCPAY_STORE_WEBHOOK_URL: ${BTCPAY_STORE_WEBHOOK_URL:?Set public store webhook URL}
+      BTCPAY_STORE_WEBHOOK_KEY_FILE: /run/secrets/btcpay_store_webhook_key
+    secrets: [napay_db_worker_password, btcpay_provisioner_key, btcpay_kek_keyring, btcpay_store_webhook_key]
     volumes:
       - .:/app:ro
     depends_on:
@@ -48,3 +53,5 @@ secrets:
     file: ${BTCPAY_PROVISIONER_KEY_SECRET_FILE:?Set external provisioner key file}
   btcpay_kek_keyring:
     file: ${BTCPAY_KEK_KEYRING_SECRET_FILE:?Set external KEK keyring file}
+  btcpay_store_webhook_key:
+    file: ${BTCPAY_STORE_WEBHOOK_KEY_SECRET_FILE:?Set external store webhook key file}

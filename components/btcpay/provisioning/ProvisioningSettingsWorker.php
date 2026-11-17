@@ -3,17 +3,20 @@ namespace app\components\btcpay\provisioning;
 
 use Yii;
 use app\components\btcpay\StoreSettingsPayload;
+use app\components\btcpay\StoreWebhookSecret;
 use app\components\btcpay\provisioning\steps\StepOutcome;
 use app\components\btcpay\provisioning\steps\StoreArchiveStep;
 use app\components\btcpay\provisioning\steps\StoreSettingsStep;
 use app\components\btcpay\provisioning\steps\StoreWalletStep;
+use app\components\btcpay\provisioning\steps\StoreWebhookStep;
 use app\components\identity\AccountEligibility;
 use yii\db\Connection;
 
 /**
  * SIP-022 passi 3 e 3b: esecutore dei lavori sullo store BTCPay di un negozio già collegato, un lavoro per chiamata,
  * con la chiave corrente del merchant e valori letti da Napay all'esecuzione (mai dal lavoro).
- * - `store_update`: nome del negozio (senza marker: l'ID remoto è salvato), valuta e impostazioni fisse (PUT idempotente).
+ * - `store_update`: nome del negozio (senza marker: l'ID remoto è salvato), valuta e impostazioni fisse (PUT idempotente),
+ *   poi il webhook dello store verso Napay se configurato (passo 4: segreto derivato per store, mai salvato).
  * - `store_archive` (negozio eliminato in Napay): DELETE delle app POS collegate (404 = già rimossa), poi nome
  *   "archiviato" sullo store, mapping chiusi (`suspended`, `store_archived`). Lo store non viene mai cancellato.
  *   Store mai collegato: niente da fare. Creazione ancora incerta: decide l'admin.
@@ -34,9 +37,14 @@ final class ProvisioningSettingsWorker
     public function __construct(#[\SensitiveParameter] private readonly Connection $db, #[\SensitiveParameter] private readonly ProvisioningJobs $jobs,
         #[\SensitiveParameter] private readonly ProvisioningStore $store, #[\SensitiveParameter] private readonly StoreSettingsStep $step,
         private readonly string $instance, #[\SensitiveParameter] ?\Closure $clock = null, private readonly RetryPolicy $retry = new RetryPolicy(),
-        #[\SensitiveParameter] private readonly ?StoreArchiveStep $archiveStep = null, #[\SensitiveParameter] private readonly ?StoreWalletStep $walletStep = null)
+        #[\SensitiveParameter] private readonly ?StoreArchiveStep $archiveStep = null, #[\SensitiveParameter] private readonly ?StoreWalletStep $walletStep = null,
+        #[\SensitiveParameter] private readonly ?StoreWebhookStep $webhookStep = null, private readonly ?string $webhookUrl = null,
+        #[\SensitiveParameter] private readonly ?string $webhookMaster = null)
     {
         if (preg_match('/^[0-9a-f]{64}$/D', $instance) !== 1) throw new \InvalidArgumentException('invalid_instance');
+        if ($webhookStep !== null && (!is_string($webhookUrl) || preg_match('#^https://[^\s/]+(/[^\s]*)?$#D', $webhookUrl) !== 1 || !StoreWebhookSecret::valid($webhookMaster))) {
+            throw new \InvalidArgumentException('invalid_webhook_config');
+        }
         $this->clock = $clock ?? static fn(): int => time();
     }
 
@@ -84,6 +92,10 @@ final class ProvisioningSettingsWorker
         if ($version === null) return;
         if ($snapshot['waiting'] !== null) { $this->later($job, $version, $snapshot['waiting'], null); return; }
         $result = $this->step->update($snapshot['remote_store_id'], $snapshot['payload'], $snapshot['key']);
+        if ($result->kind === StepOutcome::DONE && $this->webhookStep !== null) {
+            $result = $this->webhookStep->ensure($snapshot['remote_store_id'], (string) $this->webhookUrl,
+                StoreWebhookSecret::derive((string) $this->webhookMaster, $this->instance, $job['entity_id']), $snapshot['key']);
+        }
         unset($snapshot);
         $this->finish($job, $version, $result, null);
     }

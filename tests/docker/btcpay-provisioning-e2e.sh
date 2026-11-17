@@ -98,7 +98,10 @@ pass 'Gateway btcpay.local with local CA, Napay egress proxy on client network o
 openssl rand -hex 32 > "$work/migrator-password"
 openssl rand -hex 32 > "$work/worker-password"
 printf '{"current":"k1","keys":{"k1":"%s"}}\n' "$(openssl rand -base64 32)" > "$work/ring"
+openssl rand -hex 32 > "$work/webhook-key"
 cat >> "$work/test.env" <<ENV
+BTCPAY_PROVISION_INSTANCE=$(printf %s https://btcpay.local | sha256sum | cut -c1-64)
+BTCPAY_STORE_WEBHOOK_KEY=$(cat "$work/webhook-key")
 NAPAY_DB_MIGRATOR_USERNAME=napay_migrator
 NAPAY_DB_WORKER_USERNAME=napay_worker
 NAPAY_DB_MIGRATOR_SECRET_FILE=$work/migrator-password
@@ -130,7 +133,9 @@ services:
       BTCPAY_PROVISION_CA_FILE: /run/btcpay-ca.crt
       BTCPAY_PROVISIONER_KEY_FILE: /run/secrets/btcpay_provisioner_key
       BTCPAY_KEK_KEYRING_FILE: /run/secrets/btcpay_kek_keyring
-    secrets: [napay_db_worker_password, btcpay_provisioner_key, btcpay_kek_keyring]
+      BTCPAY_STORE_WEBHOOK_URL: https://napay.example.invalid/api/btcpay/v1/store-webhook
+      BTCPAY_STORE_WEBHOOK_KEY_FILE: /run/secrets/btcpay_store_webhook_key
+    secrets: [napay_db_worker_password, btcpay_provisioner_key, btcpay_kek_keyring, btcpay_store_webhook_key]
     volumes: [$root:/app:ro, $work/ca.crt:/run/btcpay-ca.crt:ro]
     networks: [database, e2e]
 networks:
@@ -142,6 +147,8 @@ secrets:
     file: $work/provisioner
   btcpay_kek_keyring:
     file: $work/ring
+  btcpay_store_webhook_key:
+    file: $work/webhook-key
 YAML
 compose() { docker compose -p "$project" --env-file "$work/test.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml" -f "$work/override.yml" -f "$work/cli.yml" "$@"; }
 docker volume create "$project-data" >/dev/null
@@ -154,7 +161,7 @@ pass 'Two qualified merchants, one store and one terminal each, jobs enqueued as
 
 # --- 4. worker: comandi one-shot finché non resta lavoro (attese brevi per Retry-After/backoff)
 private_output() {
-    for secret in root-password migrator-password worker-password provisioner; do
+    for secret in root-password migrator-password worker-password provisioner webhook-key; do
         if grep -Fq -f "$work/$secret" "$work/cli.out"; then echo 'FAIL: worker leaked a secret.' >&2; exit 1; fi
     done
     if grep -Eq 'Stack trace|SQLSTATE|PDOException|RuntimeException|/app/|/run/secrets/' "$work/cli.out"; then echo 'FAIL: worker exposed diagnostics.' >&2; exit 1; fi
@@ -237,6 +244,21 @@ api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
 [ "$code" = 200 ] && [ "$(json "(d['name'], d['defaultCurrency'])" "$work/w/out.json")" = "('E2E negozio rinominato', 'USD')" ] || fail "store edit not applied ($code)"
 state; cp "$work/w/state.json" "$work/w/final.json"
 pass 'Name and currency changed in Napay reach BTCPay through a store_update job (no web call)'
+
+# --- 5c. webhook dello store (SIP-022 passo 4): registrato dal worker, consegne verificate da Napay per negozio
+api GET "/api/v1/stores/$remoteA/webhooks" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "[(h['url'], h['enabled'], sorted(h['authorizedEvents']['specificEvents'])) for h in d]" "$work/w/out.json")" \
+    = "[('https://napay.example.invalid/api/btcpay/v1/store-webhook', True, ['InvoiceExpired', 'InvoiceInvalid', 'InvoiceProcessing', 'InvoiceReceivedPayment', 'InvoiceSettled'])]" ] \
+    || fail "store webhook not registered ($code)"
+pass 'Store webhook registered on BTCPay by the worker: Napay URL, invoice events only, exactly one'
+[ "$(fixture --deliver "$storeA" "$remoteA" good E2eDelivery01 | tail -1)" = '200 recorded' ] || fail 'signed delivery not recorded'
+[ "$(fixture --deliver "$storeA" "$remoteA" good E2eDelivery01 | tail -1)" = '200 duplicate' ] || fail 'duplicate delivery recorded twice'
+[ "$(fixture --deliver "$storeA" "$remoteA" badsig E2eDelivery02 | tail -1)" = '401 invalid_signature' ] || fail 'bad signature accepted'
+[ "$(fixture --deliver "$storeA" "$remoteA" otherstore E2eDelivery03 | tail -1)" = '401 invalid_signature' ] || fail 'secret of another store accepted'
+state
+[ "$(json "[(e['store_id'], e['event_type'], e['result']) for e in d['events']]" "$work/w/state.json")" = "[($storeA, 'InvoiceSettled', 'recorded')]" ] || fail 'webhook events'
+cp "$work/w/state.json" "$work/w/final.json"
+pass 'Store webhook endpoint: signed delivery recorded once for its shop; bad signature or another store secret refused'
 
 # --- 6. ripetizione: nessun lavoro, nessuna nuova risorsa
 for route in run links reconcile; do

@@ -21,7 +21,9 @@ if ($btcpayWorker) {
     $bw = $services['btcpay-worker']; $bwEnv = $bw['environment'];
     $bwNetworks = array_keys($bw['networks']); sort($bwNetworks);
     $bwSecrets = array_column($bw['secrets'], 'source'); sort($bwSecrets);
-    localCheck($bwNetworks === ['database', 'egress'] && $bwSecrets === ['btcpay_kek_keyring', 'btcpay_provisioner_key', 'napay_db_worker_password']);
+    localCheck($bwNetworks === ['database', 'egress'] && $bwSecrets === ['btcpay_kek_keyring', 'btcpay_provisioner_key', 'btcpay_store_webhook_key', 'napay_db_worker_password']);
+    localCheck($bwEnv['BTCPAY_STORE_WEBHOOK_URL'] === 'https://napay.local/api/btcpay/v1/store-webhook' && $bwEnv['BTCPAY_STORE_WEBHOOK_KEY_FILE'] === '/run/secrets/btcpay_store_webhook_key'
+        && !isset($bwEnv['BTCPAY_STORE_WEBHOOK_KEY']) && preg_match('/^[0-9a-f]{64}$/D', (string) ($services['web']['environment']['BTCPAY_STORE_WEBHOOK_KEY'] ?? '')) === 1);
     localCheck(empty($bw['ports']) && $bw['read_only'] === true && $bw['cap_drop'] === ['ALL']);
     localCheck($bwEnv['NAPAY_DB_ROLE'] === 'worker' && $bwEnv['DB_DATABASE'] === 'napay_browser_local' && $bwEnv['PAYMENT_PROXY'] === 'http://egress:3128'
         && $bwEnv['BTCPAY_PROVISION_ORIGIN'] === 'https://btcpay.local' && $bwEnv['BTCPAY_PROVISION_CA_FILE'] === '/run/btcpay-ca.crt' && !isset($bwEnv['DB_PASSWORD']));

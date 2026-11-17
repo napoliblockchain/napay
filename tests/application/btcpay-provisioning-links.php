@@ -9,7 +9,7 @@ if (env('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !=
 define('YII_ENABLE_ERROR_HANDLER', false);
 require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
 use app\components\btcpay\provisioning\{ProvisioningHttpException as Http, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore};
-use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep};
+use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep, StoreWebhookStep};
 
 $password = trim((string) fgets(STDIN));
 if (!preg_match('/^[0-9a-f]{48}$/D', $password)) exit(1);
@@ -510,4 +510,33 @@ $http->queue = [$r(404)];
 $wallets->runOnce();
 [$m, $p] = end($http->calls);
 check($job($w3)['state'] === 'done' && $m === 'DELETE' && $p === '/api/v1/stores/st-wal/payment-methods/BTC-CHAIN', 'Wallet removed: DELETE of the payment method (404 = already absent)');
+// --- SIP-022 passo 4: webhook dello store creato o aggiornato da store_update (segreto derivato per negozio)
+[$instance, $http, $store, $run] = $scenario();
+$master = bin2hex(random_bytes(32));
+$hookUrl = 'https://napay.example.invalid/api/btcpay/v1/store-webhook';
+$hooks = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock,
+    webhookStep: new StoreWebhookStep($http->key()), webhookUrl: $hookUrl, webhookMaster: $master);
+$syncStore($store, $storeB2, 'st-hook');
+$secret = app\components\btcpay\StoreWebhookSecret::derive($master, $instance, $storeB2);
+$h1 = $enqueue($instance, 'store_update', $storeB2, 10);
+$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, []), $r(200, ['id' => 'wh-1'])];
+$hooks->runOnce();
+[$get, $post] = array_slice($http->calls, -2);
+check($job($h1)['state'] === 'done' && $get[0] === 'GET' && $get[1] === '/api/v1/stores/st-hook/webhooks' && $post[0] === 'POST' && $post[1] === '/api/v1/stores/st-hook/webhooks'
+    && $post[2]['url'] === $hookUrl && $post[2]['secret'] === $secret && $post[2]['authorizedEvents']['everything'] === false
+    && in_array('InvoiceSettled', $post[2]['authorizedEvents']['specificEvents'], true), 'Settings then webhook: created with the per-store derived secret and invoice events only');
+$h2 = $enqueue($instance, 'store_update', $storeB2, 11);
+$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, [['id' => 'wh-1', 'url' => $hookUrl], ['id' => 'wh-x', 'url' => 'https://other.example.invalid/hook']]), $r(200, ['id' => 'wh-1'])];
+$hooks->runOnce();
+[$m, $p] = end($http->calls);
+check($job($h2)['state'] === 'done' && $m === 'PUT' && $p === '/api/v1/stores/st-hook/webhooks/wh-1', 'Existing Napay webhook updated in place, never duplicated, other webhooks untouched');
+$h3 = $enqueue($instance, 'store_update', $storeB2, 12);
+$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, [['id' => 'wh-1', 'url' => $hookUrl], ['id' => 'wh-2', 'url' => $hookUrl]])];
+$hooks->runOnce();
+check($job($h3)['state'] === 'failed' && $job($h3)['last_error_code'] === 'webhook_ambiguous', 'Two Napay webhooks on the store: left to the admin');
+check($secret !== app\components\btcpay\StoreWebhookSecret::derive($master, $instance, $storeA) && strlen($secret) === 64, 'Each store has its own webhook secret');
+$refused = false;
+try { new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid()), $store, new StoreSettingsStep($http->key()), $instance, webhookStep: new StoreWebhookStep($http->key()), webhookUrl: 'http://plain.example.invalid/h', webhookMaster: $master); }
+catch (InvalidArgumentException $e) { $refused = $e->getMessage() === 'invalid_webhook_config'; }
+check($refused, 'Webhook URL must be HTTPS');
 echo "PASS $checks BTCPay provisioning link worker checks\n";

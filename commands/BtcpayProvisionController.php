@@ -2,7 +2,7 @@
 namespace app\commands;
 
 use app\components\btcpay\provisioning\{ProvisioningHttpClient, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore, ProvisioningWorker, WorkerSecrets};
-use app\components\btcpay\provisioning\steps\{MerchantAccountStep, PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep};
+use app\components\btcpay\provisioning\steps\{MerchantAccountStep, PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep, StoreWebhookStep};
 use app\components\db\V2Bootstrap;
 use yii\console\Controller;
 
@@ -35,8 +35,23 @@ final class BtcpayProvisionController extends Controller
         $secrets = WorkerSecrets::keyringOnly(env_required('BTCPAY_KEK_KEYRING_FILE'));
         $store = new ProvisioningStore($db, $instance, $secrets->keyring(), $secrets->current);
         $settings = new ProvisioningSettingsWorker($db, new ProvisioningJobs($db, self::owner()), $store, new StoreSettingsStep($http->withKey(...)), $instance,
-            archiveStep: new StoreArchiveStep($http->withKey(...)), walletStep: new StoreWalletStep($http->withKey(...)));
+            ...['archiveStep' => new StoreArchiveStep($http->withKey(...)), 'walletStep' => new StoreWalletStep($http->withKey(...))] + $this->webhookConfig($http));
         return $this->report($settings->runOnce());
+    }
+
+    /**
+     * SIP-022 passo 4: webhook degli store verso Napay. URL pubblico (BTCPAY_STORE_WEBHOOK_URL) e chiave madre in file
+     * (BTCPAY_STORE_WEBHOOK_KEY_FILE): entrambi = webhook attivi, nessuno = disattivati, uno solo = configurazione errata.
+     */
+    private function webhookConfig(ProvisioningHttpClient $http): array
+    {
+        $url = env('BTCPAY_STORE_WEBHOOK_URL', '');
+        $file = env('BTCPAY_STORE_WEBHOOK_KEY_FILE', '');
+        if (($url === '' || $url === null) && ($file === '' || $file === null)) return [];
+        if (!is_string($url) || $url === '' || !is_string($file) || !str_starts_with($file, '/') || !is_file($file) || filesize($file) > 256) {
+            throw new \RuntimeException('invalid_webhook_config');
+        }
+        return ['webhookStep' => new StoreWebhookStep($http->withKey(...)), 'webhookUrl' => $url, 'webhookMaster' => trim((string) file_get_contents($file))];
     }
 
     /** W3e: una riconciliazione GET-only di store_link/pos_link. */

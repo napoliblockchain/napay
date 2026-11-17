@@ -59,6 +59,7 @@ try {
             'stores' => $q('SELECT merchant_id, store_id, remote_store_id, state FROM btcpay_store_links WHERE instance=:i ORDER BY merchant_id'),
             'pos' => $q('SELECT merchant_id, store_id, terminal_id, remote_app_id, state FROM btcpay_pos_links WHERE instance=:i ORDER BY merchant_id'),
             'jobs' => $q('SELECT kind, merchant_id, entity_id, generation, state, attempts, last_error_code FROM btcpay_provisioning_jobs WHERE instance=:i ORDER BY id'),
+            'events' => $db->createCommand('SELECT store_id, event_type, result FROM btcpay_webhook_events WHERE store_id IS NOT NULL ORDER BY id')->queryAll(),
             // stato mostrato nel backoffice (SIP-022 B5)
             'status' => array_merge(
                 array_map(fn($r) => app\components\btcpay\provisioning\ProvisioningStatus::merchant((int) $r['merchant_id']), $q('SELECT merchant_id FROM btcpay_merchant_accounts WHERE instance=:i')),
@@ -74,6 +75,18 @@ try {
         $db->createCommand()->insert('storesettings', ['store_id' => $store, 'defaultCurrency' => 'EUR'])->execute();
         $db->transaction(fn() => ProvisioningOutbox::enqueueStore($db, $store, $m['id'], $m['owner'])) || exit(1);
         echo $store, "\n";
+    } elseif (($argv[1] ?? '') === '--deliver') {
+        // SIP-022 passo 4: consegna firmata come BTCPay verso l'endpoint Napay (good | badsig | otherstore)
+        $storeId = (int) ($argv[2] ?? 0); $remote = (string) ($argv[3] ?? ''); $mode = (string) ($argv[4] ?? 'good'); $delivery = (string) ($argv[5] ?? 'E2eDelivery01');
+        $master = (string) getenv('BTCPAY_STORE_WEBHOOK_KEY');
+        $body = json_encode(['deliveryId' => $delivery, 'type' => 'InvoiceSettled', 'storeId' => $remote, 'invoiceId' => 'E2eInvoice' . substr($delivery, -4), 'timestamp' => time()]);
+        $secret = app\components\btcpay\StoreWebhookSecret::derive($master, $instance, $mode === 'otherstore' ? $storeId + 1 : $storeId);
+        $signature = 'sha256=' . hash_hmac('sha256', $mode === 'badsig' ? $body . ' ' : $body, $secret);
+        $curl = curl_init('http://web/api/btcpay/v1/store-webhook');
+        curl_setopt_array($curl, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_RETURNTRANSFER => true, CURLOPT_PROXY => '', CURLOPT_TIMEOUT => 20,
+            CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'BTCPay-Sig: ' . $signature]]);
+        $response = curl_exec($curl);
+        echo curl_getinfo($curl, CURLINFO_RESPONSE_CODE), ' ', json_decode((string) $response, true)['result'] ?? '-', "\n";
     } elseif (($argv[1] ?? '') === '--set-wallet') {
         // SIP-022 xpub: come StoresController::saveWallet (chiave salvata, lavoro store_wallet nella stessa transazione)
         $storeId = (int) ($argv[2] ?? 0); $scheme = (string) ($argv[3] ?? '');

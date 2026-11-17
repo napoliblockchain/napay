@@ -71,6 +71,13 @@ if [[ $role_mode == 1 && ( -e $state/btcpay-provisioner-key || -L $state/btcpay-
         || (set -o noclobber; printf '{"current":"k1","keys":{"k1":"%s"}}\n' "$(openssl rand -base64 32)" > "$state/btcpay-kek-keyring")
     napay_private_input "$state/btcpay-kek-keyring" file "$(id -u)"
     napay_private_input "$state/caddy-root.crt" file "$(id -u)"
+    # SIP-022 passo 4: chiave madre dei segreti dei webhook degli store (una volta, mai sovrascritta)
+    [[ -e $state/btcpay-store-webhook-key || -L $state/btcpay-store-webhook-key ]] \
+        || (set -o noclobber; openssl rand -hex 32 > "$state/btcpay-store-webhook-key")
+    napay_private_input "$state/btcpay-store-webhook-key" file "$(id -u)"
+    BTCPAY_STORE_WEBHOOK_KEY=$(tr -d '\n' < "$state/btcpay-store-webhook-key")
+    export BTCPAY_STORE_WEBHOOK_KEY BTCPAY_STORE_WEBHOOK_KEY_SECRET_FILE=$state/btcpay-store-webhook-key
+    export BTCPAY_STORE_WEBHOOK_URL=https://napay.local/api/btcpay/v1/store-webhook
     export BTCPAY_PROVISION_ORIGIN=https://btcpay.local
     BTCPAY_PROVISION_INSTANCE=$(printf %s "$BTCPAY_PROVISION_ORIGIN" | sha256sum | cut -c1-64)
     export BTCPAY_PROVISION_INSTANCE BTCPAY_PROVISIONER_KEY_SECRET_FILE=$state/btcpay-provisioner-key
