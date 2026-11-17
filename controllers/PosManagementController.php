@@ -191,7 +191,7 @@ class PosManagementController extends Controller
             ->where(['g.user_id' => $userId, 'g.merchant_id' => $operator['merchant_id']])
             ->orderBy(['s.description' => SORT_ASC, 's.id' => SORT_ASC])->all();
         $available = Stores::find()->select(['description', 'id'])
-            ->where(['merchant_id' => $operator['merchant_id']])
+            ->where(['merchant_id' => $operator['merchant_id'], 'archived_at' => null])
             ->andWhere(['not in', 'id', array_column($grants, 'store_id')])
             ->orderBy(['description' => SORT_ASC, 'id' => SORT_ASC])->asArray()->all();
 

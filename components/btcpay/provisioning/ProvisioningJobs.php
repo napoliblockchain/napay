@@ -19,7 +19,7 @@ final class ProvisioningJobs
     /** Risposte remote che provano la mancata esecuzione: solo queste riportano un lavoro in volo a running. */
     public const REMOTE_NOT_EXECUTED = [429];
     public const MAX_ATTEMPTS = 1000;
-    public const KINDS = ['merchant_account', 'store_link', 'pos_link', 'store_update', 'key_rotation', 'key_revoke'];
+    public const KINDS = ['merchant_account', 'store_link', 'pos_link', 'store_update', 'store_archive', 'key_rotation', 'key_revoke'];
     private const TABLE = 'btcpay_provisioning_jobs';
     private const SCAN = 20;
     private const CLEAR_LEASE = ', lease_owner = NULL, lease_until = NULL';

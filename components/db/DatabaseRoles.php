@@ -33,7 +33,7 @@ final class DatabaseRoles
         'users' => ['id', 'email', 'is_active', 'privilege_id'], 'privileges' => ['id', 'level'],
         'member_profiles' => ['user_id', 'is_corporate', 'denomination'],
         'membership_payments' => ['user_id'], 'pos_operators' => ['user_id'],
-        'merchants' => ['id', 'user_id'], 'stores' => ['id', 'merchant_id', 'description'],
+        'merchants' => ['id', 'user_id'], 'stores' => ['id', 'merchant_id', 'description', 'archived_at'],
         // SIP-022 passo 3: impostazioni dello store BTCPay (stesse colonne di components/btcpay/StoreSettingsPayload::COLUMNS)
         'storesettings' => ['store_id', 'website', 'defaultCurrency', 'invoiceExpiration', 'displayExpirationTimer', 'monitoringExpiration', 'speedPolicy',
             'lightningDescriptionTemplate', 'paymentTolerance', 'anyoneCanCreateInvoice', 'requiresRefundEmail', 'checkoutType', 'receipt',

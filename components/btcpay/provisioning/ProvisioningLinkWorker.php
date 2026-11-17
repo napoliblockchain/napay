@@ -367,8 +367,10 @@ final class ProvisioningLinkWorker
             if ($terminal['merchant_id'] !== $merchant) throw new LinkIneligible('scope_mismatch');
             $storeId = $terminal['store_id'];
         }
-        $storeMerchant = $this->db->createCommand('SELECT merchant_id FROM {{%stores}} WHERE id=:s FOR SHARE', [':s' => $storeId])->queryScalar();
-        if ($storeMerchant === false || (int) $storeMerchant !== $merchant) throw new LinkIneligible('scope_mismatch');
+        $store = $this->db->createCommand('SELECT merchant_id, archived_at FROM {{%stores}} WHERE id=:s FOR SHARE', [':s' => $storeId])->queryOne();
+        if ($store === false || (int) $store['merchant_id'] !== $merchant) throw new LinkIneligible('scope_mismatch');
+        // negozio eliminato in Napay (SIP-022 passo 3b): nessuno store o app creati o adottati
+        if ($store['archived_at'] !== null) throw new LinkIneligible('store_archived');
     }
 
     /** Terminale bloccato in lettura e appartenente al merchant del lavoro. */

@@ -24,7 +24,6 @@ use app\components\btcpay\StoresBtcpay;
 use app\components\btcpay\provisioning\ProvisioningStatus;
 use app\components\btcpay\StoreSettingsPayload;
 
-use app\models\Pos;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
@@ -301,17 +300,29 @@ class StoresController extends Controller
      */
     public function actionDelete($id)
     {
-        $closed_at = new \DateTime('now');
-        $close_date = $closed_at->format('Y-m-d');
-
-        // storicizza il negozio
+        // archivia il negozio e disabilita i suoi terminali (un terminale disabilitato chiude anche l'apertura attiva);
+        // negozi del provisioning: archiviazione dello store BTCPay tramite worker (SIP-022 passo 3b), stessa transazione
         $model = $this->findModel(Crypt::decrypt($id));
-        $model->close_date = $close_date;
-        $model->historical = 1;
-        $model->save();
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            if (Yii::$app->db->createCommand()->update('{{%stores}}', ['archived_at' => time()], ['id' => (int) $model->id, 'archived_at' => null])->execute() !== 1) {
+                throw new \UnexpectedValueException('store_not_archived');
+            }
+            $disabled = Yii::$app->db->createCommand()->update('{{%pos_terminals}}', ['is_enabled' => 0, 'updated_at' => time()],
+                ['store_id' => (int) $model->id, 'is_enabled' => 1])->execute();
+            if (!$this->legacy($model)) {
+                ProvisioningOutbox::enqueueStoreArchive(Yii::$app->db, (int) $model->id, (int) $model->merchant_id, (int) Yii::$app->user->id);
+            }
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            if ($transaction->isActive) $transaction->rollBack();
+            Yii::error('Store archive failed: ' . get_class($e), __METHOD__);
+            Yii::$app->session->setFlash('error', Yii::t('app', 'Store not deleted. Try again.'));
+            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+        }
+        if ($disabled > 0) Log::event(sprintf('Negozio %d eliminato: %d terminali POS disabilitati', (int) $model->id, $disabled), Log::TYPE_DATA);
 
-        // su BTCPay il negozio non si elimina: viene rinominato -DELETED e le sue app POS rimosse (se collegato e configurato)
-        // negozi del provisioning: archivio locale; lo store BTCPay resta (archiviazione tramite worker da fare)
+        // negozi v1: su BTCPay lo store non si elimina, viene rinominato -DELETED (chiave ponte); i terminali v2 sono già disabilitati
         if ($this->legacy($model)) {
             $store = $model->storesettings;
             $BTCPayServer = StoresBtcpay::client();
@@ -319,13 +330,6 @@ class StoresController extends Controller
                 $params = $this->btcpayStoreSettings($model, $store);
                 $params['name'] = $model->description . '-DELETED';
                 $BTCPayServer->updateStore($store->bps_storeid, $params);
-            }
-            $client = $BTCPayServer?->setPos();
-            foreach (Pos::find()->byStoreId($model->id)->all() as $pos) {
-                $pos->close_date = $close_date;
-                $pos->historical = 1;
-                $pos->save();
-                if ($client !== null) $client->removePos($pos->possettings->sin);
             }
         }
 
@@ -523,7 +527,7 @@ class StoresController extends Controller
     protected function findModel($id)
     {
         // Fuori dallo scope = inesistente: solo l'admin vede i negozi di tutti i merchant.
-        $model = Stores::findOne($id);
+        $model = Stores::find()->where(['id' => $id, 'archived_at' => null])->one();
         if ($model !== null && (User::isAdministrator() || (int) $model->merchant_id === User::getMerchantId())) {
             return $model;
         }

@@ -317,6 +317,22 @@ state
 api GET "/api/v1/users/$emailA" "" admin.hdr
 [ "$code" = 200 ] && [ "$(json "d['id']" "$work/w/out.json")" = "$userA" ] || fail "BTCPay user changed ($code)"
 pass 'Admin retry of a merchant account: same BTCPay user found by email, ownership proven by a new key (generation 2)'
+
+# --- 9. negozio eliminato (SIP-022 passo 3b): app POS rimosse, store rinominato come archiviato, mai cancellato
+storeA=$(json "d['A']['store']" "$work/w/seed.json")
+remoteA=$(json "[s['remote_store_id'] for s in d['stores'] if s['store_id']==$storeA][0]" "$work/w/state.json")
+iA=$(json "[a['merchant_id'] for a in d['accounts']].index($(json "d['A']['merchant']" "$work/w/seed.json"))" "$work/w/state.json")
+api GET "/api/v1/stores/$remoteA/apps" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 1 ] || fail "store A should have one POS app before the archive ($code)"
+fixture --archive-store "$storeA"
+drain links store_archive
+api GET "/api/v1/stores/$remoteA/apps" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "len(d)" "$work/w/out.json")" = 0 ] || fail "POS app still on the archived store ($code)"
+api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "d['name'].endswith(' - archiviato') and len(d['name']) <= 50" "$work/w/out.json")" = True ] || fail "store not renamed as archived ($code)"
+state
+[ "$(json "[(s['state']) for s in d['stores'] if s['store_id']==$storeA] + [x['state'] for x in d['pos'] if x['store_id']==$storeA]" "$work/w/state.json")" = "['suspended', 'suspended']" ] || fail 'mappings not closed'
+pass 'Deleted shop: POS app removed from BTCPay, store kept and renamed as archived, mappings closed'
 printf 'PASS %s BTCPay provisioning e2e checks (regtest, no real money)\n' "$checks"
 E2E
 sh "$private/runtime.sh"

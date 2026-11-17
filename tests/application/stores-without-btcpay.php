@@ -129,4 +129,20 @@ check($scoped((int) scalar("SELECT id FROM users WHERE username='runtime-admin'"
 check($scoped($managerA) === null && (int) $find->invoke($controller, (int) $store['id'])->merchant_id === $merchantA, 'Manager loads own store');
 
 check((int) scalar('SELECT COUNT(*) FROM stores') === $before + 2, 'Exactly the expected stores exist');
+// --- SIP-022 passo 3b: eliminare un negozio = archiviarlo (mai cancellarlo), terminali disabilitati, nascosto
+$sid = (int) $store['id'];
+$terminal = new app\models\PosTerminals(['merchant_id' => (int) $store['merchant_id'], 'store_id' => $sid, 'name' => 'Cassa da archiviare']);
+check($terminal->save(), 'Fixture: enabled terminal in the store to delete');
+$jobsBefore = (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs');
+$page = web('/stores/view?id=' . urlencode($id));
+check(web('/stores/delete?id=' . urlencode($id))['status'] === 405 && scalar('SELECT archived_at FROM stores WHERE id=' . $sid) === null, 'Delete is never a GET (405, nothing archived)');
+$r = web('/stores/delete?id=' . urlencode($id), ['_csrf' => csrf($page)]);
+check($r['status'] === 302 && scalar('SELECT archived_at FROM stores WHERE id=' . $sid) !== null && (int) scalar('SELECT COUNT(*) FROM stores WHERE id=' . $sid) === 1
+    && (int) scalar('SELECT is_enabled FROM pos_terminals WHERE id=' . (int) $terminal->id) === 0 && (int) scalar('SELECT COUNT(*) FROM btcpay_provisioning_jobs') === $jobsBefore,
+    'Delete archives the store (row kept), disables its terminals, no BTCPay job without provisioning');
+check(web('/stores/view?id=' . urlencode($id))['status'] === 404 && !str_contains(web('/stores/index')['body'], 'Negozio senza BTCPay')
+    && preg_match('/<option[^>]*>[^<]*Negozio senza BTCPay/', web('/pos-management/index')['body']) !== 1, 'Archived store hidden from list, detail and terminal store choices');
+$page = web('/pos-management/index');
+web('/pos-management/terminal-enable?id=' . urlencode((string) $terminal->public_id), ['_csrf' => csrf($page)]);
+check((int) scalar('SELECT is_enabled FROM pos_terminals WHERE id=' . (int) $terminal->id) === 0, 'A terminal of an archived store cannot be enabled again');
 echo "PASS $checks store without BTCPay checks\n";

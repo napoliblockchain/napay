@@ -74,6 +74,16 @@ try {
         $db->createCommand()->insert('storesettings', ['store_id' => $store, 'defaultCurrency' => 'EUR'])->execute();
         $db->transaction(fn() => ProvisioningOutbox::enqueueStore($db, $store, $m['id'], $m['owner'])) || exit(1);
         echo $store, "\n";
+    } elseif (($argv[1] ?? '') === '--archive-store') {
+        // SIP-022 passo 3b: come StoresController::actionDelete (negozio archiviato, terminali disabilitati, lavoro store_archive)
+        $storeId = (int) ($argv[2] ?? 0);
+        $row = $db->createCommand('SELECT s.merchant_id, m.user_id FROM stores s JOIN merchants m ON m.id = s.merchant_id WHERE s.id=:s', [':s' => $storeId])->queryOne();
+        if ($row === false) exit(1);
+        $db->transaction(function () use ($db, $storeId, $row) {
+            $db->createCommand()->update('stores', ['archived_at' => time()], ['id' => $storeId])->execute();
+            $db->createCommand()->update('pos_terminals', ['is_enabled' => 0], ['store_id' => $storeId])->execute();
+            ProvisioningOutbox::enqueueStoreArchive($db, $storeId, (int) $row['merchant_id'], (int) $row['user_id']) || exit(1);
+        });
     } elseif (($argv[1] ?? '') === '--edit-store') {
         // SIP-022 passo 3: nome e valuta cambiati dal merchant, come StoresController::actionUpdateGeneral
         $storeId = (int) ($argv[2] ?? 0);

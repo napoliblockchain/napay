@@ -41,8 +41,11 @@ final class ProvisioningStatus
     {
         $instance = ProvisioningOutbox::instance();
         if ($instance === null || $entityId < 1) return null;
-        $link = (new Query())->select(['state'])->from(self::LINK_TABLES[$kind])
-            ->where(['instance' => $instance, self::LINK_COLUMNS[$kind] => $entityId])->scalar();
+        $row = (new Query())->select(['state', 'last_error_code'])->from(self::LINK_TABLES[$kind])
+            ->where(['instance' => $instance, self::LINK_COLUMNS[$kind] => $entityId])->one();
+        // negozio eliminato e archiviato su BTCPay (SIP-022 passo 3b): nessuno stato da mostrare
+        if ($row !== false && $row['state'] === 'suspended' && $row['last_error_code'] === 'store_archived') return null;
+        $link = $row === false ? false : $row['state'];
         $job = (new Query())->select(['state'])->from('btcpay_provisioning_jobs')
             ->where(['instance' => $instance, 'kind' => $kind, 'entity_id' => $entityId])->orderBy(['generation' => SORT_DESC])->limit(1)->scalar();
         if ($link === false && $job === false) return null;

@@ -46,7 +46,8 @@ class StoresSearch extends Stores
      */
     public function search($params)
     {
-        $query = Stores::find();
+        // negozi archiviati (eliminati) esclusi (SIP-022 passo 3b)
+        $query = Stores::find()->andWhere(['archived_at' => null]);
 
         // add conditions that should always apply here
         // Utilizza il nome del metodo del Model (getMerchant) e non il nome di tabella

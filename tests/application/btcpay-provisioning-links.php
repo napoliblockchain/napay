@@ -9,7 +9,7 @@ if (env('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !=
 define('YII_ENABLE_ERROR_HANDLER', false);
 require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
 use app\components\btcpay\provisioning\{ProvisioningHttpException as Http, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore};
-use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreLinkStep, StoreSettingsStep};
+use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep};
 
 $password = trim((string) fgets(STDIN));
 if (!preg_match('/^[0-9a-f]{48}$/D', $password)) exit(1);
@@ -455,4 +455,37 @@ $su3 = $enqueue($instance, 'store_update', $storeB);
 $settings->runOnce();
 check($job($su3)['state'] === 'failed' && $job($su3)['last_error_code'] === 'scope_mismatch' && count($http->calls) === $calls, 'Store of another merchant: failed, no call');
 $t -= 7200;
+// --- SIP-022 passo 3b: store_archive (negozio eliminato): app POS rimosse, store rinominato, mapping chiusi
+[$instance, $http, $store, $run] = $scenario();
+$archiver = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock,
+    archiveStep: new StoreArchiveStep($http->key()));
+$syncStore($store, $storeA, 'st-arc');
+$posLink = $store->ensurePosLink($store->storeLink($storeA), $terminalA);
+$store->updatePosLink($posLink, ['state' => 'synced', 'remote_app_id' => 'app-arc']);
+$arc = $enqueue($instance, 'store_archive', $storeA);
+$http->queue = [$r(500)];
+$archiver->runOnce();
+check($job($arc)['state'] === 'retry_wait' && $job($arc)['last_error_code'] === 'app_delete_unavailable' && $store->posLink($terminalA)['state'] === 'synced', 'App removal 5xx: retried later, link still open');
+$t += 3600;
+$http->queue = [$r(404), $r(200, ['id' => 'st-arc'])];
+$archiver->runOnce();
+[$delete, $put] = array_slice($http->calls, -2);
+check($job($arc)['state'] === 'done' && $delete[0] === 'DELETE' && $delete[1] === '/api/v1/apps/app-arc' && $put[0] === 'PUT' && $put[1] === '/api/v1/stores/st-arc'
+    && str_ends_with($put[2]['name'], ' - archiviato') && mb_strlen($put[2]['name']) <= 50, 'Archive: POS app removed (404 = already gone), store renamed as archived, never deleted');
+check($store->storeLink($storeA)['state'] === 'suspended' && $store->storeLink($storeA)['last_error_code'] === 'store_archived' && $store->storeLink($storeA)['remote_store_id'] === 'st-arc'
+    && $store->posLink($terminalA)['state'] === 'suspended' && $store->posLink($terminalA)['last_error_code'] === 'store_archived', 'Mappings closed, remote IDs kept for history');
+$calls = count($http->calls);
+$after = $enqueue($instance, 'store_update', $storeA, 50);
+$again = $enqueue($instance, 'store_archive', $storeA, 2);
+$archiver->runOnce(); $archiver->runOnce();
+check($job($after)['state'] === 'failed' && $job($after)['last_error_code'] === 'store_archived' && $job($again)['state'] === 'done' && count($http->calls) === $calls,
+    'After the archive: settings refused and a repeated archive does nothing remote');
+$never = $enqueue($instance, 'store_archive', $storeA2);
+$archiver->runOnce();
+check($job($never)['state'] === 'done' && count($http->calls) === $calls, 'Archive of a store never linked to BTCPay: done without calls');
+$admin->createCommand()->update('stores', ['archived_at' => $t], ['id' => $storeA2])->execute();
+$link2 = $enqueue($instance, 'store_link', $storeA2);
+$run->runOnce();
+check($job($link2)['state'] === 'failed' && $job($link2)['last_error_code'] === 'store_archived' && count($http->calls) === $calls, 'Deleted store: no BTCPay store is ever created for it');
+$t -= 3600;
 echo "PASS $checks BTCPay provisioning link worker checks\n";

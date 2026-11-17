@@ -61,6 +61,8 @@ final class PosManagement
         self::write(function (Connection $db) use ($scope, $publicId, $enabled) {
             $terminal = self::lockTerminal($db, $scope, $publicId);
             if ($enabled) self::requireQualified((int) $terminal->merchant_id);
+            // terminale di un negozio eliminato (archiviato): non si riabilita
+            if ($enabled) self::lockStore($db, (int) $terminal->store_id, (int) $terminal->merchant_id);
             $terminal->is_enabled = $enabled ? 1 : 0;
             if (!$terminal->save(false, ['is_enabled', 'updated_at'])) throw new ManagementException(ManagementException::FAILED);
             Log::event(sprintf('Terminale POS %s %s', $terminal->public_id, $enabled ? 'abilitato' : 'disabilitato'), Log::TYPE_DATA);
@@ -188,7 +190,7 @@ final class PosManagement
 
     private static function lockStore(Connection $db, int $storeId, int $merchantId): void
     {
-        if ($db->createCommand('SELECT id FROM {{%stores}} WHERE id=:id AND merchant_id=:m FOR UPDATE', [':id' => $storeId, ':m' => $merchantId])->queryScalar() === false)
+        if ($db->createCommand('SELECT id FROM {{%stores}} WHERE id=:id AND merchant_id=:m AND archived_at IS NULL FOR UPDATE', [':id' => $storeId, ':m' => $merchantId])->queryScalar() === false)
             throw new ManagementException(ManagementException::NOT_FOUND);
     }
 

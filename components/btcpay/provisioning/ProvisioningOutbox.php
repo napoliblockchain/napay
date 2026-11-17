@@ -68,25 +68,40 @@ final class ProvisioningOutbox
      */
     public static function enqueueStoreSettings(#[\SensitiveParameter] Connection $db, int $storeId, int $merchantId, int $actorId): bool
     {
+        return self::enqueueNext($db, 'store_update', $storeId, $merchantId, $actorId);
+    }
+
+    /**
+     * SIP-022 passo 3b: negozio eliminato in Napay (storicizzato nella stessa transazione): il worker rimuove le app POS
+     * dello store BTCPay e lo rinomina come archiviato. Nessun effetto se lo store non era mai stato collegato.
+     */
+    public static function enqueueStoreArchive(#[\SensitiveParameter] Connection $db, int $storeId, int $merchantId, int $actorId): bool
+    {
+        return self::enqueueNext($db, 'store_archive', $storeId, $merchantId, $actorId);
+    }
+
+    /** Lavoro di negozio con la generazione successiva (le richieste si accumulano, il worker legge i dati all'esecuzione). */
+    private static function enqueueNext(#[\SensitiveParameter] Connection $db, string $kind, int $storeId, int $merchantId, int $actorId): bool
+    {
         self::ids($storeId, $merchantId, $actorId);
         $instance = self::open($db);
         if ($instance === null) return false;
         $owner = $db->createCommand('SELECT merchant_id FROM {{%stores}} WHERE id=:id FOR SHARE', [':id' => $storeId])->queryScalar();
         if ($owner === false || (int) $owner !== $merchantId) throw new \InvalidArgumentException('scope_mismatch');
         for ($attempt = 0; $attempt < 3; ++$attempt) {
-            $generation = 1 + (int) $db->createCommand("SELECT COALESCE(MAX(generation), 0) FROM {{%" . self::TABLE . "}} WHERE kind='store_update' AND instance=:i AND entity_id=:e",
-                [':i' => $instance, ':e' => $storeId])->queryScalar();
+            $generation = 1 + (int) $db->createCommand('SELECT COALESCE(MAX(generation), 0) FROM {{%' . self::TABLE . '}} WHERE kind=:k AND instance=:i AND entity_id=:e',
+                [':k' => $kind, ':i' => $instance, ':e' => $storeId])->queryScalar();
             try {
                 $db->createCommand('INSERT INTO {{%' . self::TABLE . '}} (kind, instance, merchant_id, entity_id, generation, requested_by, created_at, updated_at)'
-                    . " VALUES ('store_update', :instance, :merchant, :entity, :generation, :actor, :now, :now)",
-                    [':instance' => $instance, ':merchant' => $merchantId, ':entity' => $storeId, ':generation' => $generation, ':actor' => $actorId, ':now' => time()])->execute();
+                    . ' VALUES (:kind, :instance, :merchant, :entity, :generation, :actor, :now, :now)',
+                    [':kind' => $kind, ':instance' => $instance, ':merchant' => $merchantId, ':entity' => $storeId, ':generation' => $generation, ':actor' => $actorId, ':now' => time()])->execute();
                 return true;
             } catch (IntegrityException $e) {
                 // richiesta concorrente con la stessa generazione: si ricalcola
                 if ((int) ($e->errorInfo[1] ?? 0) !== 1062) throw $e;
             }
         }
-        throw new \UnexpectedValueException('store_update_not_queued');
+        throw new \UnexpectedValueException($kind . '_not_queued');
     }
 
     /** Stati dell'ultimo lavoro di store/terminale che l'admin può riprovare (SIP-022 B5). */

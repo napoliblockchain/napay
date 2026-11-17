@@ -56,6 +56,7 @@ final class Scope
         $query = (new Query())->select(['s.id', 's.description', 'merchant' => 'm.description'])
             ->from(['s' => Stores::tableName()])
             ->innerJoin(['m' => Merchants::tableName()], 'm.id=s.merchant_id')
+            ->where(['s.archived_at' => null])
             ->orderBy(['m.description' => SORT_ASC, 's.description' => SORT_ASC, 's.id' => SORT_ASC]);
         $this->apply($query, 's.merchant_id');
         $options = [];
@@ -68,7 +69,7 @@ final class Scope
     /** ID interno del negozio da un ID cifrato, solo se in scope; null altrimenti. */
     public function storeId($store): ?int
     {
-        $query = Stores::find()->where(['id' => self::decodeId($store)]);
+        $query = Stores::find()->where(['id' => self::decodeId($store), 'archived_at' => null]);
         $this->apply($query, 'merchant_id');
         $id = $query->select('id')->scalar();
         return $id === false ? null : (int) $id;

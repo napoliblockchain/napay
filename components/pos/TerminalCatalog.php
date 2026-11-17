@@ -42,7 +42,7 @@ final class TerminalCatalog
             ->innerJoin(['g'=>PosStoreOperators::tableName()], 'g.user_id=o.user_id AND g.merchant_id=o.merchant_id')
             ->innerJoin(['s'=>Stores::tableName()], 's.id=g.store_id AND s.merchant_id=g.merchant_id')
             ->innerJoin(['t'=>PosTerminals::tableName()], 't.store_id=s.id AND t.merchant_id=s.merchant_id')
-            ->where(['o.user_id'=>$user,'o.is_enabled'=>1,'g.is_enabled'=>1,'t.is_enabled'=>1,'u.is_active'=>1,'p.level'=>User::ROLE_USER])
+            ->where(['o.user_id'=>$user,'o.is_enabled'=>1,'g.is_enabled'=>1,'t.is_enabled'=>1,'u.is_active'=>1,'p.level'=>User::ROLE_USER,'s.archived_at'=>null])
             ->andWhere(['>','t.id',$after])->orderBy(['t.id'=>SORT_ASC])->limit($limit+1)->all();
         $items = []; $last = 0;
         foreach ($rows as $row) {

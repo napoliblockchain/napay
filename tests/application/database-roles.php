@@ -82,7 +82,7 @@ try {
     denied($worker, 'SELECT email FROM stores', 'Worker cannot read unneeded store details');
     $worker->query('SELECT id,merchant_id FROM stores')->fetchAll(); check(true, 'Worker reads minimum tenant identifiers');
     // SIP-022 passo 3: nome del negozio e impostazioni dello store BTCPay, non ID remoti né dati di derivazione
-    $worker->query('SELECT description FROM stores')->fetchAll();
+    $worker->query('SELECT description, archived_at FROM stores')->fetchAll();
     $worker->query('SELECT ' . implode(',', app\components\btcpay\StoreSettingsPayload::COLUMNS) . ' FROM storesettings')->fetchAll();
     check(true, 'Worker reads the shop name and the BTCPay store settings it applies');
     denied($worker, 'SELECT bps_storeid FROM storesettings', 'Worker cannot read the v1 BTCPay store ID');
