@@ -615,4 +615,5 @@ return [
     'Confirmed at' => 'Confermato il',
     'Payment address' => 'Indirizzo di pagamento',
     'Error' => 'Errore',
+    'Transactions' => 'Transazioni',
 ];

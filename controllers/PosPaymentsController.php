@@ -140,7 +140,7 @@ class PosPaymentsController extends Controller
         $tts = $method === 'tts';
         return (clone $query)->select([
             'method' => new Expression($tts ? "'tts'" : "'btc'"), 'p.public_id', 'p.amount_cents', 'currency' => $tts ? new Expression("'TTS'") : 'p.currency', 'p.state',
-            'to_address' => $tts ? 'p.to_address' : $null, 'tx_hash' => $tts ? 'p.tx_hash' : $null, 'paid_block' => $tts ? 'p.paid_block' : $null,
+            'to_address' => $tts ? 'p.to_address' : $null, 'tx_hash' => $tts ? 'p.tx_hash' : 'p.txids', 'paid_block' => $tts ? 'p.paid_block' : $null,
             'paid_at' => $tts ? 'p.paid_at' : new Expression('COALESCE(p.processing_at, p.settled_at)'), 'p.closed_at', 'p.created_at', 'p.expires_at',
             'rate_cents' => $tts ? $null : 'p.rate_cents', 'order_satoshis' => $tts ? $null : 'p.order_satoshis', 'paid_satoshis' => $tts ? $null : 'p.paid_satoshis',
             'amount_satoshis' => $tts ? $null : 'p.amount_satoshis', 'btc_address' => $tts ? $null : 'p.btc_address', 'confirmations' => $tts ? $null : 'p.confirmations',

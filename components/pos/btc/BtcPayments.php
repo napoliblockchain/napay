@@ -113,7 +113,8 @@ final class BtcPayments
         foreach ($rows as $row) {
             $received = $row['processing_at'] ?? $row['settled_at'];
             $items[] = ['id' => $row['public_id'], 'method' => 'btc', 'amount' => self::amount((int) $row['amount_cents']), 'currency' => $row['currency'], 'state' => $row['state'],
-                'created_at' => (int) $row['created_at'], 'paid_at' => $received === null ? null : (int) $received, 'tx_hash' => null,
+                'created_at' => (int) $row['created_at'], 'paid_at' => $received === null ? null : (int) $received,
+                'tx_hash' => $row['txids'] === null ? null : explode(',', $row['txids'])[0],
                 'rate' => $row['rate_cents'] === null ? null : self::amount((int) $row['rate_cents']),
                 'paid_btc' => $row['paid_satoshis'] === null ? null : self::btc((int) $row['paid_satoshis']), 'own' => (int) $row['session_id'] === $sessionId];
         }
@@ -174,7 +175,28 @@ final class BtcPayments
         }
         // solo se BTCPay conferma lo stesso stato: una lettura discordante non tocca un pagamento chiuso
         if ($status === null || !self::matches($payment, $payment['invoice_id'], $status) || (self::STATUS[$status['status']] ?? null) !== $payment['state']) return;
-        self::move($payment, $payment['state'], ['confirmations' => max((int) $payment['confirmations'], $status['confirmations'])] + self::details($payment, $status, (int) $payment['amount_satoshis']));
+        $details = self::details($payment, $status, (int) $payment['amount_satoshis']);
+        self::move($payment, $payment['state'], ['confirmations' => max((int) $payment['confirmations'], $status['confirmations'])] + $details
+            + self::txids($payment, $gateway, $details['paid_satoshis'] ?? null));
+    }
+
+    /**
+     * Transazioni dalla ricevuta pubblica di BTCPay: lette la prima volta che il pagamento è ricevuto e di nuovo solo se
+     * arrivano altri BTC. Lettura non riuscita = nessun cambio. @return array{txids?:string}
+     */
+    private static function txids(array $payment, ?PosInvoiceGateway $gateway, ?int $paid): array
+    {
+        if ($gateway === null || $payment['invoice_id'] === null) return [];
+        $grew = $paid !== null && $paid > (int) ($payment['paid_satoshis'] ?? 0);
+        if ($payment['txids'] !== null && !$grew) return [];
+        try {
+            $list = $gateway->transactions($payment['invoice_id']);
+        } catch (\Throwable $error) {
+            return [];
+        }
+        if ($list === null || $list === []) return [];
+        foreach ($list as $txid) if (!is_string($txid) || preg_match('/^[0-9a-f]{64}$/D', $txid) !== 1) return [];
+        return ['txids' => implode(',', array_slice($list, 0, 10))];
     }
 
     /**
@@ -253,6 +275,7 @@ final class BtcPayments
         if ($payment['btc_address'] === null) $extra += self::address($status);
         $total = $extra['amount_satoshis'] ?? ($payment['amount_satoshis'] === null ? null : (int) $payment['amount_satoshis']);
         if ($total !== null) $extra += self::details($payment, $status, $total);
+        if (in_array($state ?? $payment['state'], ['processing', 'settled'], true)) $extra += self::txids($payment, $gateway, $extra['paid_satoshis'] ?? null);
         if ($state === null || $state === $payment['state']) {
             self::move($payment, $payment['state'], $extra);
         } else {
@@ -373,6 +396,7 @@ final class BtcPayments
             'order_btc' => $row['order_satoshis'] === null ? null : self::btc((int) $row['order_satoshis']),
             'network_fee_btc' => $row['order_satoshis'] === null || $row['amount_satoshis'] === null ? null : self::btc((int) $row['amount_satoshis'] - (int) $row['order_satoshis']),
             'paid_btc' => $row['paid_satoshis'] === null ? null : self::btc((int) $row['paid_satoshis']),
+            'txids' => $row['txids'] === null ? [] : explode(',', $row['txids']),
             'processing_at' => $row['processing_at'] === null ? null : (int) $row['processing_at'], 'settled_at' => $row['settled_at'] === null ? null : (int) $row['settled_at'],
             'error' => $row['state'] === 'failed' || $row['state'] === 'invalid' || $row['state'] === 'reconcile_required' ? $row['last_error_code'] : null];
     }

@@ -1,6 +1,6 @@
 <?php
 // SIP-033 passo 3: gateway delle fatture POS contro il BTCPay regtest usa-e-getta (e2e), dal container con proxy e CA.
-// Uso: php btcpay-pos-gateway.php <appId> <cents>. Stampa solo esiti e campi pubblici della fattura, mai segreti.
+// Uso: php btcpay-pos-gateway.php <appId> <cents> | tx <invoiceId>. Stampa solo esiti e campi pubblici della fattura, mai segreti.
 if (PHP_SAPI !== 'cli' || count($argv) !== 3) exit(2);
 $root = dirname(__DIR__, 2);
 require $root . '/config/env.php';
@@ -9,6 +9,8 @@ Yii::setAlias('@app', $root);
 use app\components\pos\btc\BtcpayPosGateway;
 $gateway = BtcpayPosGateway::fromEnv();
 if ($gateway === null) { echo json_encode(['error' => 'gateway_off']), "\n"; exit(1); }
+// SIP-033 passo 5: txid dalla ricevuta pubblica della fattura pagata
+if ($argv[1] === 'tx') { echo json_encode(['txids' => $gateway->transactions($argv[2]), 'status' => $gateway->status($argv[2])]), "\n"; exit(0); }
 $bytes = random_bytes(16); $bytes[6] = chr(ord($bytes[6]) & 0x0f | 0x40); $bytes[8] = chr(ord($bytes[8]) & 0x3f | 0x80);
 $order = vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
 $created = $gateway->createInvoice($argv[1], (int) $argv[2], $order);

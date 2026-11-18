@@ -111,14 +111,17 @@ class m261118_100000_create_pos_btc_payments extends Migration
         return 'CREATE TABLE ' . $this->db->quoteTableName($this->table($table)) . ' (' . implode(', ', $parts) . ') ENGINE=InnoDB CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_bin';
     }
 
-    /** SIP-033 passo 5 (m261118_150000): cambio e dettaglio BTC, colonne opzionali in coda e un vincolo. */
+    /** SIP-033 passo 5 (m261118_150000, m261118_160000): cambio, dettaglio BTC e transazioni, colonne opzionali in coda e vincoli. */
     private const STEP5_COLUMNS = [
         'rate_cents' => ['BIGINT NULL', 'bigint', 'YES', null, null, ''],
         'order_satoshis' => ['BIGINT NULL', 'bigint', 'YES', null, null, ''],
         'paid_satoshis' => ['BIGINT NULL', 'bigint', 'YES', null, null, ''],
+        // m261118_160000: transazioni dalla ricevuta BTCPay
+        'txids' => ["VARCHAR(650) CHARACTER SET ascii COLLATE ascii_bin NULL", 'varchar(650)', 'YES', null, 'ascii_bin', ''],
     ];
     private const STEP5_CHECKS = [
         'ck-pos-btc-payments-rates' => '(((rate_cents is null) or (rate_cents between 1 and 10000000000000)) and ((order_satoshis is null) or ((amount_satoshis is not null) and (order_satoshis between 1 and amount_satoshis))) and ((paid_satoshis is null) or (paid_satoshis between 0 and 2100000000000000)))',
+        'ck-pos-btc-payments-txids' => "((txids is null) or regexp_like(txids,'^[0-9a-f]{64}(,[0-9a-f]{64}){0,9}$','c'))",
     ];
 
     private function verify(string $name): void

@@ -31,6 +31,8 @@ $attributes = $payment['method'] === 'btc' ? [
     ['label' => Yii::t('app', 'Received at'), 'value' => $time($payment['paid_at'])],
     ['label' => Yii::t('app', 'Confirmed at'), 'value' => $time($payment['settled_at'])],
     ['label' => Yii::t('app', 'Closed at'), 'value' => $time($payment['closed_at'])],
+    ['label' => Yii::t('app', 'Transactions'), 'format' => 'raw', 'value' => $payment['tx_hash'] === null ? null
+        : implode('<br>', array_map(static fn($tx) => Html::tag('code', Html::encode($tx), ['class' => 'text-break']), explode(',', $payment['tx_hash'])))],
     ['label' => Yii::t('app', 'Payment address'), 'format' => 'raw', 'value' => $payment['btc_address'] === null ? null : Html::tag('code', Html::encode($payment['btc_address']), ['class' => 'text-break'])],
     ['label' => Yii::t('app', 'Error'), 'value' => $payment['last_error_code']],
     ['label' => Yii::t('app', 'ID'), 'value' => $payment['public_id']],

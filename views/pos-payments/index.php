@@ -33,8 +33,12 @@ $columns = [
     ['label' => Yii::t('app', 'Method'), 'value' => static fn($p) => $methods[$p['method']]],
     ['label' => Yii::t('app', 'Amount'), 'format' => 'raw', 'contentOptions' => ['class' => 'text-end text-nowrap'], 'headerOptions' => ['class' => 'text-end'], 'value' => $amount],
     ['label' => Yii::t('app', 'Status'), 'format' => 'raw', 'value' => fn($p) => $this->render('_state', ['payment' => $p])],
-    ['label' => Yii::t('app', 'Transaction'), 'format' => 'raw', 'value' => static fn($p) => $p['tx_hash'] === null ? '&ndash;'
-        : Html::tag('code', Html::encode(substr($p['tx_hash'], 0, 10) . '…' . substr($p['tx_hash'], -6)), ['title' => $p['tx_hash']])],
+    // TTS: hash della transazione; BTC (SIP-033): primo txid della ricevuta BTCPay
+    ['label' => Yii::t('app', 'Transaction'), 'format' => 'raw', 'value' => static function ($p) {
+        if ($p['tx_hash'] === null) return '&ndash;';
+        $tx = explode(',', $p['tx_hash'])[0];
+        return Html::tag('code', Html::encode(substr($tx, 0, 10) . '…' . substr($tx, -6)), ['title' => $tx]);
+    }],
     ['format' => 'raw', 'contentOptions' => ['class' => 'text-end w-1'], 'value' => static fn($p) => Html::a('<i class="fa fa-eye" aria-hidden="true"></i>',
         ['view', 'id' => $p['public_id']], ['class' => 'btn btn-sm btn-outline-secondary', 'title' => Yii::t('app', 'Details'), 'aria-label' => Yii::t('app', 'Details')])],
 ];

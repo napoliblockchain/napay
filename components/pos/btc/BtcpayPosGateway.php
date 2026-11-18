@@ -104,6 +104,29 @@ final class BtcpayPosGateway implements PosInvoiceGateway
     }
 
     /**
+     * Ricevuta pubblica della fattura (HTML, pagamenti mostrati: impostazione fissa degli store): solo i txid dei link
+     * all'explorer ("/tx/<64 esadecimali>"), in ordine e senza doppioni. Nient'altro della pagina viene usato.
+     */
+    public function transactions(string $invoiceId): ?array
+    {
+        if (preg_match(self::ID, $invoiceId) !== 1) throw new \InvalidArgumentException('invalid_invoice');
+        try {
+            [$status, , $body] = $this->send('GET', '/i/' . $invoiceId . '/receipt', null, true);
+        } catch (PosInvoiceUnknown $error) {
+            return null;
+        }
+        if ($status !== 200) return null;
+        return self::txids($body);
+    }
+
+    /** @return list<string> txid dai link "/tx/<txid>" di una pagina HTML (al massimo 10, minuscoli, senza doppioni) */
+    public static function txids(string $html): array
+    {
+        preg_match_all('~href="https?://[^"\s]{1,200}/tx/([0-9a-f]{64})"~', $html, $m);
+        return array_slice(array_values(array_unique($m[1])), 0, 10);
+    }
+
+    /**
      * Cambio formattato da BTCPay nella lingua dello store ("57 464,70 €", "$57,464.70", "¥8,500,000") -> centesimi per 1 BTC.
      * Separatore decimale = ultimo punto o virgola seguito da esattamente 2 cifre; null se il formato non è riconosciuto.
      * Il chiamante lo accetta solo se coerente con importo e satoshi dell'ordine.

@@ -26,4 +26,11 @@ interface PosInvoiceGateway
      *               address:?string, due_satoshis:?int, confirmations:int, expires_in:?int}|null
      */
     public function status(string $invoiceId): ?array;
+
+    /**
+     * SIP-033 passo 5: transazioni Bitcoin della fattura (txid, al massimo 10) dalla ricevuta pubblica; null se non
+     * leggibili ora, lista vuota se la ricevuta non ne mostra.
+     * @return list<string>|null
+     */
+    public function transactions(string $invoiceId): ?array;
 }

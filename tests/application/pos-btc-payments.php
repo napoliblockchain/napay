@@ -76,6 +76,12 @@ final class FakeGateway implements PosInvoiceGateway
         if ($next['outcome'] === 'created') $this->orders[$next['invoice_id']] = [$orderId, $amountCents];
         return $next;
     }
+    public array $txids = [];
+    public function transactions(string $invoiceId): ?array {
+        $this->txCalls[] = $invoiceId;
+        return array_key_exists($invoiceId, $this->txids) ? $this->txids[$invoiceId] : [];
+    }
+    public array $txCalls = [];
     public function status(string $invoiceId): ?array {
         $this->statusCalls[] = $invoiceId;
         $next = array_shift($this->status);
@@ -184,7 +190,7 @@ check($row['instance'] === $instance && $row['remote_store_id'] === 'st-btc-a' &
     'Row: instance, remote IDs and invoice recorded, checkpoint before the network');
 $public = json_encode($p);
 check(array_keys($p) === ['id', 'opening_id', 'method', 'amount', 'currency', 'state', 'expires_at', 'btc_address', 'amount_btc', 'qr', 'checkout_url', 'confirmations',
-    'rate', 'order_btc', 'network_fee_btc', 'paid_btc', 'processing_at', 'settled_at', 'error'] && !str_contains($public, 'st-btc-a') && !str_contains($public, 'app-btc-a'),
+    'rate', 'order_btc', 'network_fee_btc', 'paid_btc', 'txids', 'processing_at', 'settled_at', 'error'] && !str_contains($public, 'st-btc-a') && !str_contains($public, 'app-btc-a'),
     'Exact projection: no remote store/app IDs, session, operator or invoice field');
 check($p['rate'] === '61700.00' && $p['order_btc'] === '0.00020000' && $p['network_fee_btc'] === '0.00004680' && $p['paid_btc'] === '0.00000000'
     && (int) $row['rate_cents'] === 6170000 && (int) $row['order_satoshis'] === 20000 && (int) $row['paid_satoshis'] === 0,
@@ -195,8 +201,15 @@ check(refused(fn() => BtcPayments::create($session, $oA['id'], $oA['instance_id'
 check(refused(fn() => BtcPayments::view($session2, $p['id'], $fake), PaymentException::NOT_FOUND), 'Payment of another session: not found');
 
 // esiti dallo stato pubblico e dai webhook firmati
+$txA = str_repeat('ab', 32);
+$fake->txids['INV0000000001'] = [$txA];
+check($p['txids'] === [] && $fake->txCalls === [], 'Pending: no transaction read');
 $fake->status = [['status' => 'processing', 'confirmations' => 0, 'due_satoshis' => 0, 'paid_satoshis' => 24680, 'rate_cents' => 9999999, 'order_satoshis' => 1]];
 $v = BtcPayments::view($session, $p['id'], $fake);
+check($v['txids'] === [$txA] && row($p['id'])['txids'] === $txA && $fake->txCalls === ['INV0000000001'], 'Received: txid read once from the BTCPay receipt');
+$fake->status = [['status' => 'processing', 'confirmations' => 0, 'due_satoshis' => 0, 'paid_satoshis' => 24680]];
+BtcPayments::view($session, $p['id'], $fake);
+check(count($fake->txCalls) === 1, 'Txid known and no new BTC: receipt not read again');
 check($v['paid_btc'] === '0.00024680' && $v['rate'] === '61700.00' && $v['order_btc'] === '0.00020000' && $v['amount_btc'] === '0.00024680',
     'Received: BTC paid updated; rate, order and requested total stay those of the invoice');
 check($v['state'] === 'processing' && $v['processing_at'] !== null && $v['settled_at'] === null && $v['qr'] !== null, 'Public status Processing: received (0 conf), QR still shown');
@@ -275,7 +288,7 @@ $btcRows = $db->createCommand("SELECT COUNT(*) n, SUM(amount_cents) c, SUM(COALE
     [':o' => $oA['id']])->queryOne();
 check(array_keys($history) === ['payments', 'totals'] && array_keys($history['payments'][0]) === app\components\pos\PosHistory::ITEM
     && $items[$p['id']]['method'] === 'btc' && $items[$p['id']]['state'] === 'settled' && $items[$p['id']]['amount'] === '12.34' && $items[$p['id']]['currency'] === 'EUR'
-    && $items[$p['id']]['rate'] === '61700.00' && $items[$p['id']]['paid_btc'] === '0.00024680' && $items[$p['id']]['paid_at'] !== null && $items[$p['id']]['tx_hash'] === null
+    && $items[$p['id']]['rate'] === '61700.00' && $items[$p['id']]['paid_btc'] === '0.00024680' && $items[$p['id']]['paid_at'] !== null && $items[$p['id']]['tx_hash'] === $txA
     && $items[$p['id']]['own'] === true && !str_contains(json_encode($history), 'bcrt1q') && !str_contains(json_encode($history), 'INV000'),
     'History: BTC items with method, state, rate and BTC paid; never address or invoice');
 $created = array_column($history['payments'], 'created_at');
