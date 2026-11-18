@@ -147,7 +147,7 @@ $btc = fn(string $token, array $o, $cents, ?string $idem = null) => api('POST', 
     ['instance_id' => $o['instance_id'], 'generation' => $o['generation'], 'amount_cents' => $cents], $idem ?? uuid());
 check(BtcpayPosGateway::fromEnv() === null, 'Web without BTCPay origin: BTC gateway off (fail closed)');
 $r = api('GET', 'openings/' . $oA['id'] . '/methods', $u);
-check($r['status'] === 200 && $r['json'] === ['tts' => false, 'btc' => false], 'Methods: BTC off when BTCPay is not configured');
+check($r['status'] === 200 && $r['json'] === ['tts' => false, 'btc' => false, 'btc_currency' => null], 'Methods: BTC off when BTCPay is not configured');
 $r = $btc($u, $oA, 1000);
 check($r['status'] === 503 && code($r) === 'payment_unavailable', 'BTC payment without BTCPay configuration: 503 payment_unavailable');
 foreach ([0, -1, 100001, '1000', 10.5] as $bad) check(code($btc($u, $oA, $bad)) === 'validation_failed', 'Invalid BTC amount refused: ' . json_encode($bad));
@@ -160,7 +160,7 @@ check((int) scalar('SELECT COUNT(*) FROM pos_btc_payments') === 0, 'Refused requ
 $client = PosApi::authenticateClient($key);
 $session = PosApi::findActiveSession($u, $client); $session2 = PosApi::findActiveSession($u2, $client);
 $fake = new FakeGateway($origin);
-check(BtcPayments::methods($session, $oA['id'], $fake) === ['tts' => false, 'btc' => true] && BtcPayments::methods($session, $oA2['id'], $fake)['btc'] === false
+check(BtcPayments::methods($session, $oA['id'], $fake) === ['tts' => false, 'btc' => true, 'btc_currency' => 'EUR'] && BtcPayments::methods($session, $oA2['id'], $fake)['btc'] === false
     && BtcPayments::methods($session2, $oA3['id'], $fake)['btc'] === false, 'BTC only with xpub wallet and linked store and POS app (not for a store without wallet or link)');
 check(refused(fn() => BtcPayments::create($session, $oA2['id'], $oA2['instance_id'], $oA2['generation'], 500, uuid(), $fake), PaymentException::UNAVAILABLE)
     && $fake->posts === [], 'Store without BTC wallet: unavailable, no BTCPay call');

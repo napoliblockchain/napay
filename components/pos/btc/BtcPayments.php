@@ -100,7 +100,7 @@ final class BtcPayments
         return self::publicPayment($payment, self::openingPublicId((int) $payment['opening_id']), $gateway);
     }
 
-    /** Metodi di incasso disponibili per l'apertura propria della sessione (tasti del POS). @return array{tts:bool, btc:bool} */
+    /** Metodi di incasso disponibili per l'apertura propria della sessione (tasti del POS). @return array{tts:bool, btc:bool, btc_currency:?string} */
     public static function methods(PosOperatorSessions $session, string $openingId, ?PosInvoiceGateway $gateway = null): array
     {
         $opening = TerminalOpenings::requireActive($session, $openingId);
@@ -108,8 +108,8 @@ final class BtcPayments
         $gateway ??= BtcpayPosGateway::fromEnv();
         $tts = $db->createCommand('SELECT 1 FROM {{%pos_terminals}} t JOIN {{%store_tts_wallets}} w ON w.store_id=t.store_id AND w.merchant_id=t.merchant_id WHERE t.id=:t AND t.merchant_id=:m',
             [':t' => (int) $opening['terminal_id'], ':m' => (int) $opening['merchant_id']])->queryScalar() !== false && \app\components\pos\tts\TtsChain::fromEnv() !== null;
-        $btc = $gateway !== null && self::target($db, (int) $opening['terminal_id'], (int) $opening['merchant_id'], $gateway->instance()) !== null;
-        return ['tts' => $tts, 'btc' => $btc];
+        $target = $gateway === null ? null : self::target($db, (int) $opening['terminal_id'], (int) $opening['merchant_id'], $gateway->instance());
+        return ['tts' => $tts, 'btc' => $target !== null, 'btc_currency' => $target['currency'] ?? null];
     }
 
     /**
