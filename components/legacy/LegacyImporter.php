@@ -211,6 +211,8 @@ final class LegacyImporter
             $settings++;
         }
         $report['settings'] = $settings;
+        // SIP-030 passo 5a: merchant, negozi, impostazioni, wallet TTS e logo
+        $report['merchants'] = LegacyMerchantImport::import($source, $target, $userMap, $comuni, $filesDir, time());
         return $report;
     }
 
@@ -245,6 +247,7 @@ final class LegacyImporter
         ksort($expected);
         ksort($actual);
         if ($expected !== $actual) throw new LegacyImportException('Legacy reconciliation failed: payment totals.');
+        LegacyMerchantImport::reconcile($source, $target);
     }
 
     private static function upsertLookup(PDO $source, PDO $target, string $sql, string $table, array $columns, callable $values): array

@@ -5,6 +5,9 @@ umask(0077);
 require dirname(__DIR__, 2) . '/docker/bootstrap-common.php';
 require_once dirname(__DIR__, 2) . '/components/legacy/LegacyImportException.php';
 require_once dirname(__DIR__, 2) . '/components/legacy/LegacyImporter.php';
+require_once dirname(__DIR__, 2) . '/components/btcpay/StoreSettingsPayload.php';
+require_once dirname(__DIR__, 2) . '/components/merchant/MerchantLogo.php';
+require_once dirname(__DIR__, 2) . '/components/legacy/LegacyMerchantImport.php';
 use app\components\db\V2Bootstrap as Db;
 use app\components\legacy\LegacyImporter as Importer;
 if (getenv('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !== 'napay_test_bootstrap') exit(1);
@@ -26,12 +29,14 @@ function one(PDO $pdo, $sql, array $parameters = []) { return Db::rows($pdo, $sq
 function user($email) { global $db; return one($db, 'SELECT u.*, p.level FROM users u JOIN privileges p ON p.id=u.privilege_id WHERE u.email=?', [$email]); }
 function digest() {
     global $db;
-    $tables = ['users', 'member_profiles', 'association_roles', 'membership_fees', 'payment_methods', 'membership_payments', 'assembly_minutes', 'settings'];
-    return hash('sha256', json_encode(array_map(fn($t) => Db::rows($db, "SELECT * FROM $t ORDER BY id"), $tables), JSON_THROW_ON_ERROR));
+    $tables = ['users', 'member_profiles', 'association_roles', 'membership_fees', 'payment_methods', 'membership_payments', 'assembly_minutes', 'settings',
+        'merchants', 'stores', 'storesettings', 'store_tts_wallets', 'merchant_logos'];
+    $keys = ['storesettings' => 'store_id', 'store_tts_wallets' => 'store_id', 'merchant_logos' => 'merchant_id'];
+    return hash('sha256', json_encode(array_map(fn($t) => Db::rows($db, 'SELECT ' . ($t === 'merchant_logos' ? 'merchant_id, sha256, width, height, updated_by, updated_at' : '*') . " FROM $t ORDER BY " . ($keys[$t] ?? 'id')), $tables), JSON_THROW_ON_ERROR));
 }
 function legacyChecksum() {
     global $legacy;
-    return json_encode(Db::rows($legacy, 'CHECKSUM TABLE np_comuni_italiani, np_users_type, np_users, st_cariche, st_quote, st_tipo_pagamenti, st_pagamenti, st_verbali, np_settings_webapp EXTENDED'));
+    return json_encode(Db::rows($legacy, 'CHECKSUM TABLE np_comuni_italiani, np_users_type, np_users, st_cariche, st_quote, st_tipo_pagamenti, st_pagamenti, st_verbali, np_settings_webapp, np_merchants, np_stores, np_settings_stores, np_mpk, np_wallets EXTENDED'));
 }
 $files = '/tmp/napay-legacy-files';
 function import($filesDir = 'default') { global $legacy, $db, $files; return Importer::run($legacy, $db, $filesDir === 'default' ? $files : $filesDir); }
@@ -48,6 +53,12 @@ foreach ([
     "CREATE TABLE np_comuni_italiani (id_comune int NOT NULL AUTO_INCREMENT, citta varchar(200) NOT NULL, provincia varchar(50) NOT NULL, sigla varchar(2) NOT NULL, PRIMARY KEY (id_comune)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "INSERT INTO np_comuni_italiani VALUES (5,'Napoli','Napoli','NA')",
     "CREATE TABLE np_settings_webapp (id_setting int NOT NULL AUTO_INCREMENT, setting_name varchar(50) NOT NULL, setting_value varchar(15000) NOT NULL, PRIMARY KEY (id_setting)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    // SIP-030 passo 5a: merchant, negozi, impostazioni chiave/valore, xpub e wallet (struttura della v1 di produzione)
+    "CREATE TABLE np_merchants (id_merchant int NOT NULL AUTO_INCREMENT, id_user varchar(250) NOT NULL, denomination varchar(250) NOT NULL, vat varchar(250) NOT NULL, address varchar(250) NOT NULL, city varchar(250) NOT NULL, county varchar(250) NOT NULL, cap varchar(250) NOT NULL, deleted int NOT NULL DEFAULT '0', PRIMARY KEY (id_merchant)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_stores (id_store int NOT NULL AUTO_INCREMENT, id_merchant int NOT NULL, denomination varchar(250) NOT NULL, address varchar(250) NOT NULL, city varchar(250) NOT NULL, county varchar(250) NOT NULL, cap varchar(250) NOT NULL, vat varchar(250) NOT NULL, bps_storeid varchar(50) NOT NULL, deleted int NOT NULL DEFAULT '0', PRIMARY KEY (id_store)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_settings_stores (id_setting int NOT NULL AUTO_INCREMENT, id_store int NOT NULL, setting_name varchar(50) NOT NULL, setting_value varchar(2000) NOT NULL, PRIMARY KEY (id_setting)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_mpk (id_mpk int NOT NULL AUTO_INCREMENT, id_store int NOT NULL, asset varchar(20) NOT NULL, AddressType varchar(50) NOT NULL, DerivationScheme varchar(1000) NOT NULL, Addresses varchar(1500) NOT NULL, PRIMARY KEY (id_mpk)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_wallets (id_wallet int NOT NULL AUTO_INCREMENT, id_user int NOT NULL, wallet_address varchar(50) NOT NULL, blocknumber varchar(50) NOT NULL, PRIMARY KEY (id_wallet)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "INSERT INTO np_users_type VALUES (1,'POS','0','Profilo POS'),(2,'Commerciante','10','x'),(3,'Amministratore','20','x'),(5,'Socio','5','x'),(6,'Istituto','10','x')",
     "INSERT INTO st_cariche VALUES (1,3,'Presidente'),(4,3,'Segretario'),(5,5,'Socio ordinario')",
     "INSERT INTO st_quote VALUES (1,'Quota associativa annuale',1,20),(2,'Donazione',0,0)",
@@ -79,6 +90,26 @@ foreach ([
 file_put_contents($files . '/abc123.pdf', "%PDF-1.4 fixture minutes\n");
 $db->prepare("INSERT INTO users (username,email,password,first_name,last_name,oauth_provider,oauth_uid,authKey,accessToken,picture,privilege_id,is_merchant,is_active) VALUES ('v2-linked','linked@example.invalid',?,'V2','Owner','SELF','u','a','t','/favicon.ico',(SELECT id FROM privileges WHERE level=0),0,1)")
     ->execute([password_hash('v2-pass', PASSWORD_BCRYPT)]);
+// SIP-030 passo 5a: merchant del titolare 12 (due negozi, uno eliminato), merchant di un utente non importato, store delle quote,
+// merchant v1 di un titolare che nella v2 ne ha già uno (collegato); segreti v1 nelle impostazioni dei negozi mai importati
+$storeBtc = 'AbCdEfGhIjKlMnOpQrStUvWxYz0123456789AbCdEfGh';
+$memberStore = 'MembershipStore0123456789abcdefghijklmnopq';
+$xpub = 'xpub' . str_repeat('6CUGRUonZSQ4TWtTMmzXdrXDtypWKiKrhko4egZHkf', 2) . 'AbCdEfGhJkLmNpQrStUvWxYz';
+$wallet = '0x' . str_repeat('aB', 20);
+foreach ([
+    "INSERT INTO np_merchants VALUES (1,'12','Shop srl','01234567890','Via Shop 1','5','Italia','80100',0),(2,'99','Ghost srl','x','x','x','x','x',0),(3,'16','Legacy name','x','x','x','x','x',0)",
+    "INSERT INTO np_stores VALUES (21,1,'Negozio Shop','Via Shop 1','5','Italia','80100','01234567890','$storeBtc',0),(22,1,'Negozio chiuso','x','5','Italia','x','x','',1),"
+        . "(23,0,'Iscrizioni Napoli Blockchain','x','x','x','x','x','$memberStore',0),(24,2,'Negozio fantasma','x','x','x','x','x','',0),(25,3,'Negozio collegato','x','5','IT','x','x','',0)",
+    "INSERT INTO np_settings_stores (id_store,setting_name,setting_value) VALUES (21,'store_website','www.shop.example'),(21,'CustomLogo','https://napay.napoliblockchain.it/custom/$storeBtc/CustomLogo.png'),"
+        . "(21,'readKeySecret','must-not-import'),(21,'writeKeySecret','must-not-import'),(21,'securityToken','must-not-import'),(21,'bps_storeid','$storeBtc'),(22,'store_website','0')",
+    "INSERT INTO np_mpk (id_store,asset,AddressType,DerivationScheme,Addresses) VALUES (21,'BTC','p2wpkh','$xpub',''),(25,'BTC','p2pkh','12XQnotAnExtendedKey','')",
+    "INSERT INTO np_wallets (id_user,wallet_address,blocknumber) VALUES (12,'$wallet','1'),(16,'not-an-address','1')",
+] as $sql) $legacy->exec($sql);
+@mkdir($files . '/custom/' . $storeBtc, 0700, true);
+$logoImage = imagecreatetruecolor(900, 300); imagepng($logoImage, $files . '/custom/' . $storeBtc . '/CustomLogo.png'); imagedestroy($logoImage);
+file_put_contents($files . '/custom/' . $storeBtc . '/CustomLogo.png', 'trailing-payload', FILE_APPEND);
+$db->prepare("INSERT INTO merchants (user_id,description,email,vatNumber,phone,mobile,addressStreet,addressNumberHouse,addressCity,addressZip,addressProvince,addressCountry) "
+    . "SELECT id,'V2 company','linked@example.invalid','','','','','','','','','IT' FROM users WHERE email='linked@example.invalid'")->execute();
 $legacyBefore = legacyChecksum();
 
 check(!Importer::active(), 'import inactive without LEGACY_DB_DSN');
@@ -107,6 +138,28 @@ check(one($db, 'SELECT status FROM membership_payments WHERE legacy_id=106')['st
 check(one($db, 'SELECT user_id FROM membership_payments WHERE legacy_id=105')['user_id'] === $linked['id'], 'payments attached to the linked v2 user');
 check(one($db, "SELECT value FROM settings WHERE code='quota_iscrizione_socio'")['value'] === '20'
     && one($db, "SELECT id FROM settings WHERE code IN ('PAYPAL_CLIENT_SECRET','poa_sealerPrvKey')") === null, 'non-secret settings imported, legacy secrets never');
+check($report['merchants'] === ['merchants' => 2, 'merchants_linked' => 1, 'merchants_skipped' => 1, 'stores' => 3, 'stores_archived' => 1, 'stores_skipped' => 1,
+    'btcpay_stores' => 1, 'websites' => 1, 'xpubs' => 1, 'xpubs_invalid' => 1, 'tts_wallets' => 1, 'tts_wallets_invalid' => 1, 'logos' => 1, 'logos_missing' => 0,
+    'membership_store' => $memberStore], 'merchants report: imported, linked, skipped owner, archived store, membership store reported');
+$merchant = one($db, 'SELECT * FROM merchants WHERE legacy_id=1');
+check($merchant['user_id'] === $shop['id'] && $merchant['description'] === 'Shop srl' && $merchant['vatNumber'] === '01234567890' && $merchant['email'] === 'shop@example.invalid'
+    && $merchant['addressCity'] === 'Napoli (NA)' && $merchant['addressCountry'] === 'IT', 'merchant: owner, company data, owner email, city name, country code');
+check(one($db, 'SELECT description FROM merchants WHERE legacy_id=3')['description'] === 'V2 company' && (int) one($db, "SELECT COUNT(*) AS n FROM merchants WHERE email='linked@example.invalid'")['n'] === 1,
+    'merchant already activated in v2 only linked, v2 data kept');
+$store = one($db, 'SELECT s.*, ss.* FROM stores s JOIN storesettings ss ON ss.store_id=s.id WHERE s.legacy_id=21');
+check($store['merchant_id'] === $merchant['id'] && $store['archived_at'] === null && $store['bps_storeid'] === $storeBtc && $store['website'] === 'https://www.shop.example'
+    && $store['derivationScheme'] === $xpub && $store['monitoringExpiration'] === '86400' && $store['customLogo'] === null && $store['defaultLang'] === 'it-IT',
+    'store: BTCPay store on the bridge, website, xpub, v2 standard settings, logo computed by the web');
+check(one($db, 'SELECT archived_at FROM stores WHERE legacy_id=22')['archived_at'] !== null && one($db, 'SELECT id FROM stores WHERE legacy_id IN (23,24)') === null
+    && one($db, 'SELECT derivationScheme FROM storesettings ss JOIN stores s ON s.id=ss.store_id WHERE s.legacy_id=25')['derivationScheme'] === null,
+    'deleted store archived; membership store and store of a skipped merchant not imported; invalid xpub ignored');
+check(one($db, 'SELECT address FROM store_tts_wallets w JOIN stores s ON s.id=w.store_id WHERE s.legacy_id=21')['address'] === strtolower($wallet)
+    && one($db, 'SELECT w.store_id FROM store_tts_wallets w JOIN stores s ON s.id=w.store_id WHERE s.legacy_id IN (22,25)') === null, 'owner TTS wallet copied to active stores only, invalid address skipped');
+$logoRow = one($db, 'SELECT * FROM merchant_logos WHERE merchant_id=?', [$merchant['id']]);
+check($logoRow !== null && (int) $logoRow['width'] === 600 && (int) $logoRow['height'] === 200 && str_starts_with($logoRow['content'], "\x89PNG") && !str_contains($logoRow['content'], 'trailing-payload'),
+    'logo of the first store becomes the merchant logo, re-encoded');
+check(one($db, "SELECT COUNT(*) AS n FROM storesettings WHERE CONCAT_WS('|', website, bps_storeid, derivationScheme, customLogo, customCSS, htmlTitle) LIKE '%must-not-import%'")['n'] === '0',
+    'v1 exchange keys and tokens never imported');
 check(one($db, 'SELECT file_sha256 FROM assembly_minutes WHERE legacy_id=1')['file_sha256'] === hash_file('sha256', $files . '/abc123.pdf')
     && one($db, 'SELECT file_content FROM assembly_minutes WHERE legacy_id=2')['file_content'] === null, 'minutes PDF stored, missing file left empty');
 
@@ -124,6 +177,17 @@ foreach ([11=>['0','1'], 12=>['1','0']] as $legacyUserId=>[$originalType,$change
 }
 check($again['users']['created'] === 0 && $again['users']['updated'] === 4 && $again['payments']['imported'] === 5, 'second run updates in place');
 check(digest() === $before, 'second run is idempotent (no changes, no duplicates)');
+// import una tantum: ciò che esiste nella v2 non viene mai riscritto da un import ripetuto
+$legacy->exec("UPDATE np_merchants SET denomination='Changed in v1' WHERE id_merchant=1");
+$legacy->exec("UPDATE np_settings_stores SET setting_value='www.changed.example' WHERE id_store=21 AND setting_name='store_website'");
+$db->exec("UPDATE stores SET description='Renamed in v2' WHERE legacy_id=21");
+import();
+check(one($db, 'SELECT description FROM merchants WHERE legacy_id=1')['description'] === 'Shop srl' && one($db, 'SELECT description FROM stores WHERE legacy_id=21')['description'] === 'Renamed in v2'
+    && one($db, 'SELECT website FROM storesettings ss JOIN stores s ON s.id=ss.store_id WHERE s.legacy_id=21')['website'] === 'https://www.shop.example',
+    'repeated import never rewrites merchants, stores or settings already in v2');
+$legacy->exec("UPDATE np_merchants SET denomination='Shop srl' WHERE id_merchant=1");
+$legacy->exec("UPDATE np_settings_stores SET setting_value='www.shop.example' WHERE id_store=21 AND setting_name='store_website'");
+$db->exec("UPDATE stores SET description='Negozio Shop' WHERE legacy_id=21");
 check(import(null)['minutes']['files_missing'] === 1 && one($db, 'SELECT file_content FROM assembly_minutes WHERE legacy_id=1')['file_content'] !== null, 'stored file kept when the folder is no longer mounted');
 
 $legacy->exec("UPDATE st_pagamenti SET status='paid' WHERE id_pagamento=101");

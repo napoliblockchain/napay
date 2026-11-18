@@ -37,6 +37,30 @@ final class StoreSettingsPayload
         'htmlTitle' => 'Attesa pagamento in cryptovaluta...',
         'receipt' => ['enabled' => true, 'showQR' => true, 'showPayments' => true],
     ];
+    /**
+     * Riga iniziale di `storesettings` di un negozio (copia locale degli standard; a BTCPay vanno sempre FIXED), uguale
+     * per la creazione dal web e per l'import dalla v1. Senza store_id, customLogo e bps_storeid (del chiamante).
+     */
+    public static function defaultRow(): array
+    {
+        return [
+            'defaultCurrency' => 'EUR', 'invoiceExpiration' => 900, 'displayExpirationTimer' => 300, 'monitoringExpiration' => 86400,
+            'speedPolicy' => 'MediumSpeed', 'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})', 'paymentTolerance' => 0,
+            'anyoneCanCreateInvoice' => 0, 'requiresRefundEmail' => 0, 'checkoutType' => 'V1',
+            'receipt' => json_encode(['enabled' => 1, 'showQR' => 1, 'showPayments' => 1]),
+            'lightningAmountInSatoshi' => 0, 'lightningPrivateRouteHints' => 0, 'onChainWithLnInvoiceFallback' => 0, 'redirectAutomatically' => 0,
+            'showRecommendedFee' => 0, 'recommendedFeeBlockTarget' => 0, 'defaultLang' => 'it-IT', 'customCSS' => null,
+            'htmlTitle' => self::FIXED['htmlTitle'], 'networkFeeMode' => 'Always', 'payJoinEnabled' => 0, 'lazyPaymentMethods' => 0,
+            'defaultPaymentMethod' => self::FIXED['defaultPaymentMethod'],
+            // salvati in DB, mai inviati a BTCPay
+            'paymentMethodCriteria' => json_encode([
+                ['paymentMethod' => 'BTC', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
+                ['paymentMethod' => 'BTC-LightningNetwork', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
+                ['paymentMethod' => 'BTC-LNURLPAY', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
+            ]),
+        ];
+    }
+
     /** Logo di Napay (icona e scritta del marchio attuale) per i negozi senza un logo proprio (percorso sotto @web). */
     public const DEFAULT_LOGO = '/brand/logo-wordmark.png';
     private const MAX_URL = 255;

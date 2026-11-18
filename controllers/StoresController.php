@@ -384,7 +384,10 @@ class StoresController extends Controller
     /** Impostazioni inviate a BTCPay (negozi v1): valori fissi salvati alla creazione, più nome e valuta scelti dal merchant. */
     private function btcpayStoreSettings(Stores $model, Storesettings $store): array
     {
-        return StoreSettingsPayload::build((string) $model->description, $store->getAttributes(StoreSettingsPayload::COLUMNS));
+        $settings = $store->getAttributes(StoreSettingsPayload::COLUMNS);
+        // negozi importati dalla v1 (SIP-030 passo 5): logo non salvato, si usa quello attuale del merchant (o di Napay)
+        if (empty($settings['customLogo'])) $settings['customLogo'] = MerchantLogo::storeLogo(Yii::$app->db, (int) $model->merchant_id);
+        return StoreSettingsPayload::build((string) $model->description, $settings);
     }
 
     /**
@@ -547,47 +550,9 @@ class StoresController extends Controller
     /** Impostazioni iniziali del negozio: copia locale degli standard (a BTCPay vanno sempre StoreSettingsPayload::FIXED). */
     private function defaultSettings(Stores $model): Storesettings
     {
-        return new Storesettings([
-            'store_id' => $model->id,
-            'bps_storeid' => null, // al momento
-            'defaultCurrency' => 'EUR',
-            'invoiceExpiration' => 900,
-            'displayExpirationTimer' => 300,
-            'monitoringExpiration' => 86400,
-            'speedPolicy' => 'MediumSpeed', // -> 1 confirmation 'HighSpeed' 0,
-            'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
-            'paymentTolerance' => 0,
-            'anyoneCanCreateInvoice' => 0,
-            'requiresRefundEmail' => 0,
-            'checkoutType' => 'V1',
-            'receipt' => json_encode([
-                'enabled' => 1,
-                'showQR' => 1,
-                'showPayments' => 1
-            ]),
-            'lightningAmountInSatoshi' => 0,
-            'lightningPrivateRouteHints' => 0,
-            'onChainWithLnInvoiceFallback' => 0,
-            'redirectAutomatically' => 0,
-            'showRecommendedFee' => 0,
-            'recommendedFeeBlockTarget' => 0,
-            'defaultLang' => 'it-IT',
-            // SIP-033: logo del merchant se caricato, altrimenti quello di Napay
-            'customLogo' => MerchantLogo::storeLogo(Yii::$app->db, (int) $model->merchant_id),
-            'customCSS' => null,
-            'htmlTitle' => StoreSettingsPayload::FIXED['htmlTitle'],
-            'networkFeeMode' => 'Always',
-            'payJoinEnabled' => 0,
-            'lazyPaymentMethods' => 0,
-            'defaultPaymentMethod' => StoreSettingsPayload::FIXED['defaultPaymentMethod'],
-            // salvo i criteria in DB, ma non invio request tramite API
-            'paymentMethodCriteria' => json_encode([
-                0 => ['paymentMethod' => 'BTC', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
-                1 => ['paymentMethod' => 'BTC-LightningNetwork', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
-                2 => ['paymentMethod' => 'BTC-LNURLPAY', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],
-            ]),
-
-        ]);
+        // SIP-033: logo del merchant se caricato, altrimenti quello di Napay
+        return new Storesettings(['store_id' => $model->id, 'bps_storeid' => null,
+            'customLogo' => MerchantLogo::storeLogo(Yii::$app->db, (int) $model->merchant_id)] + StoreSettingsPayload::defaultRow());
     }
 
     /** Wallet BTC presente: xpub del merchant (SIP-022) oppure negozio v1 con il wallet gestito su BTCPay. */

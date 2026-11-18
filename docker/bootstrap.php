@@ -6,6 +6,10 @@ try {
     require __DIR__ . '/bootstrap-common.php';
     require_once dirname(__DIR__) . '/components/legacy/LegacyImportException.php';
     require_once dirname(__DIR__) . '/components/legacy/LegacyImporter.php';
+    // SIP-030 passo 5a (senza autoload: solo classi senza dipendenze Yii nei metodi usati)
+    require_once dirname(__DIR__) . '/components/btcpay/StoreSettingsPayload.php';
+    require_once dirname(__DIR__) . '/components/merchant/MerchantLogo.php';
+    require_once dirname(__DIR__) . '/components/legacy/LegacyMerchantImport.php';
     env_required('COOKIE_VALIDATION_KEY');
     env_required('SECRET_HASH_KEY');
     env_required('ADMIN_EMAIL');
