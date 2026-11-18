@@ -85,6 +85,10 @@ $config = [
                 'api/pos/v1/openings/<opening_id:[^/]+>/heartbeat' => 'posapi/openings/heartbeat',
                 'api/pos/v1/openings/<opening_id:[^/]+>/release' => 'posapi/openings/release',
                 // SIP-021 fase 3: pagamenti TTS dell'apertura; stesse regole di validazione.
+                // SIP-033: metodi di incasso e pagamenti BTC
+                'GET api/pos/v1/openings/<opening_id:[^/]+>/methods' => 'posapi/payments/methods',
+                'api/pos/v1/openings/<opening_id:[^/]+>/btc-payments' => 'posapi/payments/btc-create',
+                'api/pos/v1/btc-payments/<payment_id:[^/]+>' => 'posapi/payments/btc-view',
                 'GET api/pos/v1/openings/<opening_id:[^/]+>/payments' => 'posapi/payments/index',
                 'api/pos/v1/openings/<opening_id:[^/]+>/payments' => 'posapi/payments/create',
                 'api/pos/v1/payments/<payment_id:[^/]+>/cancel' => 'posapi/payments/cancel',

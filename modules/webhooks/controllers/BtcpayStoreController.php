@@ -7,6 +7,7 @@ use app\components\Log;
 use app\components\Throttle;
 use app\components\btcpay\StoreWebhookSecret;
 use app\components\btcpay\provisioning\ProvisioningOutbox;
+use app\components\pos\btc\BtcPayments;
 use yii\filters\ContentNegotiator;
 use yii\filters\VerbFilter;
 use yii\rest\Controller;
@@ -16,7 +17,8 @@ use yii\web\Response;
  * POST /api/btcpay/v1/store-webhook: webhook degli store BTCPay dei negozi (SIP-022 passo 4), registrati dal worker.
  * Lo store si riconosce dal suo ID nel corpo; la firma BTCPay-Sig si verifica con il segreto derivato per quel negozio
  * (BTCPAY_STORE_WEBHOOK_KEY), quindi un evento firmato per uno store non vale per un altro. Ogni consegna è registrata
- * una sola volta con il negozio di provenienza; l'uso degli eventi (storico pagamenti, POS BTC) è un passo successivo.
+ * una sola volta con il negozio di provenienza. SIP-033: l'evento aggiorna il pagamento BTC del POS con quella fattura
+ * (solo se creata da Napay per lo stesso negozio), prima della registrazione: una nuova consegna dopo un errore lo riapplica.
  */
 class BtcpayStoreController extends Controller
 {
@@ -75,6 +77,7 @@ class BtcpayStoreController extends Controller
         }
         if ($db->createCommand('SELECT id FROM {{%btcpay_webhook_events}} WHERE delivery_id=:d', [':d' => $delivery])->queryScalar() !== false) return $this->reply(200, 'duplicate');
         $invoiceId = is_string($event['invoiceId'] ?? null) && preg_match('/^[A-Za-z0-9]{8,64}$/D', $event['invoiceId']) ? $event['invoiceId'] : null;
+        BtcPayments::applyEvent($instance, (int) $storeId, $eventType, $invoiceId);
         $db->createCommand()->insert('{{%btcpay_webhook_events}}', ['delivery_id' => $delivery, 'event_type' => $eventType, 'invoice_id' => $invoiceId,
             'store_id' => (int) $storeId, 'received_at' => time(), 'processed_at' => time(), 'result' => 'recorded'])->execute();
         return $this->reply(200, 'recorded');

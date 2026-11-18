@@ -26,7 +26,8 @@ final class DatabaseRoles
         'btcpay_merchant_accounts' => ['id', 'instance', 'merchant_id', 'state', 'last_error_code', 'updated_at'],
         // remote_store_id (non segreto): il web riconosce lo store dei webhook in arrivo (SIP-022 passo 4)
         'btcpay_store_links' => ['id', 'instance', 'merchant_id', 'store_id', 'remote_store_id', 'state', 'last_error_code', 'updated_at'],
-        'btcpay_pos_links' => ['id', 'instance', 'merchant_id', 'store_id', 'terminal_id', 'state', 'last_error_code', 'updated_at'],
+        // remote_app_id (non segreto): app POS del terminale per le fatture BTC (SIP-033)
+        'btcpay_pos_links' => ['id', 'instance', 'merchant_id', 'store_id', 'terminal_id', 'remote_app_id', 'state', 'last_error_code', 'updated_at'],
         'btcpay_provisioning_jobs' => ['id', 'kind', 'instance', 'merchant_id', 'entity_id', 'generation', 'state', 'attempts', 'next_attempt_at', 'last_error_code', 'created_at', 'updated_at'],
     ];
     private const WEB_ENQUEUE = ['kind', 'instance', 'merchant_id', 'entity_id', 'generation', 'requested_by', 'created_at', 'updated_at'];

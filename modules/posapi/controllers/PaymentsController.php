@@ -6,6 +6,7 @@ use app\components\Log;
 use app\components\pos\OpeningException;
 use app\components\pos\PosApi;
 use app\components\pos\TerminalOpenings;
+use app\components\pos\btc\BtcPayments;
 use app\components\pos\tts\PaymentException;
 use app\components\pos\tts\TtsPayments;
 use app\models\PosOperatorSessions;
@@ -16,6 +17,7 @@ use yii\web\Response;
 /**
  * SIP-021 fase 3 (PAGAMENTO-TTS-CONTRATTO): richieste di pagamento TTS dall'apertura del terminale.
  * Stessa autenticazione e fencing delle aperture; errori a codici fissi, mai merchant, sessione o dettagli di chain.
+ * SIP-033: pagamenti BTC (fattura dell'app POS di BTCPay del terminale) e metodi di incasso disponibili per l'apertura.
  */
 class PaymentsController extends \yii\rest\Controller
 {
@@ -32,7 +34,8 @@ class PaymentsController extends \yii\rest\Controller
     {
         return [
             'contentNegotiator' => ['class' => ContentNegotiator::class, 'formats' => ['application/json' => Response::FORMAT_JSON]],
-            'verbs' => ['class' => VerbFilter::class, 'actions' => ['index' => ['GET'], 'create' => ['POST'], 'view' => ['GET'], 'cancel' => ['POST']]],
+            'verbs' => ['class' => VerbFilter::class, 'actions' => ['index' => ['GET'], 'create' => ['POST'], 'view' => ['GET'], 'cancel' => ['POST'],
+                'methods' => ['GET'], 'btc-create' => ['POST'], 'btc-view' => ['GET']]],
         ];
     }
 
@@ -79,6 +82,41 @@ class PaymentsController extends \yii\rest\Controller
             $payment = TtsPayments::cancel($session, $payment_id, $body['instance_id'], $body['generation']);
             Log::save('posapi', 'payments', "Richiesta di pagamento TTS {$payment_id} annullata (sessione #{$session->id})");
             return $payment;
+        });
+    }
+
+    /** SIP-033: metodi di incasso disponibili per l'apertura (tasti TTS e BTC del POS). */
+    public function actionMethods(string $opening_id)
+    {
+        return $this->guard(function (PosOperatorSessions $session, string $token) use ($opening_id) {
+            if (Yii::$app->request->getRawBody() !== '' || Yii::$app->request->getQueryParams() !== ['opening_id' => $opening_id]) return $this->error(400, 'validation_failed');
+            if (preg_match(TerminalOpenings::UUID, $opening_id) !== 1) return $this->error(404, 'not_found');
+            if (($wait = PosApi::throttle('payments|view|' . hash('sha256', $token), [60, 60])) > 0) return $this->limited($wait);
+            return BtcPayments::methods($session, $opening_id);
+        });
+    }
+
+    /** SIP-033: pagamento BTC (una fattura BTCPay per richiesta; limite più stretto del TTS). */
+    public function actionBtcCreate(string $opening_id)
+    {
+        return $this->guard(function (PosOperatorSessions $session, string $token) use ($opening_id) {
+            $key = Yii::$app->request->headers->get('Idempotency-Key');
+            $body = $this->body(['instance_id', 'generation', 'amount_cents']);
+            if (!is_string($key) || preg_match(BtcPayments::UUID, $key) !== 1 || $body === null) return $this->error(400, 'validation_failed');
+            if (preg_match(TerminalOpenings::UUID, $opening_id) !== 1) return $this->error(404, 'not_found');
+            if (($wait = PosApi::throttle('payments|btc|' . hash('sha256', $token), [10, 60])) > 0) return $this->limited($wait);
+            [$status, $payment] = BtcPayments::create($session, $opening_id, $body['instance_id'], $body['generation'], (int) $body['amount_cents'], $key);
+            Yii::$app->response->statusCode = $status;
+            return $payment;
+        });
+    }
+
+    public function actionBtcView(string $payment_id)
+    {
+        return $this->guard(function (PosOperatorSessions $session, string $token) use ($payment_id) {
+            if (Yii::$app->request->getRawBody() !== '') return $this->error(400, 'validation_failed');
+            if (($wait = PosApi::throttle('payments|view|' . hash('sha256', $token), [60, 60])) > 0) return $this->limited($wait);
+            return BtcPayments::view($session, $payment_id);
         });
     }
 

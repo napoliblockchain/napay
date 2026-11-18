@@ -8,6 +8,15 @@ services:
       BTCPAY_PROVISION_INSTANCE: ${BTCPAY_PROVISION_INSTANCE:?Set SHA-256 of the BTCPay origin}
       # SIP-022 passo 4: chiave madre dei segreti dei webhook degli store (verifica della firma BTCPay-Sig)
       BTCPAY_STORE_WEBHOOK_KEY: ${BTCPAY_STORE_WEBHOOK_KEY:?Set store webhook master key}
+      # SIP-033: origine pubblica di BTCPay (deve dare lo stesso digest di BTCPAY_PROVISION_INSTANCE) per le fatture dei terminali
+      BTCPAY_PROVISION_ORIGIN: ${BTCPAY_PROVISION_ORIGIN:?Set BTCPay origin}
+      BTCPAY_PROVISION_CA_FILE: ${BTCPAY_PROVISION_CA_FILE:-}
+  # SIP-033: scadenza dei pagamenti BTC del POS (stato pubblico delle fatture)
+  cron:
+    environment:
+      BTCPAY_PROVISION_INSTANCE: ${BTCPAY_PROVISION_INSTANCE:?Set SHA-256 of the BTCPay origin}
+      BTCPAY_PROVISION_ORIGIN: ${BTCPAY_PROVISION_ORIGIN:?Set BTCPay origin}
+      BTCPAY_PROVISION_CA_FILE: ${BTCPAY_PROVISION_CA_FILE:-}
   btcpay-worker:
     image: napay/bootstrap:dev
     user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"

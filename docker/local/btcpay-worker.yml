@@ -1,4 +1,5 @@
 # Sandbox: worker BTCPay verso il regtest locale (https://btcpay.local tramite napay-gateway), CA locale del gateway.
+# SIP-033: stessa CA per web e cron (fatture dei terminali POS); il cron esce solo dal proxy.
 # Incluso da docker/local.sh solo se esiste la chiave del provisioner nella cartella privata della sandbox.
 services:
   btcpay-worker:
@@ -9,3 +10,16 @@ services:
     depends_on:
       egress:
         condition: service_healthy
+  web:
+    environment:
+      BTCPAY_PROVISION_CA_FILE: /run/btcpay-ca.crt
+    volumes:
+      - ${NAPAY_LOCAL_BTCPAY_CA:?Set local gateway CA}:/run/btcpay-ca.crt:ro
+  cron:
+    environment:
+      PAYMENT_PROXY: "http://egress:3128"
+      BTCPAY_PROVISION_CA_FILE: /run/btcpay-ca.crt
+    volumes:
+      - ${NAPAY_LOCAL_BTCPAY_CA:?Set local gateway CA}:/run/btcpay-ca.crt:ro
+    networks:
+      egress: {}

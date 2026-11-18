@@ -52,6 +52,9 @@ try {
     $web->exec('INSERT INTO pos_btc_payments (id) SELECT id FROM pos_btc_payments WHERE 1=0');
     check(true, 'Web can read, insert and update POS BTC payments');
     denied($web, 'DELETE FROM pos_btc_payments WHERE 1=0', 'Web cannot delete POS BTC payment history');
+    $web->query('SELECT terminal_id, remote_app_id, state FROM btcpay_pos_links WHERE 1=0')->fetchAll();
+    check(true, 'Web reads the POS app ID of a terminal (BTC invoices)');
+    denied($web, 'SELECT marker FROM btcpay_pos_links WHERE 1=0', 'Web cannot read POS link markers');
     foreach (['SELECT * FROM pos_btc_payments', 'INSERT INTO pos_btc_payments (id) VALUES (1)', 'UPDATE pos_btc_payments SET version=version WHERE 1=0', 'DELETE FROM pos_btc_payments WHERE 1=0'] as $n => $sql) {
         denied($worker, $sql, 'Provisioning worker has no BTC payment access: ' . $n);
     }

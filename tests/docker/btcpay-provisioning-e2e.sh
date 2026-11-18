@@ -271,6 +271,13 @@ api GET "/i/$invoice/BTC-CHAIN/status"
 [ "$code" = 200 ] && [ "$(json "(d['invoiceId'], d['status'], d['invoiceCurrency'], '12' in d['orderAmountFiat'] and '34' in d['orderAmountFiat'], d['address'] in $posAddresses, d['invoiceBitcoinUrl'].startswith('bitcoin:' + d['address'] + '?amount='))" "$work/w/out.json")" = "('$invoice', 'New', 'USD', True, True, True)" ] \
     || fail "public invoice status ($code)"
 pass 'SIP-033: POS app invoice created without any key; public status pays to an address of the merchant xpub (BIP21 for the QR)'
+# SIP-033 passo 3: il gateway di Napay (proxy + TLS con CA locale) crea la fattura e ne legge lo stato pubblico
+compose run --rm --no-deps -e "BTCPAY_PROVISION_INSTANCE=$instance" --entrypoint php worker-cli /app/tests/application/btcpay-pos-gateway.php "$appA" 1234 > "$work/w/gw.json" 2>"$work/gw.err" \
+    || { head -c 400 "$work/w/gw.json" >&2; head -c 400 "$work/gw.err" >&2; fail 'POS gateway run'; }
+[ "$(json "(d['instance_ok'], d['created']['outcome'], d['status']['invoice_id'] == d['created']['invoice_id'], d['status']['order_id'] == d['order'], d['status']['store_id'], d['status']['currency'], d['status']['fiat_digits'], d['status']['status'], d['status']['address'] in $posAddresses, d['status']['due_satoshis'] > 0, d['missing'])" "$work/w/gw.json")" \
+    = "(True, 'created', True, True, '$remoteA', 'USD', '1234', 'new', True, True, {'outcome': 'rejected', 'code': 'app_missing'})" ] \
+    || fail "POS gateway: $(cat "$work/w/gw.json")"
+pass 'SIP-033: Napay gateway via proxy and TLS creates the invoice with its orderId and reads the public status (address of the merchant xpub); unknown app refused'
 
 # --- 5c. webhook dello store (SIP-022 passo 4): registrato dal worker, consegne verificate da Napay per negozio
 api GET "/api/v1/stores/$remoteA/webhooks" "" "verify-$iA.hdr"

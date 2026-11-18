@@ -57,6 +57,9 @@ register_job "${CRON_ENABLE_PURGE_UNVERIFIED:-1}" "${CRON_PURGE_UNVERIFIED_SCHED
 # SIP-021: richieste di pagamento TTS scadute, verificate sulla chain e chiuse
 register_job "${CRON_ENABLE_TTS_SWEEP:-1}" "${CRON_TTS_SWEEP_SCHEDULE:-*/5 * * * *}" \
     "php yii tts-payments/sweep --once" tts-sweep
+# SIP-033: pagamenti BTC del POS oltre la scadenza (stato dal server BTCPay, creazioni incerte chiuse)
+register_job "${CRON_ENABLE_BTC_SWEEP:-1}" "${CRON_BTC_SWEEP_SCHEDULE:-*/5 * * * *}" \
+    "php yii btc-payments/sweep --once" btc-sweep
 
 crontab -u www-data "$TMP_CRON"
 echo "[cron] ${#JOBS[@]} job(s) loaded (TZ=$CRON_TZ)."
