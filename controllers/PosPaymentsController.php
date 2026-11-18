@@ -159,8 +159,9 @@ class PosPaymentsController extends Controller
     }
 
     /**
-     * Totali BTC per valuta del negozio: incassato (ricevuto o confermato) in valuta e in BTC pagati, in attesa, scaduti,
-     * non riusciti. @return array<string, array{paid:array{count:int,cents:int,satoshis:int}, pending:int, expired:int, cancelled:int}>
+     * Totali BTC per valuta del negozio, negli stessi gruppi dei TTS (incassato = ricevuto o confermato, in attesa, scaduto,
+     * non riuscito): conteggio e importo; per l'incassato anche i BTC pagati.
+     * @return array<string, array<string, array{count:int, cents:int, satoshis?:int}>>
      */
     private static function btcTotals(Query $btc): array
     {
@@ -168,16 +169,13 @@ class PosPaymentsController extends Controller
             'sats' => 'COALESCE(SUM(COALESCE(p.paid_satoshis, p.amount_satoshis, 0)), 0)'])->orderBy(null)->groupBy(['p.currency', 'p.state'])->all();
         $totals = [];
         foreach ($rows as $row) {
-            $totals[$row['currency']] ??= ['paid' => ['count' => 0, 'cents' => 0, 'satoshis' => 0], 'pending' => 0, 'expired' => 0, 'cancelled' => 0];
+            $totals[$row['currency']] ??= ['paid' => ['count' => 0, 'cents' => 0, 'satoshis' => 0], 'pending' => ['count' => 0, 'cents' => 0],
+                'expired' => ['count' => 0, 'cents' => 0], 'cancelled' => ['count' => 0, 'cents' => 0]];
             foreach (self::BTC_STATES as $group => $states) {
                 if (!in_array($row['state'], $states, true)) continue;
-                if ($group === 'paid') {
-                    $totals[$row['currency']]['paid']['count'] += (int) $row['n'];
-                    $totals[$row['currency']]['paid']['cents'] += (int) $row['cents'];
-                    $totals[$row['currency']]['paid']['satoshis'] += (int) $row['sats'];
-                } else {
-                    $totals[$row['currency']][$group] += (int) $row['n'];
-                }
+                $totals[$row['currency']][$group]['count'] += (int) $row['n'];
+                $totals[$row['currency']][$group]['cents'] += (int) $row['cents'];
+                if ($group === 'paid') $totals[$row['currency']]['paid']['satoshis'] += (int) $row['sats'];
             }
         }
         ksort($totals);
