@@ -434,15 +434,26 @@ check($settings->runOnce() === true && $job($su)['state'] === 'retry_wait' && $j
     'Settings wait for the store link (no call)');
 $syncStore($store, $storeA, 'st-set');
 $t += 3600;
-$http->queue = [$r(200, ['id' => 'st-set'])];
+$http->queue = [$r(200, ['id' => 'st-set']), $r(200, StoreSettingsStep::RATES)];
 $settings->runOnce();
 [$method, $path, $body, $key] = $http->calls[0];
+[$rm, $rp, $rb, $rk] = $http->calls[1];
 check($job($su)['state'] === 'done' && $method === 'PUT' && $path === '/api/v1/stores/st-set' && $key === $apiKey
     && $body['name'] === $storeName
     && $body['defaultCurrency'] === 'EUR' && $body['invoiceExpiration'] === 900 && $body['requiresRefundEmail'] === true
     && $body['receipt'] === ['enabled' => true, 'showQR' => true, 'showPayments' => false] && !array_key_exists('website', $body),
     'One PUT with the merchant key: plain shop name and typed fixed values read from Napay');
-$su2 = $enqueue($instance, 'store_update', $storeA, 2);
+check(count($http->calls) === 2 && $rm === 'PUT' && $rp === '/api/v1/stores/st-set/rates/configuration/primary' && $rk === $apiKey
+    && $rb === ['isCustomScript' => false, 'preferredSource' => 'kraken', 'spread' => '0'], 'SIP-033: then the store rates (fixed source, never a custom script) with the merchant key');
+$sr = $enqueue($instance, 'store_update', $storeA, 3);
+$http->queue = [$r(200, ['id' => 'st-set']), $r(503)];
+$settings->runOnce();
+check($job($sr)['state'] === 'retry_wait' && $job($sr)['last_error_code'] === 'rates_update_unavailable', 'Rates 5xx: whole idempotent job retried later');
+$t += 3600;
+$http->queue = [$r(200, ['id' => 'st-set']), $r(400, ['code' => 'generic-error'])];
+$settings->runOnce();
+check($job($sr)['state'] === 'failed' && $job($sr)['last_error_code'] === 'rates_rejected', 'Rate source refused by BTCPay: failed with a code for the admin');
+$su2 = $enqueue($instance, 'store_update', $storeA, 4);
 $http->queue = [$r(502)];
 $settings->runOnce();
 check($job($su2)['state'] === 'retry_wait' && $job($su2)['last_error_code'] === 'store_update_unavailable', '5xx: retried later, never reconciliation (idempotent PUT)');
@@ -455,7 +466,7 @@ $calls = count($http->calls);
 $su3 = $enqueue($instance, 'store_update', $storeB);
 $settings->runOnce();
 check($job($su3)['state'] === 'failed' && $job($su3)['last_error_code'] === 'scope_mismatch' && count($http->calls) === $calls, 'Store of another merchant: failed, no call');
-$t -= 7200;
+$t -= 10800;
 // --- SIP-022 passo 3b: store_archive (negozio eliminato): app POS rimosse, store rinominato, mapping chiusi
 [$instance, $http, $store, $run] = $scenario();
 $archiver = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock,
@@ -520,19 +531,19 @@ $hooks = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $
 $syncStore($store, $storeB2, 'st-hook');
 $secret = app\components\btcpay\StoreWebhookSecret::derive($master, $instance, $storeB2);
 $h1 = $enqueue($instance, 'store_update', $storeB2, 10);
-$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, []), $r(200, ['id' => 'wh-1'])];
+$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, StoreSettingsStep::RATES), $r(200, []), $r(200, ['id' => 'wh-1'])];
 $hooks->runOnce();
 [$get, $post] = array_slice($http->calls, -2);
 check($job($h1)['state'] === 'done' && $get[0] === 'GET' && $get[1] === '/api/v1/stores/st-hook/webhooks' && $post[0] === 'POST' && $post[1] === '/api/v1/stores/st-hook/webhooks'
     && $post[2]['url'] === $hookUrl && $post[2]['secret'] === $secret && $post[2]['authorizedEvents']['everything'] === false
     && in_array('InvoiceSettled', $post[2]['authorizedEvents']['specificEvents'], true), 'Settings then webhook: created with the per-store derived secret and invoice events only');
 $h2 = $enqueue($instance, 'store_update', $storeB2, 11);
-$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, [['id' => 'wh-1', 'url' => $hookUrl], ['id' => 'wh-x', 'url' => 'https://other.example.invalid/hook']]), $r(200, ['id' => 'wh-1'])];
+$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, StoreSettingsStep::RATES), $r(200, [['id' => 'wh-1', 'url' => $hookUrl], ['id' => 'wh-x', 'url' => 'https://other.example.invalid/hook']]), $r(200, ['id' => 'wh-1'])];
 $hooks->runOnce();
 [$m, $p] = end($http->calls);
 check($job($h2)['state'] === 'done' && $m === 'PUT' && $p === '/api/v1/stores/st-hook/webhooks/wh-1', 'Existing Napay webhook updated in place, never duplicated, other webhooks untouched');
 $h3 = $enqueue($instance, 'store_update', $storeB2, 12);
-$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, [['id' => 'wh-1', 'url' => $hookUrl], ['id' => 'wh-2', 'url' => $hookUrl]])];
+$http->queue = [$r(200, ['id' => 'st-hook']), $r(200, StoreSettingsStep::RATES), $r(200, [['id' => 'wh-1', 'url' => $hookUrl], ['id' => 'wh-2', 'url' => $hookUrl]])];
 $hooks->runOnce();
 check($job($h3)['state'] === 'failed' && $job($h3)['last_error_code'] === 'webhook_ambiguous', 'Two Napay webhooks on the store: left to the admin');
 check($secret !== app\components\btcpay\StoreWebhookSecret::derive($master, $instance, $storeA) && strlen($secret) === 64, 'Each store has its own webhook secret');
@@ -548,18 +559,18 @@ $syncStore($store, $storeA, 'st-cfg');
 $cfgLink = $store->ensurePosLink($store->storeLink($storeA), $terminalA);
 $store->updatePosLink($cfgLink, ['state' => 'synced', 'remote_app_id' => 'app-cfg']);
 $c1 = $enqueue($instance, 'store_update', $storeA);
-$http->queue = [$r(200, ['id' => 'st-cfg']), $r(200, ['id' => 'app-cfg'])];
+$http->queue = [$r(200, ['id' => 'st-cfg']), $r(200, StoreSettingsStep::RATES), $r(200, ['id' => 'app-cfg'])];
 $configurer->runOnce();
-[$putStore, $putApp] = array_slice($http->calls, -2);
+[$putStore, , $putApp] = array_slice($http->calls, -3);
 check($job($c1)['state'] === 'done' && $putStore[1] === '/api/v1/stores/st-cfg' && $putApp[0] === 'PUT' && $putApp[1] === '/api/v1/apps/pos/app-cfg' && $putApp[3] === $apiKey
     && $putApp[2] === ['appName' => 'Cassa ' . $terminalA . ' [napay-' . $cfgLink['marker'] . ']', 'defaultView' => 'Light', 'showCustomAmount' => true, 'currency' => 'EUR'],
     'Store update then each synced POS app gets the full configuration with the shop currency (merchant key)');
 $c2 = $enqueue($instance, 'store_update', $storeA, 2);
-$http->queue = [$r(200, ['id' => 'st-cfg']), $r(503)];
+$http->queue = [$r(200, ['id' => 'st-cfg']), $r(200, StoreSettingsStep::RATES), $r(503)];
 $configurer->runOnce();
 check($job($c2)['state'] === 'retry_wait' && $job($c2)['last_error_code'] === 'app_update_unavailable', 'App update 5xx: whole idempotent job retried later');
 $t += 3600;
-$http->queue = [$r(200, ['id' => 'st-cfg']), $r(404)];
+$http->queue = [$r(200, ['id' => 'st-cfg']), $r(200, StoreSettingsStep::RATES), $r(404)];
 $configurer->runOnce();
 check($job($c2)['state'] === 'failed' && $job($c2)['last_error_code'] === 'app_missing', 'App gone from BTCPay: job failed with a code for the admin');
 $t -= 3600;

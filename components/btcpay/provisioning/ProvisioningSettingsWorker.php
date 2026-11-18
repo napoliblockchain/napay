@@ -18,7 +18,7 @@ use yii\db\Connection;
  * SIP-022 passi 3 e 3b: esecutore dei lavori sullo store BTCPay di un negozio già collegato, un lavoro per chiamata,
  * con la chiave corrente del merchant e valori letti da Napay all'esecuzione (mai dal lavoro).
  * - `store_update`: nome del negozio (senza marker: l'ID remoto è salvato), valuta e impostazioni fisse (PUT idempotente),
- *   poi il webhook dello store verso Napay se configurato (passo 4: segreto derivato per store, mai salvato), poi la
+ *   poi i cambi (fonte fissa, SIP-033), poi il webhook dello store verso Napay se configurato (passo 4: segreto derivato per store, mai salvato), poi la
  *   configurazione completa delle app POS sincronizzate del negozio (SIP-033: importo libero, valuta del negozio).
  * - `store_archive` (negozio eliminato in Napay): DELETE delle app POS collegate (404 = già rimossa), poi nome
  *   "archiviato" sullo store, mapping chiusi (`suspended`, `store_archived`). Lo store non viene mai cancellato.
@@ -95,6 +95,7 @@ final class ProvisioningSettingsWorker
         if ($version === null) return;
         if ($snapshot['waiting'] !== null) { $this->later($job, $version, $snapshot['waiting'], null); return; }
         $result = $this->step->update($snapshot['remote_store_id'], $snapshot['payload'], $snapshot['key']);
+        if ($result->kind === StepOutcome::DONE) $result = $this->step->rates($snapshot['remote_store_id'], $snapshot['key']);
         if ($result->kind === StepOutcome::DONE && $this->webhookStep !== null) {
             $result = $this->webhookStep->ensure($snapshot['remote_store_id'], (string) $this->webhookUrl,
                 StoreWebhookSecret::derive((string) $this->webhookMaster, $this->instance, $job['entity_id']), $snapshot['key']);

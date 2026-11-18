@@ -242,6 +242,10 @@ api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
 [ "$code" = 200 ] && [ "$(json "(d['name'], d['defaultCurrency'], d['speedPolicy'], d['invoiceExpiration'], d['networkFeeMode'])" "$work/w/out.json")" = "('E2E negozio A', 'EUR', 'MediumSpeed', 900, 'Always')" ] \
     || fail "store settings not applied ($code)"
 pass 'Fixed store settings and the plain shop name (shown at checkout) applied to BTCPay by the worker'
+api GET "/api/v1/stores/$remoteA/rates/configuration/primary" "" "verify-$iA.hdr"
+[ "$code" = 200 ] && [ "$(json "(d['isCustomScript'], d['preferredSource'])" "$work/w/out.json")" = "(False, 'kraken')" ] \
+    || fail "store rates not applied ($code)"
+pass 'SIP-033: store rates (fixed source) applied by the worker, no manual setting on BTCPay'
 fixture --edit-store "$storeA"
 drain links store_update
 api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
