@@ -1,0 +1,401 @@
+<?php
+
+namespace app\controllers;
+
+use Yii;
+use app\models\MemberProfiles;
+use app\models\Merchants;
+
+use app\models\search\MerchantsSearch;
+use yii\web\Controller;
+use yii\web\NotFoundHttpException;
+use yii\web\ForbiddenHttpException;
+use yii\filters\VerbFilter;
+use yii\filters\AccessControl;
+use yii\web\UploadedFile;
+
+use app\components\Crypt;
+use app\components\User;
+use app\components\Log;
+use app\components\identity\AccountEligibility;
+use app\components\identity\MerchantActivation;
+use app\components\merchant\MerchantLogo;
+use app\components\geo\ItalianMunicipalities;
+use app\models\Users;
+use PhpOffice\PhpSpreadsheet\Spreadsheet;
+use PhpOffice\PhpSpreadsheet\IOFactory;
+
+/**
+ * MerchantsController implements the CRUD actions for Merchants model.
+ */
+class MerchantsController extends Controller
+{
+    /**
+     * {@inheritdoc}
+     */
+    public function behaviors()
+    {
+        return [
+            'verbs' => [
+                'class' => VerbFilter::class,
+                'actions' => [
+                    'delete' => ['POST'],
+                    'logo' => ['POST'],
+                    'logo-delete' => ['POST'],
+                    'create' => ['GET', 'POST'],
+                    'activate' => ['GET', 'POST'],
+                    'cities' => ['GET'],
+                ],
+            ],
+            'access' => [
+                'class' => AccessControl::class,
+                'rules' => [
+                    // suggerimenti città (elenco pubblico ISTAT) per i form azienda
+                    ['actions'=>['cities'], 'allow'=>true, 'roles'=>['@']],
+                    [
+                        'actions'=>['activate'], 'allow'=>true, 'roles'=>['@'],
+                        'matchCallback'=>static fn() => AccountEligibility::canActivateMerchant((int)Yii::$app->user->id)
+                            || AccountEligibility::merchantForManager((int)Yii::$app->user->id) !== null,
+                    ],
+                    [
+                        'actions' => [
+                            'view',
+                            'update',
+                            'logo',
+                            'logo-delete',
+                        ],
+                        'allow' => true,
+                        'roles' => ['@'],
+                        'matchCallback' => function ($rule, $action) {
+                            return User::isMerchant();
+                        },
+                    ],
+                    [
+                        'actions' => [
+                            'index',
+                            'create',
+                            'view',
+                            'update',
+                            'delete',
+                            'export',
+                            'logo',
+                            'logo-delete',
+                        ],
+                        'allow' => true,
+                        'roles' => ['@'],
+                        'matchCallback' => function ($rule, $action) {
+                            return User::isAdministrator();
+                        },
+                    ],
+                ]
+            ]
+        ];
+    }
+
+    /**
+     * Lists all Merchants models.
+     * @return mixed
+     */
+    public function actionIndex()
+    {
+        $searchModel = new MerchantsSearch();
+        $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
+        $dataProvider->sort->defaultOrder = ['description' => SORT_ASC];
+        
+        return $this->render('index', [
+            'searchModel' => $searchModel,
+            'dataProvider' => $dataProvider,
+        ]);
+    }
+
+    /**
+     * Displays a single Merchants model.
+     * @param integer $id
+     * @return mixed
+     * @throws NotFoundHttpException if the model cannot be found
+     */
+    public function actionView($id)
+    {
+        return $this->render('view', [
+            'model' => $this->findModel($id),
+        ]);
+    }
+
+    /**
+     * Creates a new Merchants model.
+     * If creation is successful, the browser will be redirected to the 'view' page.
+     * @return mixed
+     */
+    public function actionCreate()
+    {
+        $model = new Merchants(['scenario'=>Merchants::SCENARIO_ACTIVATION]);
+        if ($model->load(Yii::$app->request->post())) {
+            $owner = $model->user_id;
+            if (!is_scalar($owner) || !preg_match('/^[1-9][0-9]{0,9}$/D', (string)$owner) || (float)$owner > 2147483647) {
+                throw new \yii\web\BadRequestHttpException('Invalid account.');
+            }
+            if (($id = $this->activateMerchant($model, (int)$owner)) !== null) {
+                return $this->redirect(['view', 'id'=>Crypt::encrypt($id)]);
+            }
+        }
+        $users_list = [];
+        foreach (Users::find()->joinWith(['privilege'])->andWhere(['privileges.level'=>User::ROLE_USER])->all() as $candidate) {
+            if (AccountEligibility::canActivateMerchant((int)$candidate->id)) $users_list[$candidate->id] = $candidate->username;
+        }
+
+        return $this->render('create', [
+            'model' => $model,
+            'users_list' => $users_list
+        ]);
+    }
+
+    public function actionActivate()
+    {
+        $owner = (int)Yii::$app->user->id;
+        if (($existing = AccountEligibility::merchantForManager($owner)) !== null) return $this->redirect(['view', 'id' => Crypt::encrypt($existing)]);
+        $model = new Merchants(['scenario'=>Merchants::SCENARIO_ACTIVATION, 'user_id'=>$owner]);
+        if ($model->load(Yii::$app->request->post()) && ($activated = $this->activateMerchant($model, $owner)) !== null) {
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Merchant attivato localmente. La configurazione dei pagamenti non è ancora completata.'));
+            return $this->redirect(['view', 'id' => Crypt::encrypt($activated)]);
+        }
+        $model->user_id = $owner;
+        if (!Yii::$app->request->isPost) {
+            // Precompilato dal profilo socio PG: ragione sociale, P.IVA e indirizzo già dichiarati alla registrazione
+            $profile = MemberProfiles::find()->where(['user_id'=>$owner, 'is_corporate'=>1])->one();
+            if ($profile !== null) {
+                $model->setAttributes(['description'=>(string) $profile->denomination, 'vatNumber'=>(string) $profile->vat,
+                    'addressStreet'=>(string) $profile->address, 'addressZip'=>(string) $profile->cap, 'addressCity'=>(string) $profile->city]);
+            }
+        }
+        return $this->render('activate', ['model'=>$model, 'users_list'=>[]]);
+    }
+
+    /** Suggerimenti del campo città: al massimo 20 comuni "Nome (SIGLA)". */
+    public function actionCities(string $q = '')
+    {
+        Yii::$app->response->format = \yii\web\Response::FORMAT_JSON;
+        return ItalianMunicipalities::suggest($q);
+    }
+
+    private function activateMerchant(Merchants $model, int $owner): ?int
+    {
+        try {
+            return MerchantActivation::activate((int)Yii::$app->user->id, $owner, $model);
+        } catch (\DomainException $error) {
+            throw new ForbiddenHttpException('Merchant activation unavailable.');
+        } catch (\Throwable $error) {
+            Yii::warning('Local merchant activation failed.', __METHOD__);
+            throw new \yii\web\ServiceUnavailableHttpException('Merchant activation unavailable.');
+        }
+    }
+
+    /**
+     * Updates an existing Merchants model.
+     * If update is successful, the browser will be redirected to the 'view' page.
+     * @param integer $id
+     * @return mixed
+     * @throws NotFoundHttpException if the model cannot be found
+     */
+    public function actionUpdate($id)
+    {
+        return $this->updateMerchant($this->findModel($id));
+    }
+
+    private function updateMerchant(Merchants $model)
+    {
+        $model->scenario = Merchants::SCENARIO_UPDATE;
+        $ownerId = $model->user_id;
+
+        $loaded = $model->load(Yii::$app->request->post());
+        // Ownership changes require a separate workflow, never this details form.
+        $model->user_id = $ownerId;
+        if ($loaded && $model->save()) {
+            Yii::$app->session->setFlash('success', Yii::t('app', 'Esercente aggiornato correttamente'));
+            $message_log = Yii::t('app', 'User {user} has updated {item}: {itemname}', [
+                'user' => Yii::$app->user->identity->username,
+                'item' => Yii::$app->controller->id,
+                'itemname' => $model->description
+            ]);
+            Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
+            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
+        }
+
+        return $this->render('update', [
+            'model' => $model,
+        ]);
+    }
+
+    /**
+     * Deletes an existing Merchants model.
+     * If deletion is successful, the browser will be redirected to the 'index' page.
+     * @param integer $id
+     * @return mixed
+     * @throws NotFoundHttpException if the model cannot be found
+     */
+    public function actionDelete($id)
+    {
+        $model = $this->findModel($id);
+        
+        $message_log = Yii::t('app', 'User {user} has deleted {item}: {itemname}', [
+            'user' => Yii::$app->user->identity->username,
+            'item' => Yii::$app->controller->id,
+            'itemname' => $model->description
+        ]);
+        Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
+
+        $model->delete();
+        return $this->redirect(['index']);
+    }
+
+    /** SIP-033: logo del merchant per la pagina di pagamento BTCPay dei suoi negozi (PNG o JPEG, ricodificato in PNG). */
+    public function actionLogo($id)
+    {
+        $model = $this->findModel($id);
+        $file = UploadedFile::getInstanceByName('logo');
+        $logo = match (true) {
+            $file === null, $file->error === UPLOAD_ERR_NO_FILE => 'missing',
+            $file->error === UPLOAD_ERR_INI_SIZE, $file->error === UPLOAD_ERR_FORM_SIZE => 'too_large',
+            $file->error !== UPLOAD_ERR_OK => 'unreadable',
+            default => MerchantLogo::normalize($file->tempName),
+        };
+        if (is_string($logo)) Yii::$app->session->setFlash('error', MerchantLogo::message($logo));
+        else $this->changeLogo($model, fn() => MerchantLogo::save(Yii::$app->db, (int) $model->id, $logo, (int) Yii::$app->user->id),
+            Yii::t('app', 'Logo saved. BTCPay payment pages will be updated shortly.'), 'User {user} has updated the logo of {item}: {itemname}');
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-logo']);
+    }
+
+    /** SIP-033: logo rimosso, i negozi tornano al logo di Napay. */
+    public function actionLogoDelete($id)
+    {
+        $model = $this->findModel($id);
+        $this->changeLogo($model, fn() => MerchantLogo::remove(Yii::$app->db, (int) $model->id, (int) Yii::$app->user->id),
+            Yii::t('app', 'Logo removed: BTCPay payment pages will show the Napay logo.'), 'User {user} has removed the logo of {item}: {itemname}');
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-logo']);
+    }
+
+    /** Logo cambiato e negozi aggiornati in una transazione; messaggio e registro solo se riuscito. */
+    private function changeLogo(Merchants $model, callable $change, string $success, string $logMessage): void
+    {
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            $change();
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            if ($transaction->isActive) $transaction->rollBack();
+            // solo la classe: messaggi e query possono contenere dati
+            Yii::error('Merchant logo change failed: ' . get_class($e), __METHOD__);
+            Yii::$app->session->setFlash('error', MerchantLogo::message('unreadable'));
+            return;
+        }
+        Yii::$app->session->setFlash('success', $success);
+        Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', $logMessage, [
+            'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
+        ]));
+    }
+
+    /**
+     * Esporta la selezione in un file excel
+     */
+    public function actionExport()
+    {
+        $searchModel = new MerchantsSearch();
+        $dataProvider = $searchModel->search(Yii::$app->request->queryParams);
+        $dataProvider->sort->defaultOrder = ['description' => SORT_ASC];
+        $dataProvider->pagination->pageSize = false;
+
+        $allModels = $dataProvider->getModels();
+
+        // inizializzo la classe Excel
+        $spreadsheet = new Spreadsheet();
+        $sheet = $spreadsheet->getActiveSheet();
+
+        // Attributi da scaricare
+        $attributeLabels = [
+            'id' => Yii::t('app', 'ID'),
+            'vatNumber' => Yii::t('app', 'P.Iva'),
+            'description' => Yii::t('app', 'Descrizione'),
+            'email' => Yii::t('app', 'Email'),
+            'phone' => Yii::t('app', 'Telefono'),
+            'mobile' => Yii::t('app', 'Mobile'),
+            'addressStreet' => Yii::t('app', 'Indirizzo'),
+            'addressNumberHouse' => Yii::t('app', 'Civico'),
+            'addressCity' => Yii::t('app', 'Città'),
+            'addressZip' => Yii::t('app', 'Zip'),
+            'addressProvince' => Yii::t('app', 'Provincia'),
+            'addressCountry' => Yii::t('app', 'Nazione'),
+
+        ];
+
+        // create header
+        $x = 0;
+        foreach ($attributeLabels as $field => $text) {
+            $sheet->setCellValue($this->getCellFromColnum($x) . '1', $text);
+            $x++;
+        }
+
+        // load rows
+        // adesso fare il ciclo sui campi dei titoli...
+        $row = 2;
+        foreach ($allModels as $n => $model) {
+            $col = 0;
+            foreach ($attributeLabels as $field => $text) {
+                $writeText = $model->$field;
+                $sheet->setCellValue($this->getCellFromColnum($col) . $row, trim($writeText ?? ''), null);
+
+                $col++;
+            }
+            $row++;
+        }
+
+        // output the file
+        $writer = IOFactory::createWriter($spreadsheet, 'Xlsx');
+        $date = date('Y/m/d H:i:s', time());
+        $filename = $date . '-merchants.xlsx';
+        $response = Yii::$app->getResponse();
+        $headers = $response->getHeaders();
+        $headers->set('Content-Type', 'application/vnd.ms-excel');
+        $headers->set('Content-Disposition', 'attachment;filename="' . $filename . '"');
+        $headers->set('Cache-Control: max-age=0');
+        ob_start();
+        $writer->save("php://output");
+        $content = ob_get_contents();
+        ob_clean();
+        return $content;
+    }
+
+    private function getCellFromColnum($colNum)
+    {
+        return ($colNum < 26 ? chr(65 + $colNum) : chr(65 + floor($colNum / 26) - 1) . chr(65 + ($colNum % 26)));
+    }  
+
+    /**
+     * Finds the Merchants model based on its primary key value.
+     * If the model is not found, a 404 HTTP exception will be thrown.
+     * @param integer $id
+     * @return Merchants the loaded model
+     * @throws NotFoundHttpException if the model cannot be found
+     */
+    protected function findModel($id)
+    {
+        if (!is_string($id) || strlen($id) > 1024 || base64_decode($id, true) === false) {
+            throw new NotFoundHttpException('The requested page does not exist.');
+        }
+        try {
+            $plain = @Crypt::decrypt($id);
+        } catch (\Throwable $error) {
+            $plain = '';
+        }
+        if (!preg_match('/^[1-9][0-9]*$/D', $plain)
+            || filter_var($plain, FILTER_VALIDATE_INT, ['options' => ['min_range' => 1, 'max_range' => 2147483647]]) === false
+            || ($model = Merchants::findOne((int) $plain)) === null) {
+            throw new NotFoundHttpException('The requested page does not exist.');
+        }
+        $actor = Yii::$app->user->identity;
+        $level = (int) ($actor->privilege->level ?? -1);
+        if ($actor === null || ($level !== User::ROLE_ADMIN
+            && ($level !== User::ROLE_MERCHANT || (string) $model->user_id !== (string) $actor->id))) {
+            throw new ForbiddenHttpException('You are not allowed to access this merchant.');
+        }
+        return $model;
+    }
+}

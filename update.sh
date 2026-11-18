@@ -1,27 +1,32 @@
 #!/bin/bash
 echo Updating...
-if [ ! -d "assets" ]; then
-    mkdir assets
-fi
-if [ ! -d "protected/verbali" ]; then
-    mkdir protected/verbali
-fi
+
 git stash
 git pull
 
+### Folder rights
+folder="web/assets"
 
-chown -R www-data:www-data assets/
-chown -R www-data:www-data uploads/
-chown -R www-data:www-data custom/
-chown -R www-data:www-data protected/runtime/
-chown -R www-data:www-data protected/log/
-chown -R www-data:www-data protected/privatekeys/
-chown -R www-data:www-data protected/verbali/
+if [ -d "$folder" ]; then
+    chgrp www-data $folder
+    chmod g+w $folder/
+fi
 
-chmod 755 protected/yiic
-chmod 755 update.sh
-chmod +x update.sh
+folder="runtime"
 
-echo Versioning...
-git rev-parse HEAD>version.txt
-echo Done!
+if [ -d "$folder" ]; then
+    chgrp www-data $folder
+    chmod g+w $folder/
+fi
+
+folder="web/bundles/openapi"
+
+if [ -d "$folder" ]; then
+    chgrp -R www-data $folder
+    chmod -R ug+rw $folder
+fi
+
+# update sw
+npm run update-sw
+
+echo Update composer if required!

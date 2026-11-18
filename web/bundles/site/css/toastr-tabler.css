@@ -1,0 +1,22 @@
+/*
+ * Messaggi flash (toastr) sotto Tabler/Bootstrap 5: la classe .toast di Bootstrap ha sfondo chiaro e vinceva sui colori
+ * di toastr (testo bianco su bianco). Selettori più specifici, validi qualunque sia l'ordine dei CSS.
+ */
+#toast-container > .toast {
+    color: #fff;
+    opacity: 1;
+    border: 0;
+    border-radius: var(--tblr-border-radius, 6px);
+    box-shadow: 0 6px 18px rgba(0, 0, 0, .25);
+    background-position: 15px center;
+    background-repeat: no-repeat;
+}
+#toast-container > .toast:hover { opacity: 1; box-shadow: 0 8px 22px rgba(0, 0, 0, .3); }
+#toast-container > .toast.toast-success { background-color: #2fb344; }
+#toast-container > .toast.toast-error { background-color: #d63939; }
+#toast-container > .toast.toast-warning { background-color: #e47b0f; }
+#toast-container > .toast.toast-info { background-color: #066fd1; }
+#toast-container > .toast .toast-title,
+#toast-container > .toast .toast-message,
+#toast-container > .toast .toast-message a { color: #fff; }
+#toast-container > .toast .toast-progress { background-color: rgba(255, 255, 255, .7); opacity: 1; }
