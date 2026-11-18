@@ -31,8 +31,15 @@ if ($btcpayWorker) {
         if ($mount['target'] === '/app') localCheck($mount['read_only'] === true);
         localCheck($mount['target'] !== '/import');
     }
-    // il web vede solo il digest pubblico dell'origine, mai i segreti del worker
+    // il web vede solo il digest e l'origine pubblici, mai i segreti del worker
     localCheck(($services['web']['environment']['BTCPAY_PROVISION_INSTANCE'] ?? '') === hash('sha256', 'https://btcpay.local') && empty($services['web']['secrets']));
+    // SIP-033: web e cron creano/leggono le fatture POS su BTCPay solo tramite il proxy, con la CA locale e l'origine del digest
+    foreach (['web', 'cron'] as $service) {
+        $env = $services[$service]['environment'];
+        localCheck(($env['BTCPAY_PROVISION_ORIGIN'] ?? '') === 'https://btcpay.local' && ($env['BTCPAY_PROVISION_CA_FILE'] ?? '') === '/run/btcpay-ca.crt'
+            && ($env['BTCPAY_PROVISION_INSTANCE'] ?? '') === hash('sha256', 'https://btcpay.local') && ($env['PAYMENT_PROXY'] ?? '') === 'http://egress:3128'
+            && empty($services[$service]['secrets']) && !isset($env['BTCPAY_PROVISIONER_KEY_FILE']) && !isset($env['BTCPAY_KEK_KEYRING_FILE']));
+    }
 }
 if ($roles) {
     localCheck(empty($services['web']['secrets']) && empty($services['web']['environment']['NAPAY_WEB_DB_PASSWORD']));
@@ -76,10 +83,11 @@ foreach ($services['web']['volumes'] as $mount) {
     localCheck($mount['target'] !== '/import');
 }
 localCheck($services['web']['depends_on']['bootstrap']['condition'] === 'service_completed_successfully');
-// cron: niente porte né Internet (solo database e chain di sviluppo), codice in sola lettura, stessa sandbox del web
+// cron: niente porte né Internet (database e chain di sviluppo; con il worker BTCPay anche il proxy di uscita, rete interna,
+// per la scadenza dei pagamenti BTC - SIP-033), codice in sola lettura, stessa sandbox del web
 $cron = $services['cron'];
 $cronNetworks = array_keys($cron['networks']); sort($cronNetworks);
-localCheck(empty($cron['ports']) && $cronNetworks === ['database', 'napay_local_chain']);
+localCheck(empty($cron['ports']) && $cronNetworks === ($btcpayWorker ? ['database', 'egress', 'napay_local_chain'] : ['database', 'napay_local_chain']));
 localCheck($cron['environment']['DB_DATABASE'] === 'napay_browser_local' && $cron['environment']['MAIL_TRANSPORT'] === 'file'
     && $cron['environment']['WEBAPP_LINK'] === 'https://napay.local');
 foreach ($cron['volumes'] as $mount) {
