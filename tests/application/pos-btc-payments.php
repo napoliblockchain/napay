@@ -272,6 +272,45 @@ check(count($sum) === 1 && $sum[0]['currency'] === 'EUR' && $sum[0]['count'] ===
     'Totals of today: BTC received or confirmed per currency, in fiat and in BTC paid');
 $tomorrow = app\components\pos\PosHistory::totals((int) scalar('SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o', [':o' => $oA['id']]), time() + 86400);
 check($tomorrow['btc'] === [] && $tomorrow['tts']['count'] === 0, 'Totals start again at midnight (Rome): nothing counted for the next day');
+// --- SIP-033 passo 5: pagina Incassi del backoffice (gestore A) con i pagamenti BTC
+$app->user->enableSession = false;
+$app->user->setIdentity(app\models\Users::findOne($managerA));
+$assets = sys_get_temp_dir() . '/napay-btc-assets-' . bin2hex(random_bytes(4));
+mkdir($assets, 0700);
+register_shutdown_function(static function () use ($assets) { exec('rm -rf ' . escapeshellarg($assets)); });
+$app->assetManager->basePath = $assets; $app->assetManager->baseUrl = '/assets';
+$app->request->hostInfo = 'https://napay.example.invalid'; $app->request->scriptUrl = '/index.php'; $app->request->url = '/pos-payments/index';
+$page = static function (string $action, array $query = [], array $args = []) use ($app) {
+    $app->request->setQueryParams($query);
+    $controller = new app\controllers\PosPaymentsController('pos-payments', $app);
+    $controller->layout = false;
+    $controller->action = new yii\base\InlineAction($action, $controller, 'action' . str_replace('-', '', ucwords($action, '-')));
+    $app->controller = $controller;
+    if (!$controller->beforeAction($controller->action)) throw new RuntimeException('Backoffice action refused');
+    return $controller->{'action' . ucfirst($action)}(...$args);
+};
+$list = $page('index');
+$btcCount = (int) scalar("SELECT COUNT(*) FROM pos_btc_payments WHERE merchant_id=(SELECT merchant_id FROM pos_terminal_openings WHERE public_id=:o)", [':o' => $oA['id']]);
+check(substr_count($list, '/pos-payments/view?id=') === min(25, $btcCount + (int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE merchant_id=(SELECT merchant_id FROM pos_terminal_openings WHERE public_id=:o)", [':o' => $oA['id']]))
+    && str_contains($list, '/pos-payments/view?id=' . $p['id']) && str_contains($list, '12,34 EUR') && str_contains($list, '0.00024680 BTC · 1 BTC = 61.700,00 EUR')
+    && !str_contains($list, 'bcrt1q') && !str_contains($list, 'INV000') && !str_contains($list, 'st-btc-a'), 'Backoffice list: BTC payments with currency, BTC paid and rate; no address, invoice or remote IDs');
+$received = $db->createCommand("SELECT COUNT(*) n, SUM(amount_cents) c, SUM(COALESCE(paid_satoshis, amount_satoshis)) s FROM pos_btc_payments WHERE state IN ('processing','settled') AND merchant_id=(SELECT merchant_id FROM pos_terminal_openings WHERE public_id=:o)", [':o' => $oA['id']])->queryOne();
+check(str_contains($list, 'data-btc-totals="EUR"') && preg_match('~data-total-btc-paid>' . preg_quote(number_format((int) $received['c'] / 100, 2, ',', '.'), '~') . ' EUR<~', $list) === 1
+    && str_contains($list, 'data-total-btc>' . app\controllers\PosPaymentsController::btc((int) $received['s']) . ' BTC<'), 'Backoffice totals: BTC collected in EUR and in BTC paid');
+$btcOnly = $page('index', ['method' => 'btc']);
+$paidOnly = $page('index', ['method' => 'btc', 'state' => 'paid']);
+check(substr_count($btcOnly, '/pos-payments/view?id=') === min(25, $btcCount) && substr_count($paidOnly, '/pos-payments/view?id=') === (int) $received['n']
+    && str_contains($paidOnly, '/pos-payments/view?id=' . $p['id']) && substr_count($page('index', ['method' => 'tts', 'state' => 'paid']), 'data-btc-totals') === 0,
+    'Method and status filters: BTC only, BTC collected (received or confirmed), TTS only without BTC totals');
+$detail = $page('view', [], [$p['id']]);
+check(str_contains($detail, '61.700,00 EUR') && str_contains($detail, '0.00020000 BTC') && str_contains($detail, '0.00004680 BTC') && str_contains($detail, '0.00024680 BTC')
+    && str_contains($detail, 'bcrt1qnynpu9auq7msewe4t5lwkv042x6vvp6wxcdmtx') && !str_contains($detail, 'INV000') && !str_contains($detail, 'app-btc-a') && str_contains($detail, 'Confermato'),
+    'BTC detail: rate, order, network fee, BTC paid and payment address; never invoice or remote IDs');
+$csv = $page('export', ['method' => 'btc', 'state' => 'paid']);
+$body = $csv->content ?? '';
+check(str_contains($body, ';BTC;') && str_contains($body, ';EUR;settled;') && str_contains($body, ';61700,00;0.00024680;' . $p['id']) && !str_contains($body, 'INV000'),
+    'CSV export: method, currency, state, rate and BTC paid for BTC payments');
+$app->response->clear();
 $log = (string) scalar("SELECT GROUP_CONCAT(description) FROM logs WHERE description LIKE 'Richiesta di pagamento BTC%'");
 $leak = false; foreach ($secrets as $secret) $leak = $leak || str_contains($log, $secret);
 check($log !== '' && !$leak && !str_contains($log, 'app-btc-a') && !str_contains($log, 'INV0000000001'), 'Payment requests audited without tokens, remote IDs or invoice IDs');

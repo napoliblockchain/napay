@@ -3,6 +3,7 @@
 use yii\helpers\Html;
 use app\widgets\TablerGridView as GridView;
 use app\components\pos\tts\PaymentTotals;
+use app\controllers\PosPaymentsController;
 
 /* @var $this yii\web\View */
 /* @var $payments yii\data\ActiveDataProvider */
@@ -10,17 +11,27 @@ use app\components\pos\tts\PaymentTotals;
 /* @var $stores array ID negozio cifrato => etichetta */
 /* @var $admin bool */
 /* @var $totals array per stato: count, cents (stessi filtri dell'elenco) */
+/* @var $btcTotals array SIP-033: per valuta, incassato (count, cents, satoshis) e conteggi in attesa/scaduti/non riusciti */
 
 $this->title = Yii::t('app', 'POS payments');
 $this->params['breadcrumbs'][] = $this->title;
 $states = ['pending' => Yii::t('app', 'Pending'), 'paid' => Yii::t('app', 'Paid'), 'expired' => Yii::t('app', 'Expired'), 'cancelled' => Yii::t('app', 'Cancelled')];
 $query = array_filter($filters, static fn($v) => $v !== '');
+$methods = ['tts' => 'TTS', 'btc' => 'BTC'];
+// SIP-033: importo nella valuta del pagamento; per i BTC anche BTC pagati e cambio
+$amount = static function (array $p): string {
+    $text = Html::encode(Yii::$app->formatter->asDecimal((int) $p['amount_cents'] / 100, 2) . ' ' . $p['currency']);
+    if ($p['method'] !== 'btc' || ($p['paid_satoshis'] === null && $p['rate_cents'] === null)) return $text;
+    $detail = array_filter([$p['paid_satoshis'] === null || (int) $p['paid_satoshis'] === 0 ? null : PosPaymentsController::btc((int) $p['paid_satoshis']) . ' BTC',
+        $p['rate_cents'] === null ? null : '1 BTC = ' . Yii::$app->formatter->asDecimal((int) $p['rate_cents'] / 100, 2) . ' ' . $p['currency']]);
+    return $text . ($detail === [] ? '' : Html::tag('div', Html::encode(implode(' · ', $detail)), ['class' => 'small text-secondary']));
+};
 $columns = [
     ['label' => Yii::t('app', 'Date'), 'value' => static fn($p) => Yii::$app->formatter->asDatetime((int) $p['created_at'], 'php:d/m/Y H:i')],
     ['label' => Yii::t('app', 'Store - POS'), 'value' => static fn($p) => $p['store'] . ' - ' . $p['terminal']],
     ['label' => Yii::t('app', 'Operator'), 'value' => static fn($p) => trim($p['first_name'] . ' ' . $p['last_name'])],
-    ['label' => Yii::t('app', 'Amount'), 'contentOptions' => ['class' => 'text-end text-nowrap'], 'headerOptions' => ['class' => 'text-end'],
-        'value' => static fn($p) => Yii::$app->formatter->asDecimal((int) $p['amount_cents'] / 100, 2) . ' TTS'],
+    ['label' => Yii::t('app', 'Method'), 'value' => static fn($p) => $methods[$p['method']]],
+    ['label' => Yii::t('app', 'Amount'), 'format' => 'raw', 'contentOptions' => ['class' => 'text-end text-nowrap'], 'headerOptions' => ['class' => 'text-end'], 'value' => $amount],
     ['label' => Yii::t('app', 'Status'), 'format' => 'raw', 'value' => fn($p) => $this->render('_state', ['payment' => $p])],
     ['label' => Yii::t('app', 'Transaction'), 'format' => 'raw', 'value' => static fn($p) => $p['tx_hash'] === null ? '&ndash;'
         : Html::tag('code', Html::encode(substr($p['tx_hash'], 0, 10) . '…' . substr($p['tx_hash'], -6)), ['title' => $p['tx_hash']])],
@@ -46,11 +57,15 @@ if ($admin) array_unshift($columns, ['label' => Yii::t('app', 'Merchant'), 'valu
             <?= Html::label(Html::encode(Yii::t('app', 'To')), 'payments-to', ['class' => 'form-label']) ?>
             <?= Html::input('date', 'to', $filters['to'], ['class' => 'form-control', 'id' => 'payments-to']) ?>
         </div>
-        <div class="col-md-4">
+        <div class="col-md-3">
             <?= Html::label(Html::encode(Yii::t('app', 'Store')), 'payments-store', ['class' => 'form-label']) ?>
             <?= Html::dropDownList('store', $filters['store'], $stores, ['class' => 'form-select', 'id' => 'payments-store', 'prompt' => Yii::t('app', 'All stores')]) ?>
         </div>
-        <div class="col-md-2">
+        <div class="col-6 col-md-1">
+            <?= Html::label(Html::encode(Yii::t('app', 'Method')), 'payments-method', ['class' => 'form-label']) ?>
+            <?= Html::dropDownList('method', $filters['method'], $methods, ['class' => 'form-select', 'id' => 'payments-method', 'prompt' => Yii::t('app', 'All')]) ?>
+        </div>
+        <div class="col-6 col-md-2">
             <?= Html::label(Html::encode(Yii::t('app', 'Status')), 'payments-state', ['class' => 'form-label']) ?>
             <?= Html::dropDownList('state', $filters['state'], $states, ['class' => 'form-select', 'id' => 'payments-state', 'prompt' => Yii::t('app', 'All')]) ?>
         </div>
@@ -70,6 +85,21 @@ if ($admin) array_unshift($columns, ['label' => Yii::t('app', 'Merchant'), 'valu
                 </div>
             <?php endforeach; ?>
         </div>
+        <?php foreach ($btcTotals as $currency => $btc): ?>
+        <div class="row g-3 mt-1 pt-2 border-top" data-btc-totals="<?= Html::encode($currency) ?>">
+            <div class="col-6 col-md">
+                <div class="text-secondary small"><?= Html::encode(Yii::t('app', 'BTC collected')) ?> <span class="badge bg-secondary-lt ms-1"><?= (int) $btc['paid']['count'] ?></span></div>
+                <div class="h3 mb-0 text-success" data-total-btc-paid><?= Html::encode(Yii::$app->formatter->asDecimal($btc['paid']['cents'] / 100, 2) . ' ' . $currency) ?></div>
+                <div class="small text-secondary" data-total-btc><?= Html::encode(PosPaymentsController::btc($btc['paid']['satoshis'])) ?> BTC</div>
+            </div>
+            <?php foreach (['pending' => ['text-blue', 'Pending'], 'expired' => ['text-secondary', 'Expired'], 'cancelled' => ['text-danger', 'Not completed']] as $state => [$color, $label]): ?>
+            <div class="col-6 col-md">
+                <div class="text-secondary small"><?= Html::encode('BTC · ' . Yii::t('app', $label)) ?></div>
+                <div class="h3 mb-0 <?= $color ?>"><?= (int) $btc[$state] ?></div>
+            </div>
+            <?php endforeach; ?>
+        </div>
+        <?php endforeach; ?>
     </div>
     <?= GridView::widget([
         'dataProvider' => $payments,
