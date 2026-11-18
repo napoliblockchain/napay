@@ -47,6 +47,18 @@ try {
         check($safe, 'No grant option, no schema-wide application grant: ' . $user);
     }
     $stage = 'web boundary';
+    $web->query('SELECT * FROM pos_btc_payments WHERE 1=0')->fetchAll();
+    $web->exec('UPDATE pos_btc_payments SET version=version WHERE 1=0');
+    $web->exec('INSERT INTO pos_btc_payments (id) SELECT id FROM pos_btc_payments WHERE 1=0');
+    check(true, 'Web can read, insert and update POS BTC payments');
+    denied($web, 'DELETE FROM pos_btc_payments WHERE 1=0', 'Web cannot delete POS BTC payment history');
+    foreach (['SELECT * FROM pos_btc_payments', 'INSERT INTO pos_btc_payments (id) VALUES (1)', 'UPDATE pos_btc_payments SET version=version WHERE 1=0', 'DELETE FROM pos_btc_payments WHERE 1=0'] as $n => $sql) {
+        denied($worker, $sql, 'Provisioning worker has no BTC payment access: ' . $n);
+    }
+    $migrator->query('SELECT * FROM pos_btc_payments WHERE 1=0')->fetchAll();
+    $migrator->exec('ALTER TABLE pos_btc_payments ADD COLUMN role_probe INT NULL');
+    $migrator->exec('ALTER TABLE pos_btc_payments DROP COLUMN role_probe');
+    check(true, 'Migrator can inspect and migrate POS BTC ledger');
     foreach (['users', 'merchants', 'stores', 'pos_terminals', 'pos_operators', 'pos_store_operators', 'pos_operator_invitations', 'membership_payments', 'logs'] as $table) {
         $web->query("SELECT * FROM $table WHERE 1=0")->fetchAll(); check(true, 'Web reads application table: ' . $table);
     }
