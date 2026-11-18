@@ -66,7 +66,7 @@ $newStore = static function (int $merchant, string $name, ?int $archived = null)
     $db->createCommand()->insert('stores', ['merchant_id' => $merchant, 'description' => $name, 'email' => 'logo@example.invalid', 'phone' => '', 'mobile' => '',
         'addressStreet' => '', 'addressNumberHouse' => '', 'addressCity' => '', 'addressZip' => '', 'addressProvince' => '', 'addressCountry' => '', 'archived_at' => $archived])->execute();
     $id = (int) $db->lastInsertID;
-    $db->createCommand()->insert('storesettings', ['store_id' => $id, 'defaultCurrency' => 'EUR', 'customLogo' => 'https://napay.example.invalid/bundles/site/images/logobrand-294.png'])->execute();
+    $db->createCommand()->insert('storesettings', ['store_id' => $id, 'defaultCurrency' => 'EUR', 'customLogo' => 'https://napay.example.invalid/brand/logo-wordmark.png'])->execute();
     return $id;
 };
 $active1 = $newStore($merchantA, 'Logo negozio 1');
@@ -80,7 +80,7 @@ check(preg_match('#data-napay-company-link[^>]*href="(/merchants/view\?id=[^"]+)
 $companyView = html_entity_decode($m[1] !== '' ? $m[1] : $m[2]);
 $company = web($companyView);
 check($company['status'] === 200 && str_contains($company['body'], 'tab-logo') && str_contains($company['body'], 'Carica logo')
-    && str_contains($company['body'], 'bundles/site/images/logobrand-294.png'), 'Company page has the Logo tab with the Napay logo until one is uploaded');
+    && str_contains($company['body'], 'brand/logo-wordmark.png'), 'Company page has the Logo tab with the Napay logo until one is uploaded');
 check(web(form_action($company, 'logo'))['status'] === 405, 'Logo upload only by POST');
 check(web(form_action($company, 'logo'), ['x' => '1'], png("$work/nocsrf.png", 100, 50))['status'] === 400, 'Logo upload requires CSRF');
 
@@ -95,7 +95,7 @@ foreach ([
     $r = $upload($make());
     $next = web($companyView);
     check($r['status'] === 302 && str_contains(html_entity_decode($next['body'], ENT_QUOTES | ENT_HTML5), $message) && scalar('SELECT COUNT(*) FROM merchant_logos') == 0
-        && str_ends_with($logoOf($active1), 'logobrand-294.png'), 'Refused, nothing saved: ' . $label);
+        && str_ends_with($logoOf($active1), 'logo-wordmark.png'), 'Refused, nothing saved: ' . $label);
 }
 
 // --- PNG valido con dati in coda: ricodificato, ridimensionato, propagato ai soli negozi attivi del merchant
@@ -105,8 +105,8 @@ check($r['status'] === 302 && str_contains(header_of($r, 'Location'), '/merchant
     && str_starts_with($row['content'], "\x89PNG\r\n\x1a\n") && !str_contains($row['content'], 'payload') && hash('sha256', $row['content']) === $row['sha256'],
     'PNG re-encoded by Napay (trailing data dropped), scaled to fit 600x200, addressed by its SHA-256');
 $url = $logoOf($active1);
-check(str_ends_with($url, '/merchant-logo/view?id=' . $row['sha256']) && $logoOf($active2) === $url && str_ends_with($logoOf($archived), 'logobrand-294.png')
-    && str_ends_with($logoOf($foreign), 'logobrand-294.png'), 'Active stores of the merchant use the new logo; archived store and other merchant untouched');
+check(str_ends_with($url, '/merchant-logo/view?id=' . $row['sha256']) && $logoOf($active2) === $url && str_ends_with($logoOf($archived), 'logo-wordmark.png')
+    && str_ends_with($logoOf($foreign), 'logo-wordmark.png'), 'Active stores of the merchant use the new logo; archived store and other merchant untouched');
 $public = web(parse_url($url, PHP_URL_PATH) . '?' . parse_url($url, PHP_URL_QUERY), null, null, true);
 check($public['status'] === 200 && $public['body'] === $row['content'] && header_of($public, 'Content-Type') === 'image/png' && header_of($public, 'X-Content-Type-Options') === 'nosniff'
     && header_of($public, 'Cross-Origin-Resource-Policy') === 'cross-origin' && str_contains(header_of($public, 'Cache-Control'), 'immutable')
@@ -144,7 +144,7 @@ check(preg_match_all('/public function action(Logo|LogoDelete)\(\$id\)\s*\{\s*\$
 // --- rimozione: negozi di nuovo col logo di Napay, indirizzo pubblico non più servito
 $page = web($companyView);
 $r = web(form_action($page, 'logo-delete'), ['_csrf' => csrf($page)]);
-check($r['status'] === 302 && (int) scalar('SELECT COUNT(*) FROM merchant_logos') === 0 && str_ends_with($logoOf($active1), 'logobrand-294.png')
-    && str_ends_with($logoOf($created), 'logobrand-294.png') && web('/merchant-logo/view?id=' . $sha, null, null, true)['status'] === 404,
+check($r['status'] === 302 && (int) scalar('SELECT COUNT(*) FROM merchant_logos') === 0 && str_ends_with($logoOf($active1), 'logo-wordmark.png')
+    && str_ends_with($logoOf($created), 'logo-wordmark.png') && web('/merchant-logo/view?id=' . $sha, null, null, true)['status'] === 404,
     'Logo removed: stores back to the Napay logo, public address gone');
 echo "PASS $checks merchant logo checks\n";

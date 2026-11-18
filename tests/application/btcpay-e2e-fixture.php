@@ -39,7 +39,7 @@ try {
                 'paymentTolerance' => 0, 'anyoneCanCreateInvoice' => 0, 'requiresRefundEmail' => 0, 'checkoutType' => 'V1',
                 'receipt' => json_encode(['enabled' => 1, 'showQR' => 1, 'showPayments' => 1]), 'lightningAmountInSatoshi' => 0, 'lightningPrivateRouteHints' => 0,
                 'onChainWithLnInvoiceFallback' => 0, 'redirectAutomatically' => 0, 'showRecommendedFee' => 0, 'recommendedFeeBlockTarget' => 0, 'defaultLang' => 'it-IT',
-                'customLogo' => 'https://napay.example.invalid/bundles/site/images/logobrand-294.png', 'customCSS' => null, 'website' => 'www.negozio-e2e.example',
+                'customLogo' => 'https://napay.example.invalid/brand/logo-wordmark.png', 'customCSS' => null, 'website' => 'www.negozio-e2e.example',
                 'htmlTitle' => 'Attesa pagamento in cryptovaluta...', 'networkFeeMode' => 'Always', 'payJoinEnabled' => 0, 'lazyPaymentMethods' => 0, 'defaultPaymentMethod' => 'BTC-CHAIN'])->execute();
             $terminal = new app\models\PosTerminals(['merchant_id' => $m['id'], 'store_id' => $store, 'name' => 'E2E cassa ' . $label]);
             if (!$terminal->save()) exit(1);

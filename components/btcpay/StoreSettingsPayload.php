@@ -37,8 +37,8 @@ final class StoreSettingsPayload
         'htmlTitle' => 'Attesa pagamento in cryptovaluta...',
         'receipt' => ['enabled' => true, 'showQR' => true, 'showPayments' => true],
     ];
-    /** Logo di Napay per i negozi senza un logo proprio (percorso sotto @web). */
-    public const DEFAULT_LOGO = '/bundles/site/images/logobrand-294.png';
+    /** Logo di Napay (icona e scritta del marchio attuale) per i negozi senza un logo proprio (percorso sotto @web). */
+    public const DEFAULT_LOGO = '/brand/logo-wordmark.png';
     private const MAX_URL = 255;
 
     /** @param array $settings riga di `storesettings` (array associativo); valori non validi omessi */
