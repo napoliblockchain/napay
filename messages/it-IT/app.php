@@ -616,4 +616,6 @@ return [
     'Payment address' => 'Indirizzo di pagamento',
     'Error' => 'Errore',
     'Transactions' => 'Transazioni',
+    'Price' => 'Prezzo',
+    'Price currency' => 'Valuta prezzo',
 ];

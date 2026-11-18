@@ -39,6 +39,8 @@ $attributes = $payment['method'] === 'btc' ? [
 ] : [
     ['label' => Yii::t('app', 'Method'), 'value' => 'TTS'],
     ['label' => Yii::t('app', 'Amount'), 'value' => Yii::$app->formatter->asDecimal((int) $payment['amount_cents'] / 100, 2) . ' TTS'],
+    ['label' => Yii::t('app', 'Price'), 'value' => Yii::$app->formatter->asDecimal((int) $payment['fiat_cents'] / 100, 2) . ' EUR'],
+    ['label' => Yii::t('app', 'Rate'), 'value' => '1 TTS = ' . Yii::$app->formatter->asDecimal((int) $payment['rate_cents'] / 100, 2) . ' EUR'],
     ['label' => Yii::t('app', 'Status'), 'format' => 'raw', 'value' => $this->render('_state', ['payment' => $payment])],
     ['label' => Yii::t('app', 'Store - POS'), 'value' => $payment['store'] . ' - ' . $payment['terminal']],
     ['label' => Yii::t('app', 'Operator'), 'value' => trim($payment['first_name'] . ' ' . $payment['last_name'])],

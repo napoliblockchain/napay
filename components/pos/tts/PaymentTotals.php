@@ -17,18 +17,20 @@ final class PaymentTotals
     /**
      * Uno per stato, anche a zero, più "lost" (SIP-031): pagati su un wallet segnalato perso e non ritrovato,
      * tolti da "paid" (incassato) e contati a parte come fondi persi.
-     * @return array<string, array{count:int, cents:int}>
+     * @return array<string, array{count:int, cents:int, fiat:int}> cents = TTS, fiat = prezzo in EUR (cambio della richiesta)
      */
     public static function byState(Query $filtered): array
     {
-        $rows = (clone $filtered)->select(['state' => 'p.state', 'lost' => LostWallets::lostCondition('p'), 'n' => 'COUNT(*)', 'cents' => 'COALESCE(SUM(p.amount_cents), 0)'])
+        $rows = (clone $filtered)->select(['state' => 'p.state', 'lost' => LostWallets::lostCondition('p'), 'n' => 'COUNT(*)', 'cents' => 'COALESCE(SUM(p.amount_cents), 0)',
+            'fiat' => 'COALESCE(SUM(p.fiat_cents), 0)'])
             ->orderBy(null)->groupBy(['p.state', 'lost'])->all();
-        $totals = array_fill_keys([...self::STATES, 'lost'], ['count' => 0, 'cents' => 0]);
+        $totals = array_fill_keys([...self::STATES, 'lost'], ['count' => 0, 'cents' => 0, 'fiat' => 0]);
         foreach ($rows as $row) {
             $key = $row['state'] === 'paid' && (int) $row['lost'] === 1 ? 'lost' : $row['state'];
             if (!isset($totals[$key])) continue;
             $totals[$key]['count'] += (int) $row['n'];
             $totals[$key]['cents'] += (int) $row['cents'];
+            $totals[$key]['fiat'] += (int) $row['fiat'];
         }
         return $totals;
     }

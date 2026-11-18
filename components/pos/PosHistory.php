@@ -13,7 +13,8 @@ use app\models\PosOperatorSessions;
  */
 final class PosHistory
 {
-    public const ITEM = ['id', 'method', 'amount', 'currency', 'state', 'created_at', 'paid_at', 'tx_hash', 'rate', 'paid_btc', 'own'];
+    /** amount/currency = quanto paga il cliente (TTS o valuta del negozio); fiat_amount = prezzo in valuta; rate = valuta per 1 TTS o 1 BTC */
+    public const ITEM = ['id', 'method', 'amount', 'currency', 'fiat_amount', 'state', 'created_at', 'paid_at', 'tx_hash', 'rate', 'paid_btc', 'own'];
 
     /** @return array{payments: list<array>, totals: array} */
     public static function forOpening(PosOperatorSessions $session, string $openingId): array
@@ -23,8 +24,9 @@ final class PosHistory
         $opening = TerminalOpenings::requireActive($session, $openingId);
         $terminal = (int) $opening['terminal_id'];
         $items = [];
-        foreach ($tts as $item) $items[] = ['id' => $item['id'], 'method' => 'tts', 'amount' => $item['amount'], 'currency' => $item['currency'], 'state' => $item['state'],
-            'created_at' => $item['created_at'], 'paid_at' => $item['paid_at'], 'tx_hash' => $item['tx_hash'], 'rate' => null, 'paid_btc' => null, 'own' => $item['own']];
+        foreach ($tts as $item) $items[] = ['id' => $item['id'], 'method' => 'tts', 'amount' => $item['amount'], 'currency' => $item['currency'], 'fiat_amount' => $item['fiat_amount'],
+            'state' => $item['state'], 'created_at' => $item['created_at'], 'paid_at' => $item['paid_at'], 'tx_hash' => $item['tx_hash'], 'rate' => $item['rate'], 'paid_btc' => null,
+            'own' => $item['own']];
         foreach (BtcPayments::history($terminal, (int) $session->id, time() - TtsPayments::HISTORY_DAYS * 86400, TtsPayments::HISTORY_LIMIT) as $item) $items[] = $item;
         // ordinamento stabile (PHP 8): a parità di secondo resta l'ordine di ciascuna tabella (ID decrescente)
         usort($items, static fn(array $a, array $b): int => $b['created_at'] <=> $a['created_at']);
@@ -36,7 +38,7 @@ final class PosHistory
     {
         $since = (new \DateTimeImmutable('@' . ($now ?? time())))->setTimezone(new \DateTimeZone('Europe/Rome'))->setTime(0, 0)->getTimestamp();
         $db = Yii::$app->db;
-        $tts = $db->createCommand("SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS cents FROM {{%pos_tts_payments}} WHERE terminal_id=:t AND state='paid' AND paid_at >= :s",
+        $tts = $db->createCommand("SELECT COUNT(*) AS n, COALESCE(SUM(amount_cents), 0) AS cents, COALESCE(SUM(fiat_cents), 0) AS fiat FROM {{%pos_tts_payments}} WHERE terminal_id=:t AND state='paid' AND paid_at >= :s",
             [':t' => $terminalId, ':s' => $since])->queryOne();
         $btc = [];
         foreach ($db->createCommand("SELECT currency, COUNT(*) AS n, SUM(amount_cents) AS cents, SUM(COALESCE(paid_satoshis, amount_satoshis, 0)) AS sats FROM {{%pos_btc_payments}}
@@ -44,7 +46,7 @@ final class PosHistory
             [':t' => $terminalId, ':s' => $since])->queryAll() as $row) {
             $btc[] = ['currency' => $row['currency'], 'count' => (int) $row['n'], 'amount' => self::amount((int) $row['cents']), 'btc' => self::btc((int) $row['sats'])];
         }
-        return ['since' => $since, 'tts' => ['count' => (int) $tts['n'], 'amount' => self::amount((int) $tts['cents'])], 'btc' => $btc];
+        return ['since' => $since, 'tts' => ['count' => (int) $tts['n'], 'amount' => self::amount((int) $tts['cents']), 'fiat_amount' => self::amount((int) $tts['fiat'])], 'btc' => $btc];
     }
 
     private static function amount(int $cents): string

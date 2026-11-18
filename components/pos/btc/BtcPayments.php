@@ -112,7 +112,8 @@ final class BtcPayments
         $items = [];
         foreach ($rows as $row) {
             $received = $row['processing_at'] ?? $row['settled_at'];
-            $items[] = ['id' => $row['public_id'], 'method' => 'btc', 'amount' => self::amount((int) $row['amount_cents']), 'currency' => $row['currency'], 'state' => $row['state'],
+            $items[] = ['id' => $row['public_id'], 'method' => 'btc', 'amount' => self::amount((int) $row['amount_cents']), 'currency' => $row['currency'],
+                'fiat_amount' => self::amount((int) $row['amount_cents']), 'state' => $row['state'],
                 'created_at' => (int) $row['created_at'], 'paid_at' => $received === null ? null : (int) $received,
                 'tx_hash' => $row['txids'] === null ? null : explode(',', $row['txids'])[0],
                 'rate' => $row['rate_cents'] === null ? null : self::amount((int) $row['rate_cents']),

@@ -86,7 +86,7 @@ class PosPaymentsController extends Controller
         fwrite($out, "\xEF\xBB\xBF");
         $header = [Yii::t('app', 'Date'), Yii::t('app', 'Method'), Yii::t('app', 'Store'), Yii::t('app', 'POS'), Yii::t('app', 'Operator'), Yii::t('app', 'Amount'),
             Yii::t('app', 'Currency'), Yii::t('app', 'Status'), Yii::t('app', 'Paid at'), Yii::t('app', 'Transaction'), Yii::t('app', 'Lost funds'),
-            Yii::t('app', 'Rate (1 BTC)'), Yii::t('app', 'BTC paid'), Yii::t('app', 'ID')];
+            Yii::t('app', 'Price'), Yii::t('app', 'Price currency'), Yii::t('app', 'Rate'), Yii::t('app', 'BTC paid'), Yii::t('app', 'ID')];
         if ($this->scope->isAdmin()) array_unshift($header, Yii::t('app', 'Merchant'));
         fputcsv($out, $header, ';', '"', '');
         foreach (self::merged($tts, $btc)->limit(self::EXPORT_LIMIT)->each(500) as $row) {
@@ -94,6 +94,7 @@ class PosPaymentsController extends Controller
                 number_format((int) $row['amount_cents'] / 100, 2, ',', ''), $row['currency'], $row['state'],
                 $row['paid_at'] === null ? '' : date('Y-m-d H:i:s', (int) $row['paid_at']), (string) $row['tx_hash'],
                 $row['state'] === 'paid' && (int) $row['lost'] === 1 ? Yii::t('app', 'Yes') : '',
+                number_format((int) $row['fiat_cents'] / 100, 2, ',', ''), $row['method'] === 'tts' ? 'EUR' : $row['currency'],
                 $row['rate_cents'] === null ? '' : number_format((int) $row['rate_cents'] / 100, 2, ',', ''),
                 $row['paid_satoshis'] === null ? '' : self::btc((int) $row['paid_satoshis']), $row['public_id']];
             if ($this->scope->isAdmin()) array_unshift($line, $row['merchant']);
@@ -142,7 +143,8 @@ class PosPaymentsController extends Controller
             'method' => new Expression($tts ? "'tts'" : "'btc'"), 'p.public_id', 'p.amount_cents', 'currency' => $tts ? new Expression("'TTS'") : 'p.currency', 'p.state',
             'to_address' => $tts ? 'p.to_address' : $null, 'tx_hash' => $tts ? 'p.tx_hash' : 'p.txids', 'paid_block' => $tts ? 'p.paid_block' : $null,
             'paid_at' => $tts ? 'p.paid_at' : new Expression('COALESCE(p.processing_at, p.settled_at)'), 'p.closed_at', 'p.created_at', 'p.expires_at',
-            'rate_cents' => $tts ? $null : 'p.rate_cents', 'order_satoshis' => $tts ? $null : 'p.order_satoshis', 'paid_satoshis' => $tts ? $null : 'p.paid_satoshis',
+            // cambio: EUR per 1 TTS o valuta per 1 BTC; fiat_cents = prezzo nella valuta (BTC: l'importo stesso)
+            'rate_cents' => 'p.rate_cents', 'fiat_cents' => $tts ? 'p.fiat_cents' : 'p.amount_cents', 'order_satoshis' => $tts ? $null : 'p.order_satoshis', 'paid_satoshis' => $tts ? $null : 'p.paid_satoshis',
             'amount_satoshis' => $tts ? $null : 'p.amount_satoshis', 'btc_address' => $tts ? $null : 'p.btc_address', 'confirmations' => $tts ? $null : 'p.confirmations',
             'settled_at' => $tts ? $null : 'p.settled_at', 'last_error_code' => $tts ? $null : 'p.last_error_code',
             'store' => 's.description', 'terminal' => 't.name', 'u.first_name', 'u.last_name', 'merchant' => 'm.description',

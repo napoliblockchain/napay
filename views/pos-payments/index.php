@@ -18,10 +18,12 @@ $this->params['breadcrumbs'][] = $this->title;
 $states = ['pending' => Yii::t('app', 'Pending'), 'paid' => Yii::t('app', 'Paid'), 'expired' => Yii::t('app', 'Expired'), 'cancelled' => Yii::t('app', 'Cancelled')];
 $query = array_filter($filters, static fn($v) => $v !== '');
 $methods = ['tts' => 'TTS', 'btc' => 'BTC'];
-// SIP-033: importo nella valuta del pagamento; per i BTC anche BTC pagati e cambio
+// SIP-033: importo pagato dal cliente; sotto, per i TTS prezzo in EUR e cambio, per i BTC BTC pagati e cambio
 $amount = static function (array $p): string {
     $text = Html::encode(Yii::$app->formatter->asDecimal((int) $p['amount_cents'] / 100, 2) . ' ' . $p['currency']);
-    if ($p['method'] !== 'btc' || ($p['paid_satoshis'] === null && $p['rate_cents'] === null)) return $text;
+    if ($p['method'] === 'tts') return $text . Html::tag('div', Html::encode(Yii::$app->formatter->asDecimal((int) $p['fiat_cents'] / 100, 2) . ' EUR · 1 TTS = '
+        . Yii::$app->formatter->asDecimal((int) $p['rate_cents'] / 100, 2) . ' EUR'), ['class' => 'small text-secondary']);
+    if ($p['paid_satoshis'] === null && $p['rate_cents'] === null) return $text;
     $detail = array_filter([$p['paid_satoshis'] === null || (int) $p['paid_satoshis'] === 0 ? null : PosPaymentsController::btc((int) $p['paid_satoshis']) . ' BTC',
         $p['rate_cents'] === null ? null : '1 BTC = ' . Yii::$app->formatter->asDecimal((int) $p['rate_cents'] / 100, 2) . ' ' . $p['currency']]);
     return $text . ($detail === [] ? '' : Html::tag('div', Html::encode(implode(' · ', $detail)), ['class' => 'small text-secondary']));
@@ -87,6 +89,7 @@ if ($admin) array_unshift($columns, ['label' => Yii::t('app', 'Merchant'), 'valu
                 <div class="col">
                     <div class="text-secondary small"><?= Html::encode(Yii::t('app', $label)) ?> <span class="badge bg-secondary-lt ms-1"><?= (int) $totals[$state]['count'] ?></span></div>
                     <div class="h3 mb-0 <?= $color ?>" data-total-<?= $state ?>><?= Html::encode(PaymentTotals::format($totals[$state]['cents'])) ?></div>
+                    <div class="small text-secondary" data-total-<?= $state ?>-eur><?= Html::encode(Yii::$app->formatter->asDecimal($totals[$state]['fiat'] / 100, 2)) ?> EUR</div>
                 </div>
             <?php endforeach; ?>
         </div>

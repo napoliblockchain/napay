@@ -225,9 +225,22 @@ if ($phase === 'setup') {
     $idem = uuid();
     $r = pay($u, $oA, 1234, $idem);
     $p = $r['json'];
-    check($r['status'] === 201 && array_keys($p) === ['id', 'opening_id', 'amount', 'currency', 'state', 'to_address', 'expires_at', 'qr', 'tx_hash', 'paid_at']
+    check($r['status'] === 201 && array_keys($p) === ['id', 'opening_id', 'amount', 'currency', 'fiat_amount', 'fiat_currency', 'rate', 'state', 'to_address', 'expires_at', 'qr', 'tx_hash', 'paid_at']
         && $p['amount'] === '12.34' && $p['currency'] === 'TTS' && $p['state'] === 'pending' && $p['to_address'] === $wallet && $p['opening_id'] === $oA['id']
         && $p['tx_hash'] === null && noLeak($r), 'Payment created: 201, exact projection, destination resolved by backend');
+    check($p['fiat_amount'] === '12.34' && $p['fiat_currency'] === 'EUR' && $p['rate'] === '1.00' && (int) payment($p['id'])['fiat_cents'] === 1234 && (int) payment($p['id'])['rate_cents'] === 100,
+        'Default rate 1 TTS = 1 EUR: price, rate and TTS kept on the request');
+    // cambio TTS/EUR (TTS_EUR_RATE): per eccesso al centesimo, configurazione non valida = incasso non disponibile
+    $rateEnv = getenv('TTS_EUR_RATE');
+    $rates = [];
+    foreach (['' => 100, '1.5' => 150, '0.80' => 80, '2' => 200, 'abc' => null, '1.234' => null, '-1' => null, '0' => null, '0.00' => null] as $value => $expected) {
+        putenv('TTS_EUR_RATE=' . $value);
+        $rates[] = app\components\pos\tts\TtsRate::current() === $expected;
+    }
+    $rateEnv === false ? putenv('TTS_EUR_RATE') : putenv('TTS_EUR_RATE=' . $rateEnv);
+    check(!in_array(false, $rates, true), 'TTS_EUR_RATE: two decimals at most, empty = 1.00, anything else refused');
+    check(app\components\pos\tts\TtsRate::tts(1234, 150) === 823 && app\components\pos\tts\TtsRate::tts(1200, 150) === 800 && app\components\pos\tts\TtsRate::tts(1, 300) === 1
+        && app\components\pos\tts\TtsRate::tts(1000, 80) === 1250, 'EUR to TTS rounded up to the cent (12,34 EUR at 1,50 = 8,23 TTS; never less than the price)');
     $row = payment($p['id']);
     check($p['qr'] === $wallet . '&amount=12.34&message=napay:' . $row['reference'] && preg_match('/^[0-9a-f]{32}$/', $row['reference']) === 1
         && (int) $row['expires_at'] - (int) $row['created_at'] === 900 && (int) $row['start_block'] > 0, 'QR in wallet format with random reference, 15 minutes validity, start block recorded');
@@ -252,11 +265,11 @@ if ($phase === 'setup') {
     $r = api('GET', 'openings/' . $oA['id'] . '/payments', $u);
     $list = $r['json']['payments'] ?? [];
     check($r['status'] === 200 && array_keys($r['json']) === ['payments', 'totals'] && count($list) === 7 && array_column($list, 'id') === array_reverse(array_column($created, 'id'))
-        && array_keys($list[0]) === ['id', 'method', 'amount', 'currency', 'state', 'created_at', 'paid_at', 'tx_hash', 'rate', 'paid_btc', 'own'] && noLeak($r)
+        && array_keys($list[0]) === app\components\pos\PosHistory::ITEM && $list[6]['fiat_amount'] === '12.34' && $list[6]['rate'] === '1.00' && noLeak($r)
         && array_unique(array_column($list, 'method')) === ['tts'], 'History: seven payments of the terminal, newest first, exact projection with the method');
     $paidToday = $db->createCommand("SELECT COUNT(*) n, COALESCE(SUM(amount_cents),0) c FROM pos_tts_payments WHERE terminal_id=(SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o) AND state='paid'", [':o' => $oA['id']])->queryOne();
     $totals = $r['json']['totals'];
-    check(array_keys($totals) === ['since', 'tts', 'btc'] && $totals['tts']['count'] === (int) $paidToday['n']
+    check(array_keys($totals) === ['since', 'tts', 'btc'] && array_keys($totals['tts']) === ['count', 'amount', 'fiat_amount'] && $totals['tts']['count'] === (int) $paidToday['n']
         && $totals['tts']['amount'] === sprintf('%d.%02d', intdiv((int) $paidToday['c'], 100), (int) $paidToday['c'] % 100) && $totals['btc'] === [] && $totals['since'] <= time(),
         'Totals of today: paid TTS only (count and amount), no BTC on this POS');
     check($list[0]['state'] === 'cancelled' && $list[6]['amount'] === '12.34' && $list[6]['own'] === true && !str_contains($r['body'], payment($created['ok']['id'])['reference']) && !str_contains($r['body'], $wallet),
@@ -326,7 +339,8 @@ if ($phase === 'verify') {
     check($r['status'] === 200 && count($byId) === 7 && $byId[$p['ok']['id']]['state'] === 'paid' && $byId[$p['ok']['id']]['tx_hash'] === $tx['ok']
         && $byId[$p['late']['id']]['state'] === 'expired' && $byId[$p['ok']['id']]['own'] === false, 'Next opening of the terminal sees its history, not owned');
     $paid = $db->createCommand("SELECT COUNT(*) n, COALESCE(SUM(amount_cents),0) c FROM pos_tts_payments WHERE terminal_id=(SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o) AND state='paid'", [':o' => $o2['id']])->queryOne();
-    check((int) $paid['n'] >= 1 && $r['json']['totals']['tts'] === ['count' => (int) $paid['n'], 'amount' => sprintf('%d.%02d', intdiv((int) $paid['c'], 100), (int) $paid['c'] % 100)],
+    check((int) $paid['n'] >= 1 && $r['json']['totals']['tts'] === ['count' => (int) $paid['n'], 'amount' => sprintf('%d.%02d', intdiv((int) $paid['c'], 100), (int) $paid['c'] % 100),
+        'fiat_amount' => sprintf('%d.%02d', intdiv((int) $paid['c'], 100), (int) $paid['c'] % 100)],
         'Totals of today count the paid TTS payments of the terminal');
     $db->createCommand("UPDATE pos_tts_payments SET created_at=created_at-2000, expires_at=created_at+10 WHERE public_id IN (:a,:b)", [':a' => $p['wrong_amount']['id'], ':b' => $p['no_ref']['id']])->execute();
     check((int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='pending' AND expires_at < UNIX_TIMESTAMP()") === 2, 'Two pending payments left past expiry for the one-shot sweep');

@@ -11,6 +11,8 @@ services:
       TTS_RPC_URL: "${NAPAY_LOCAL_TTS_RPC_URL:-}"
       TTS_CHAIN_ID: "${NAPAY_LOCAL_TTS_CHAIN_ID:-}"
       TTS_TOKEN_ADDRESS: "${NAPAY_LOCAL_TTS_TOKEN_ADDRESS:-}"
+      # cambio TTS/EUR degli incassi POS (EUR per 1 TTS); assente = 1.00
+      TTS_EUR_RATE: "${NAPAY_LOCAL_TTS_EUR_RATE:-1.00}"
       # SIP-022 xpub: BTCPay della sandbox in regtest (indirizzi bcrt1, chiavi tpub/upub/vpub)
       BTCPAY_BTC_NETWORK: regtest
     networks: !override

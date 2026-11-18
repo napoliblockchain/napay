@@ -33,13 +33,16 @@ final class TtsPayments
 
     /**
      * Creazione con chiave di idempotenza (per sessione). Replay = stessa richiesta in qualunque stato.
+     * $amountCents = prezzo in EUR digitato dal cassiere; i TTS da pagare sono convertiti al cambio corrente (TtsRate),
+     * per eccesso, e la richiesta conserva prezzo, cambio e TTS.
      * @return array{0:int, 1:array} [201 nuova | 200 replay, richiesta pubblica]
      */
     public static function create(PosOperatorSessions $session, string $openingId, string $instanceId, string $generation, int $amountCents, string $idempotencyKey): array
     {
         if (preg_match(self::UUID, $idempotencyKey) !== 1 || $amountCents < 1 || $amountCents > self::MAX_CENTS) throw new \InvalidArgumentException('invalid_payment');
         $chain = TtsChain::fromEnv();
-        if ($chain === null) throw new PaymentException(PaymentException::UNAVAILABLE);
+        $rate = TtsRate::current();
+        if ($chain === null || $rate === null) throw new PaymentException(PaymentException::UNAVAILABLE);
         $db = Yii::$app->db;
         $key = hash('sha256', $idempotencyKey);
         $request = hash('sha256', $openingId . '|' . $amountCents);
@@ -52,7 +55,7 @@ final class TtsPayments
         if ($wallet === false) throw new PaymentException(PaymentException::UNAVAILABLE);
         // blocco di partenza letto prima della transazione: nessuna chiamata di rete sotto lock
         $startBlock = $chain->blockNumber();
-        return self::transaction($db, static function () use ($db, $session, $opening, $openingId, $instanceId, $generation, $amountCents, $key, $request, $startBlock) {
+        return self::transaction($db, static function () use ($db, $session, $opening, $openingId, $instanceId, $generation, $amountCents, $key, $request, $startBlock, $rate) {
             $merchant = (int) $opening['merchant_id'];
             $db->createCommand('SELECT id FROM {{%merchants}} WHERE id=:id FOR UPDATE', [':id' => $merchant])->queryScalar();
             $terminal = $db->createCommand('SELECT id, store_id FROM {{%pos_terminals}} WHERE id=:id AND merchant_id=:m FOR UPDATE',
@@ -71,7 +74,8 @@ final class TtsPayments
             $now = time();
             $row = ['public_id' => self::uuid(), 'merchant_id' => $merchant, 'store_id' => (int) $terminal['store_id'], 'terminal_id' => (int) $terminal['id'],
                 'opening_id' => (int) $locked['id'], 'session_id' => (int) $session->id, 'user_id' => (int) $session->user_id,
-                'amount_cents' => $amountCents, 'to_address' => $wallet, 'reference' => bin2hex(random_bytes(16)), 'start_block' => $startBlock,
+                // TTS oltre il massimo per richiesta (cambio sotto 1 EUR): rifiutata come importo non valido
+                'amount_cents' => self::ttsCents($amountCents, $rate), 'fiat_cents' => $amountCents, 'rate_cents' => $rate, 'to_address' => $wallet, 'reference' => bin2hex(random_bytes(16)), 'start_block' => $startBlock,
                 'state' => 'pending', 'idempotency_sha256' => $key, 'request_sha256' => $request, 'created_at' => $now, 'expires_at' => $now + self::TTL];
             $db->createCommand()->insert(self::TABLE, $row)->execute();
             return [201, self::publicPayment($row + ['tx_hash' => null, 'paid_at' => null], $openingId)];
@@ -100,7 +104,8 @@ final class TtsPayments
         $payments = [];
         foreach ($rows as $row) {
             if ($row['state'] === 'pending' && $settle-- > 0) $row = self::settle($row);
-            $payments[] = ['id' => $row['public_id'], 'amount' => self::amount((int) $row['amount_cents']), 'currency' => 'TTS', 'state' => $row['state'],
+            $payments[] = ['id' => $row['public_id'], 'amount' => self::amount((int) $row['amount_cents']), 'currency' => 'TTS',
+                'fiat_amount' => self::amount((int) $row['fiat_cents']), 'rate' => self::amount((int) $row['rate_cents']), 'state' => $row['state'],
                 'created_at' => (int) $row['created_at'], 'paid_at' => $row['paid_at'] === null ? null : (int) $row['paid_at'], 'tx_hash' => $row['tx_hash'],
                 'own' => (int) $row['session_id'] === (int) $session->id];
         }
@@ -243,10 +248,20 @@ final class TtsPayments
     }
 
     /** Proiezione pubblica: mai sessione, operatore o ID interni. QR nel formato letto dal wallet. */
+    private static function ttsCents(int $fiatCents, int $rate): int
+    {
+        $tts = TtsRate::tts($fiatCents, $rate);
+        if ($tts > self::MAX_CENTS) throw new \InvalidArgumentException('invalid_payment');
+        return $tts;
+    }
+
     private static function publicPayment(array $row, string $openingId): array
     {
         $amount = self::amount((int) $row['amount_cents']);
-        return ['id' => $row['public_id'], 'opening_id' => $openingId, 'amount' => $amount, 'currency' => 'TTS', 'state' => $row['state'],
+        return ['id' => $row['public_id'], 'opening_id' => $openingId, 'amount' => $amount, 'currency' => 'TTS',
+            // prezzo in EUR e cambio (EUR per 1 TTS) della richiesta
+            'fiat_amount' => self::amount((int) $row['fiat_cents']), 'fiat_currency' => TtsRate::FIAT, 'rate' => self::amount((int) $row['rate_cents']),
+            'state' => $row['state'],
             'to_address' => $row['to_address'], 'expires_at' => (int) $row['expires_at'],
             'qr' => $row['to_address'] . '&amount=' . $amount . '&message=' . self::MEMO_PREFIX . $row['reference'],
             'tx_hash' => $row['tx_hash'], 'paid_at' => $row['paid_at'] === null ? null : (int) $row['paid_at']];
