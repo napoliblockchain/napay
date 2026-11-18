@@ -95,9 +95,28 @@ final class BtcpayPosGateway implements PosInvoiceGateway
         $orderId = is_string($d['orderId'] ?? null) && strlen($d['orderId']) <= 64 ? $d['orderId'] : null;
         $seconds = is_int($d['expirationSeconds'] ?? null) && $d['expirationSeconds'] >= 0 && $d['expirationSeconds'] <= 86400 ? $d['expirationSeconds'] : null;
         $confirmations = is_int($d['receivedConfirmations'] ?? null) && $d['receivedConfirmations'] >= 0 ? min($d['receivedConfirmations'], 1000000) : 0;
+        // SIP-033 passo 5: importo dell'ordine (senza fee di rete), BTC già ricevuti, cambio usato da BTCPay
+        $order = is_string($d['orderAmount'] ?? null) ? self::satoshis($d['orderAmount']) : null;
+        $paid = ($d['paid'] ?? null) === '0.00000000' ? 0 : (is_string($d['paid'] ?? null) ? self::satoshis($d['paid']) : null);
         return ['invoice_id' => $d['invoiceId'], 'order_id' => $orderId, 'store_id' => $d['storeId'], 'currency' => $d['invoiceCurrency'], 'fiat_digits' => $fiat,
             'status' => strtolower($d['status']), 'address' => $address, 'due_satoshis' => $address === null ? null : $due, 'confirmations' => $confirmations,
-            'expires_in' => $seconds];
+            'expires_in' => $seconds, 'order_satoshis' => $order, 'paid_satoshis' => $paid, 'rate_cents' => is_string($d['rate'] ?? null) ? self::rateCents($d['rate']) : null];
+    }
+
+    /**
+     * Cambio formattato da BTCPay nella lingua dello store ("57 464,70 €", "$57,464.70", "¥8,500,000") -> centesimi per 1 BTC.
+     * Separatore decimale = ultimo punto o virgola seguito da esattamente 2 cifre; null se il formato non è riconosciuto.
+     * Il chiamante lo accetta solo se coerente con importo e satoshi dell'ordine.
+     */
+    public static function rateCents(string $text): ?int
+    {
+        if (strlen($text) > 64) return null;
+        $digits = preg_replace('/[^0-9.,]/', '', $text) ?? '';
+        if (preg_match('/^([0-9.,]*?)[.,]([0-9]{2})$/D', $digits, $m) === 1) [$whole, $cents] = [preg_replace('/[.,]/', '', $m[1]) ?? '', $m[2]];
+        else [$whole, $cents] = [preg_replace('/[.,]/', '', $digits) ?? '', '00'];
+        if ($whole === '' || strlen($whole) > 11 || preg_match('/^[0-9]+$/D', $whole) !== 1) return null;
+        $value = (int) $whole * 100 + (int) $cents;
+        return $value >= 1 ? $value : null;
     }
 
     /** "0.00024680" -> 24680 (aritmetica intera, mai float); formato inatteso = null. */

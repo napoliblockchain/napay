@@ -111,6 +111,16 @@ class m261118_100000_create_pos_btc_payments extends Migration
         return 'CREATE TABLE ' . $this->db->quoteTableName($this->table($table)) . ' (' . implode(', ', $parts) . ') ENGINE=InnoDB CHARACTER SET=utf8mb4 COLLATE=utf8mb4_0900_bin';
     }
 
+    /** SIP-033 passo 5 (m261118_150000): cambio e dettaglio BTC, colonne opzionali in coda e un vincolo. */
+    private const STEP5_COLUMNS = [
+        'rate_cents' => ['BIGINT NULL', 'bigint', 'YES', null, null, ''],
+        'order_satoshis' => ['BIGINT NULL', 'bigint', 'YES', null, null, ''],
+        'paid_satoshis' => ['BIGINT NULL', 'bigint', 'YES', null, null, ''],
+    ];
+    private const STEP5_CHECKS = [
+        'ck-pos-btc-payments-rates' => '(((rate_cents is null) or (rate_cents between 1 and 10000000000000)) and ((order_satoshis is null) or ((amount_satoshis is not null) and (order_satoshis between 1 and amount_satoshis))) and ((paid_satoshis is null) or (paid_satoshis between 0 and 2100000000000000)))',
+    ];
+
     private function verify(string $name): void
     {
         $definition = self::tables()[$name];
@@ -119,6 +129,11 @@ class m261118_100000_create_pos_btc_payments extends Migration
         if (!$row || $row['ENGINE'] !== 'InnoDB' || $row['TABLE_COLLATION'] !== 'utf8mb4_0900_bin') $this->incompatible();
         $columns = $this->db->createCommand('SELECT COLUMN_NAME,COLUMN_TYPE,IS_NULLABLE,COLUMN_DEFAULT,COLLATION_NAME,EXTRA FROM information_schema.COLUMNS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME=:t ORDER BY ORDINAL_POSITION', [':t' => $table])->queryAll();
         $expected = $definition['columns'];
+        // estensione additiva del passo 5 (m261118_150000): accettata solo esattamente com'è, in coda
+        if (array_column($columns, 'COLUMN_NAME') === array_merge(array_keys($expected), array_keys(self::STEP5_COLUMNS))) {
+            $expected += self::STEP5_COLUMNS;
+            $definition['checks'] += self::STEP5_CHECKS;
+        }
         if (array_column($columns, 'COLUMN_NAME') !== array_keys($expected)) $this->incompatible();
         foreach ($columns as $column) {
             [, $type, $nullable, $default, $collation, $extra] = $expected[$column['COLUMN_NAME']];

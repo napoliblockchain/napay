@@ -286,6 +286,10 @@ compose run --rm --no-deps -e "BTCPAY_PROVISION_INSTANCE=$instance" --entrypoint
     = "(True, 'created', True, True, '$remoteA', 'USD', '1234', 'new', True, True, {'outcome': 'rejected', 'code': 'app_missing'})" ] \
     || fail "POS gateway: $(cat "$work/w/gw.json")"
 pass 'SIP-033: Napay gateway via proxy and TLS creates the invoice with its orderId and reads the public status (address of the merchant xpub); unknown app refused'
+# script di prova BTC_USD = 60000: 12,34 USD = 20566,67 sat
+[ "$(json "(d['status']['rate_cents'], d['status']['order_satoshis'] in (20566, 20567), d['status']['paid_satoshis'], d['status']['due_satoshis'] >= d['status']['order_satoshis'])" "$work/w/gw.json")" \
+    = "(6000000, True, 0, True)" ] || fail "POS gateway rate: $(cat "$work/w/gw.json")"
+pass 'SIP-033 step 5: rate parsed from the public status (it-IT format), order satoshis without network fee, nothing paid yet'
 
 # --- 5c. webhook dello store (SIP-022 passo 4): registrato dal worker, consegne verificate da Napay per negozio
 api GET "/api/v1/stores/$remoteA/webhooks" "" "verify-$iA.hdr"

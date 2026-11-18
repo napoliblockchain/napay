@@ -82,7 +82,9 @@ final class FakeGateway implements PosInvoiceGateway
         if ($next === null) return null;
         [$order, $cents] = $this->orders[$invoiceId] ?? [null, 0];
         return $next + ['invoice_id' => $invoiceId, 'order_id' => $order, 'store_id' => 'st-btc-a', 'currency' => 'EUR', 'fiat_digits' => (string) $cents,
-            'status' => 'new', 'address' => 'bcrt1qnynpu9auq7msewe4t5lwkv042x6vvp6wxcdmtx', 'due_satoshis' => 24680, 'confirmations' => 0, 'expires_in' => 898];
+            'status' => 'new', 'address' => 'bcrt1qnynpu9auq7msewe4t5lwkv042x6vvp6wxcdmtx', 'due_satoshis' => 24680, 'confirmations' => 0, 'expires_in' => 898,
+            // 12,34 EUR = 20000 sat a 61.700,00 EUR/BTC; 4680 sat di fee di rete aggiunti da BTCPay
+            'order_satoshis' => 20000, 'paid_satoshis' => 0, 'rate_cents' => 6170000];
     }
 }
 
@@ -182,16 +184,21 @@ check($row['instance'] === $instance && $row['remote_store_id'] === 'st-btc-a' &
     'Row: instance, remote IDs and invoice recorded, checkpoint before the network');
 $public = json_encode($p);
 check(array_keys($p) === ['id', 'opening_id', 'method', 'amount', 'currency', 'state', 'expires_at', 'btc_address', 'amount_btc', 'qr', 'checkout_url', 'confirmations',
-    'processing_at', 'settled_at', 'error'] && !str_contains($public, 'st-btc-a') && !str_contains($public, 'app-btc-a'),
+    'rate', 'order_btc', 'network_fee_btc', 'paid_btc', 'processing_at', 'settled_at', 'error'] && !str_contains($public, 'st-btc-a') && !str_contains($public, 'app-btc-a'),
     'Exact projection: no remote store/app IDs, session, operator or invoice field');
+check($p['rate'] === '61700.00' && $p['order_btc'] === '0.00020000' && $p['network_fee_btc'] === '0.00004680' && $p['paid_btc'] === '0.00000000'
+    && (int) $row['rate_cents'] === 6170000 && (int) $row['order_satoshis'] === 20000 && (int) $row['paid_satoshis'] === 0,
+    'SIP-033 step 5: BTCPay rate (consistent with euro and order satoshis), order without network fee, fee and BTC received');
 [$s2, $again] = BtcPayments::create($session, $oA['id'], $oA['instance_id'], $oA['generation'], 1234, $idem, $fake);
 check($s2 === 200 && $again['id'] === $p['id'] && count($fake->posts) === 1, 'Idempotent replay: same payment, no second invoice');
 check(refused(fn() => BtcPayments::create($session, $oA['id'], $oA['instance_id'], $oA['generation'], 999, $idem, $fake), PaymentException::IDEMPOTENCY), 'Same key, other amount: conflict');
 check(refused(fn() => BtcPayments::view($session2, $p['id'], $fake), PaymentException::NOT_FOUND), 'Payment of another session: not found');
 
 // esiti dallo stato pubblico e dai webhook firmati
-$fake->status = [['status' => 'processing', 'confirmations' => 0]];
+$fake->status = [['status' => 'processing', 'confirmations' => 0, 'due_satoshis' => 0, 'paid_satoshis' => 24680, 'rate_cents' => 9999999, 'order_satoshis' => 1]];
 $v = BtcPayments::view($session, $p['id'], $fake);
+check($v['paid_btc'] === '0.00024680' && $v['rate'] === '61700.00' && $v['order_btc'] === '0.00020000' && $v['amount_btc'] === '0.00024680',
+    'Received: BTC paid updated; rate, order and requested total stay those of the invoice');
 check($v['state'] === 'processing' && $v['processing_at'] !== null && $v['settled_at'] === null && $v['qr'] !== null, 'Public status Processing: received (0 conf), QR still shown');
 check(BtcPayments::applyEvent($instance, $sA2, 'InvoiceSettled', 'INV0000000001') === false && row($p['id'])['state'] === 'processing', 'Event signed for another store ignored');
 check(BtcPayments::applyEvent(hash('sha256', 'https://other.example.invalid'), $sA, 'InvoiceSettled', 'INV0000000001') === false, 'Event of another instance ignored');
@@ -233,6 +240,7 @@ check(BtcPayments::applyEvent($instance, $sA, 'InvoiceExpired', 'INV0000000004')
 // sweep: creazione incerta oltre la scadenza chiusa; attesa scaduta riletta su BTCPay
 $fake->create = [['outcome' => 'created', 'invoice_id' => 'INV0000000005']]; $fake->status = [[]];
 [, $late] = BtcPayments::create($session, $oA['id'], $oA['instance_id'], $oA['generation'], 1000, uuid(), $fake);
+check($late['rate'] === null && $late['order_btc'] === '0.00020000' && row($late['id'])['rate_cents'] === null, 'Rate inconsistent with euro and order satoshis: never stored or shown');
 $db->createCommand('UPDATE pos_btc_payments SET created_at=created_at-2000, creation_started_at=creation_started_at-2000, expires_at=created_at+900 WHERE public_id IN (:a, :b)',
     [':a' => $x['id'], ':b' => $late['id']])->execute();
 $fake->status = [['status' => 'expired']];

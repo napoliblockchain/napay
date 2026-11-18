@@ -183,6 +183,7 @@ final class BtcPayments
         }
         $changes = ['invoice_id' => $invoiceId];
         if ($status !== null) $changes += self::address($status);
+        if (isset($changes['amount_satoshis'])) $changes += self::details($payment, $status, $changes['amount_satoshis']);
         if ($status !== null && $status['expires_in'] !== null) $changes['expires_at'] = max((int) $payment['created_at'] + 1, time() + $status['expires_in']);
         if (!self::move($payment, 'pending', $changes)) return;
         // stato pubblico già oltre "nuova" (pagamento rapidissimo): stesso percorso delle letture successive
@@ -202,6 +203,8 @@ final class BtcPayments
         $state = self::STATUS[$status['status']] ?? null;
         $extra = ['confirmations' => $status['confirmations']];
         if ($payment['btc_address'] === null) $extra += self::address($status);
+        $total = $extra['amount_satoshis'] ?? ($payment['amount_satoshis'] === null ? null : (int) $payment['amount_satoshis']);
+        if ($total !== null) $extra += self::details($payment, $status, $total);
         if ($state === null || $state === $payment['state']) {
             self::move($payment, $payment['state'], $extra);
         } else {
@@ -216,10 +219,29 @@ final class BtcPayments
             && $status['currency'] === $payment['currency'] && $status['fiat_digits'] === (string) (int) $payment['amount_cents'];
     }
 
-    /** @return array{btc_address?:string, amount_satoshis?:int} indirizzo e importo solo in coppia */
+    /** @return array{btc_address?:string, amount_satoshis?:int} indirizzo e totale richiesto (ancora dovuto + già ricevuto) solo in coppia */
     private static function address(array $status): array
     {
-        return $status['address'] !== null && $status['due_satoshis'] !== null ? ['btc_address' => $status['address'], 'amount_satoshis' => $status['due_satoshis']] : [];
+        if ($status['address'] === null || $status['due_satoshis'] === null) return [];
+        return ['btc_address' => $status['address'], 'amount_satoshis' => $status['due_satoshis'] + max(0, (int) ($status['paid_satoshis'] ?? 0))];
+    }
+
+    /**
+     * SIP-033 passo 5: BTC ricevuti (sempre aggiornati), importo dell'ordine e cambio (una volta, poi fissi). Il cambio di BTCPay
+     * è accettato solo se coerente con euro e satoshi dell'ordine (scarto massimo 0,2% oltre l'arrotondamento al satoshi).
+     */
+    private static function details(array $payment, array $status, int $total): array
+    {
+        $changes = [];
+        $paid = $status['paid_satoshis'] ?? null;
+        if (is_int($paid) && $paid >= 0 && $paid <= 2100000000000000) $changes['paid_satoshis'] = $paid;
+        $order = $status['order_satoshis'] ?? null;
+        if ($payment['order_satoshis'] !== null || !is_int($order) || $order < 1 || $order > $total) return $changes;
+        $changes['order_satoshis'] = $order;
+        $rate = $status['rate_cents'] ?? null;
+        $fiat = (int) $payment['amount_cents'] * 100000000;
+        if (is_int($rate) && $rate >= 1 && $rate <= 10000000000000 && 1000 * abs($rate * $order - $fiat) <= 2 * $fiat + 1000 * $rate) $changes['rate_cents'] = $rate;
+        return $changes;
     }
 
     /** Transizione in avanti (NEXT) con timestamp coerenti con i vincoli dello schema. */
@@ -297,6 +319,11 @@ final class BtcPayments
             'state' => $row['state'], 'expires_at' => (int) $row['expires_at'], 'btc_address' => $row['btc_address'], 'amount_btc' => $btc, 'qr' => $open ? $qr : null,
             'checkout_url' => $open && $row['invoice_id'] !== null && $gateway !== null ? $gateway->checkoutUrl($row['invoice_id']) : null,
             'confirmations' => (int) $row['confirmations'],
+            // SIP-033 passo 5: cambio (valuta per 1 BTC), ordine senza fee, fee di rete aggiunta da BTCPay, BTC ricevuti
+            'rate' => $row['rate_cents'] === null ? null : self::amount((int) $row['rate_cents']),
+            'order_btc' => $row['order_satoshis'] === null ? null : self::btc((int) $row['order_satoshis']),
+            'network_fee_btc' => $row['order_satoshis'] === null || $row['amount_satoshis'] === null ? null : self::btc((int) $row['amount_satoshis'] - (int) $row['order_satoshis']),
+            'paid_btc' => $row['paid_satoshis'] === null ? null : self::btc((int) $row['paid_satoshis']),
             'processing_at' => $row['processing_at'] === null ? null : (int) $row['processing_at'], 'settled_at' => $row['settled_at'] === null ? null : (int) $row['settled_at'],
             'error' => $row['state'] === 'failed' || $row['state'] === 'invalid' || $row['state'] === 'reconcile_required' ? $row['last_error_code'] : null];
     }
