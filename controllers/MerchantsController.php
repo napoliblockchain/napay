@@ -12,12 +12,14 @@ use yii\web\NotFoundHttpException;
 use yii\web\ForbiddenHttpException;
 use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
+use yii\web\UploadedFile;
 
 use app\components\Crypt;
 use app\components\User;
 use app\components\Log;
 use app\components\identity\AccountEligibility;
 use app\components\identity\MerchantActivation;
+use app\components\merchant\MerchantLogo;
 use app\components\geo\ItalianMunicipalities;
 use app\models\Users;
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
@@ -38,7 +40,8 @@ class MerchantsController extends Controller
                 'class' => VerbFilter::class,
                 'actions' => [
                     'delete' => ['POST'],
-                    'company' => ['GET', 'POST'],
+                    'logo' => ['POST'],
+                    'logo-delete' => ['POST'],
                     'create' => ['GET', 'POST'],
                     'activate' => ['GET', 'POST'],
                     'cities' => ['GET'],
@@ -58,7 +61,8 @@ class MerchantsController extends Controller
                         'actions' => [
                             'view',
                             'update',
-                            'company',
+                            'logo',
+                            'logo-delete',
                         ],
                         'allow' => true,
                         'roles' => ['@'],
@@ -73,7 +77,9 @@ class MerchantsController extends Controller
                             'view',
                             'update',
                             'delete',
-                            'export'
+                            'export',
+                            'logo',
+                            'logo-delete',
                         ],
                         'allow' => true,
                         'roles' => ['@'],
@@ -146,11 +152,11 @@ class MerchantsController extends Controller
     public function actionActivate()
     {
         $owner = (int)Yii::$app->user->id;
-        if (AccountEligibility::merchantForManager($owner) !== null) return $this->redirect(['company']);
+        if (($existing = AccountEligibility::merchantForManager($owner)) !== null) return $this->redirect(['view', 'id' => Crypt::encrypt($existing)]);
         $model = new Merchants(['scenario'=>Merchants::SCENARIO_ACTIVATION, 'user_id'=>$owner]);
-        if ($model->load(Yii::$app->request->post()) && $this->activateMerchant($model, $owner) !== null) {
+        if ($model->load(Yii::$app->request->post()) && ($activated = $this->activateMerchant($model, $owner)) !== null) {
             Yii::$app->session->setFlash('success', Yii::t('app', 'Merchant attivato localmente. La configurazione dei pagamenti non è ancora completata.'));
-            return $this->redirect(['company']);
+            return $this->redirect(['view', 'id' => Crypt::encrypt($activated)]);
         }
         $model->user_id = $owner;
         if (!Yii::$app->request->isPost) {
@@ -195,21 +201,7 @@ class MerchantsController extends Controller
         return $this->updateMerchant($this->findModel($id));
     }
 
-    public function actionCompany()
-    {
-        $actor = Yii::$app->user->identity;
-        if ($actor === null || (int) ($actor->privilege->level ?? -1) !== User::ROLE_MERCHANT) {
-            throw new ForbiddenHttpException('You are not allowed to access this company.');
-        }
-        // Never select a company from request parameters or arbitrarily choose among duplicates.
-        $models = Merchants::find()->where(['user_id' => $actor->id])->limit(2)->all();
-        if (count($models) !== 1) {
-            throw new NotFoundHttpException('Company unavailable for this account.');
-        }
-        return $this->updateMerchant($models[0], true);
-    }
-
-    private function updateMerchant(Merchants $model, bool $ownCompany = false)
+    private function updateMerchant(Merchants $model)
     {
         $model->scenario = Merchants::SCENARIO_UPDATE;
         $ownerId = $model->user_id;
@@ -225,12 +217,11 @@ class MerchantsController extends Controller
                 'itemname' => $model->description
             ]);
             Log::save(Yii::$app->controller->id, (Yii::$app->controller->action->id), $message_log);
-            return $this->redirect($ownCompany ? ['company'] : ['view', 'id' => Crypt::encrypt($model->id)]);
+            return $this->redirect(['view', 'id' => Crypt::encrypt($model->id)]);
         }
 
         return $this->render('update', [
             'model' => $model,
-            'ownCompany' => $ownCompany,
         ]);
     }
 
@@ -254,6 +245,52 @@ class MerchantsController extends Controller
 
         $model->delete();
         return $this->redirect(['index']);
+    }
+
+    /** SIP-033: logo del merchant per la pagina di pagamento BTCPay dei suoi negozi (PNG o JPEG, ricodificato in PNG). */
+    public function actionLogo($id)
+    {
+        $model = $this->findModel($id);
+        $file = UploadedFile::getInstanceByName('logo');
+        $logo = match (true) {
+            $file === null, $file->error === UPLOAD_ERR_NO_FILE => 'missing',
+            $file->error === UPLOAD_ERR_INI_SIZE, $file->error === UPLOAD_ERR_FORM_SIZE => 'too_large',
+            $file->error !== UPLOAD_ERR_OK => 'unreadable',
+            default => MerchantLogo::normalize($file->tempName),
+        };
+        if (is_string($logo)) Yii::$app->session->setFlash('error', MerchantLogo::message($logo));
+        else $this->changeLogo($model, fn() => MerchantLogo::save(Yii::$app->db, (int) $model->id, $logo, (int) Yii::$app->user->id),
+            Yii::t('app', 'Logo saved. BTCPay payment pages will be updated shortly.'), 'User {user} has updated the logo of {item}: {itemname}');
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-logo']);
+    }
+
+    /** SIP-033: logo rimosso, i negozi tornano al logo di Napay. */
+    public function actionLogoDelete($id)
+    {
+        $model = $this->findModel($id);
+        $this->changeLogo($model, fn() => MerchantLogo::remove(Yii::$app->db, (int) $model->id, (int) Yii::$app->user->id),
+            Yii::t('app', 'Logo removed: BTCPay payment pages will show the Napay logo.'), 'User {user} has removed the logo of {item}: {itemname}');
+        return $this->redirect(['view', 'id' => Crypt::encrypt($model->id), '#' => 'tab-logo']);
+    }
+
+    /** Logo cambiato e negozi aggiornati in una transazione; messaggio e registro solo se riuscito. */
+    private function changeLogo(Merchants $model, callable $change, string $success, string $logMessage): void
+    {
+        $transaction = Yii::$app->db->beginTransaction();
+        try {
+            $change();
+            $transaction->commit();
+        } catch (\Throwable $e) {
+            if ($transaction->isActive) $transaction->rollBack();
+            // solo la classe: messaggi e query possono contenere dati
+            Yii::error('Merchant logo change failed: ' . get_class($e), __METHOD__);
+            Yii::$app->session->setFlash('error', MerchantLogo::message('unreadable'));
+            return;
+        }
+        Yii::$app->session->setFlash('success', $success);
+        Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', $logMessage, [
+            'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
+        ]));
     }
 
     /**

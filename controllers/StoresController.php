@@ -14,7 +14,6 @@ use yii\filters\VerbFilter;
 use yii\filters\AccessControl;
 use yii\helpers\ArrayHelper;
 use yii\helpers\Json;
-use yii\helpers\Url;
 
 use app\components\Crypt;
 use app\components\User;
@@ -23,6 +22,7 @@ use app\components\btcpay\provisioning\ProvisioningOutbox;
 use app\components\btcpay\StoresBtcpay;
 use app\components\btcpay\provisioning\ProvisioningStatus;
 use app\components\btcpay\StoreSettingsPayload;
+use app\components\merchant\MerchantLogo;
 use app\components\btcpay\XpubAddresses;
 
 
@@ -572,7 +572,8 @@ class StoresController extends Controller
             'showRecommendedFee' => 0,
             'recommendedFeeBlockTarget' => 0,
             'defaultLang' => 'it-IT',
-            'customLogo' => Url::to('@web' . StoreSettingsPayload::DEFAULT_LOGO, true),
+            // SIP-033: logo del merchant se caricato, altrimenti quello di Napay
+            'customLogo' => MerchantLogo::storeLogo(Yii::$app->db, (int) $model->merchant_id),
             'customCSS' => null,
             'htmlTitle' => StoreSettingsPayload::FIXED['htmlTitle'],
             'networkFeeMode' => 'Always',

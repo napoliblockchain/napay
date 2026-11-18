@@ -7,19 +7,10 @@ use app\components\User;
 /* @var $this yii\web\View */
 /* @var $model app\models\Commercianti */
 
-$ownCompany = $ownCompany ?? false;
-$this->title = $ownCompany ? Yii::t('app', 'Azienda') : Yii::t('app', 'Azienda: {name}', [
-    'name' => $model->description,
-]);
-if (User::isAdministrator()) {
-    $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Aziende'), 'url' => ['index']];
-}
-if (!$ownCompany) {
-    $this->params['breadcrumbs'][] = ['label' => $model->description, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
-    $this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
-} else {
-    $this->params['breadcrumbs'][] = $this->title;
-}
+$this->title = Yii::t('app', 'Azienda: {name}', ['name' => $model->description]);
+if (User::isAdministrator()) $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Aziende'), 'url' => ['index']];
+$this->params['breadcrumbs'][] = ['label' => $model->description, 'url' => ['view', 'id' => Crypt::encrypt($model->id)]];
+$this->params['breadcrumbs'][] = Yii::t('app', 'Modifica');
 ?>
     <div class="row row-cards">
         <div class="col-lg-8">

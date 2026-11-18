@@ -65,7 +65,7 @@ const server = http.createServer((req, res) => {
         await merchantPage.goto(base + '/merchant.html', { waitUntil: 'networkidle' });
         await merchantPage.locator('#napay-account-menu').click();
         check(await merchantPage.locator('[data-napay-company-link]').isVisible(), 'Merchant opens Azienda from mobile account dropdown');
-        check(await merchantPage.locator('[data-napay-company-link]').getAttribute('href') === '/merchants/company', 'Own company link has no client-selected identifier');
+        check((await merchantPage.locator('[data-napay-company-link]').getAttribute('href')).startsWith('/merchants/view?id='), 'Own company link opens the standard company view');
         check(await merchantPage.locator('aside a[href*="merchants/index"]').count() === 0, 'Merchant has no administrator company list');
         await merchant.close();
         const context = await browser.newContext({ viewport: { width: 1440, height: 960 }, serviceWorkers: 'block' });

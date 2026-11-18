@@ -24,6 +24,15 @@ class User extends Component
     /**
      * Restituisce l'id del Merchant 
      */
+    /** Azienda del gestore (livello merchant, esattamente un'azienda), null altrimenti: link "Azienda" verso merchants/view. */
+    public static function ownCompanyId(): ?int
+    {
+        $identity = Yii::$app->user->identity;
+        if ($identity === null || (int) ($identity->privilege->level ?? -1) !== self::ROLE_MERCHANT) return null;
+        $ids = \app\models\Merchants::find()->select('id')->where(['user_id' => $identity->id])->limit(2)->column();
+        return count($ids) === 1 ? (int) $ids[0] : null;
+    }
+
     public static function getMerchantId()
     {
         if (Yii::$app->user->isGuest) return 0;

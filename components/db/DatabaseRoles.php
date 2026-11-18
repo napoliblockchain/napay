@@ -9,7 +9,7 @@ final class DatabaseRoles
         'logs', 'merchants', 'np_comuni_italiani', 'privileges', 'settings', 'stores',
         'storesettings', 'user_consensus', 'users', 'webhooks', 'auth', 'association_roles',
         'membership_fees', 'payment_methods', 'member_profiles', 'membership_payments',
-        'assembly_minutes', 'pos_operator_sessions', 'paypal_webhook_events',
+        'assembly_minutes', 'merchant_logos', 'pos_operator_sessions', 'paypal_webhook_events',
         'btcpay_webhook_events', 'pos_operators', 'pos_store_operators', 'pos_terminals',
         'pos_operator_invitations', 'membership_reminders',
     ];

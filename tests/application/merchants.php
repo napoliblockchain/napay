@@ -93,27 +93,26 @@ try {
             check($own->vatNumber === $vat, 'VAT unchanged for administrator and merchant despite crafted POST');
         }
     }
+    // Link "Azienda" (merchants/view): azienda del gestore scelta solo dal server, mai dalla richiesta
     $app->request->setBodyParams([]);
     $app->request->setQueryParams(['id' => $records['other']->id]);
-    $html = $controller->actionCompany();
-    $document = new DOMDocument(); @$document->loadHTML($html, LIBXML_NONET);
-    $hidden = (new DOMXPath($document))->query('//input[@name="Merchants[user_id]"]/@value');
-    check($hidden->length === 1 && $hidden->item(0)->nodeValue === (string) actor('merchant')->id, 'Own company ignores requested foreign identifier');
+    $app->user->switchIdentity(actor('merchant'));
+    check(app\components\User::ownCompanyId() === (int) $own->id, 'Own company resolved by the server, requested identifier ignored');
     $savepoint = $app->db->beginTransaction();
     try {
         $duplicate = new app\models\Merchants($own->getAttributes(null, ['id']));
         check($duplicate->save(), 'Duplicate-company fixture validates');
-        rejected(fn() => $controller->actionCompany(), yii\web\NotFoundHttpException::class, 'Multiple companies never select an arbitrary record');
+        check(app\components\User::ownCompanyId() === null, 'Multiple companies never select an arbitrary record');
     } finally {
         $savepoint->rollBack();
     }
     foreach (['admin', 'user', 'other', 'operator'] as $role) {
         $app->user->switchIdentity(actor($role));
-        rejected(fn() => $controller->actionCompany(), yii\web\ForbiddenHttpException::class, 'Own company restricted to merchant role: ' . $role);
+        check(app\components\User::ownCompanyId() === null, 'Own company link restricted to merchant role: ' . $role);
     }
     $missing = clone actor('merchant'); $missing->id = 2147483647;
     $app->user->switchIdentity($missing);
-    rejected(fn() => $controller->actionCompany(), yii\web\NotFoundHttpException::class, 'Merchant without company gets controlled unavailable response');
+    check(app\components\User::ownCompanyId() === null, 'Merchant without company gets no company link');
     $app->user->switchIdentity(null);
     rejected(fn() => record($records['other']), yii\web\ForbiddenHttpException::class, 'Missing identity denied');
 } finally {

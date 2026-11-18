@@ -74,7 +74,7 @@ foreach (['description','vatNumber','addressCity'] as $field) {
     check($r['status']===200&&!Policy::merchantForManager($pg),'Malformed text rerenders safely without activation');
 }
 $r=http('/merchants/activate',['_csrf'=>csrf($p),'Merchants'=>data()+['user_id'=>$pf,'privilege_id'=>1,'is_active'=>2,'id'=>$existingMerchant]]);
-check($r['status']===302&&str_contains($r['headers'],'/merchants/company'),'PG activation redirects to its company');
+check($r['status']===302&&str_contains($r['headers'],'/merchants/view?id='),'PG activation redirects to its company view');
 $id=Policy::merchantForManager($pg);check($id!==null,'PG now qualifies as its unique merchant manager');
 $row=$db->createCommand('SELECT email,addressCountry,addressProvince,addressNumberHouse,mobile FROM merchants WHERE id=:id',[':id'=>$id])->queryOne();
 check($row===['email'=>'r3b-pg@example.invalid','addressCountry'=>'IT','addressProvince'=>'NA','addressNumberHouse'=>'','mobile'=>''],
@@ -85,11 +85,11 @@ check(json_decode(http('/merchants/cities?q=n')['body'],true)===[],'No suggestio
 check((int)scalar('SELECT user_id FROM merchants WHERE id=:id',[':id'=>$id])===$pg,'Posted foreign owner ignored');
 check((int)scalar('SELECT is_merchant FROM users WHERE id=:id',[':id'=>$pg])===1,'Legacy merchant flag aligned atomically');
 check((int)scalar('SELECT COUNT(*) FROM merchants WHERE user_id=:id',[':id'=>$pf])===0,'Target PF has no merchant');
-check(http('/merchants/activate', ['_csrf'=>csrf(http('/merchants/company')),'Merchants'=>data()])['status']===302,'Repeated HTTP activation is idempotent');
+check(http('/merchants/activate', ['_csrf'=>csrf(http('/')),'Merchants'=>data()])['status']===302,'Repeated HTTP activation is idempotent');
 check(activate($pg)===$id&&(int)scalar('SELECT COUNT(*) FROM merchants WHERE user_id=:id',[':id'=>$pg])===1,'Repeated service activation returns the same merchant');
 check(http('/merchants/create')['status']===403,'Manager cannot use legacy create to make a second company');
 $vat=scalar('SELECT vatNumber FROM merchants WHERE id=:id',[':id'=>$id]);
-$p=http('/merchants/company');http('/merchants/company',['_csrf'=>csrf($p),'Merchants'=>['vatNumber'=>'99999999999']]);
+$edit='/merchants/update?id='.urlencode(app\components\Crypt::encrypt($id));$p=http($edit);http($edit,['_csrf'=>csrf($p),'Merchants'=>['vatNumber'=>'99999999999']]);
 check(scalar('SELECT vatNumber FROM merchants WHERE id=:id',[':id'=>$id])===$vat,'VAT remains immutable after activation');
 check(!str_contains(http('/')['body'],'data-napay-activate-merchant-link'),'Activated manager no longer sees activation link');
 $new=user('r3b-admin-pg');login('admin@example.invalid');$p=http('/merchants/create');

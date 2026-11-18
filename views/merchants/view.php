@@ -10,7 +10,7 @@ use kartik\tabs\TabsX;
 /* @var $model app\models\Commercianti */
 
 $this->title = Yii::t('app', 'Azienda') . ': ' . $model->description;
-$this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Esercenti'), 'url' => User::isAdministrator() ? ['index'] : ''];
+if (User::isAdministrator()) $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Esercenti'), 'url' => ['index']];
 $this->params['breadcrumbs'][] = $this->title;
 
 \yii\web\YiiAsset::register($this);
@@ -42,6 +42,12 @@ $this->params['breadcrumbs'][] = $this->title;
                                 'options' => ['id' => 'tab-general'],
                                 'content' => $this->render('_details-general', ['model' => $model]),
                                 // 'visible' => !is_null($model),
+                            ],
+                            [
+                                'label' => Yii::t('app', 'Logo'),
+                                'encode' => false,
+                                'options' => ['id' => 'tab-logo'],
+                                'content' => $this->render('_details-logo', ['model' => $model]),
                             ],
                         ];
                         echo TabsX::widget([

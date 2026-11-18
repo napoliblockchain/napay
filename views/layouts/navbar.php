@@ -31,8 +31,8 @@ use app\components\User;
                         <?= Html::a(Html::encode(Yii::t('app', 'Profilo')), ['users/view', 'id' => Crypt::encrypt(Yii::$app->user->id)], [
                             'class' => 'dropdown-item', 'data-napay-profile-link' => true,
                         ]) ?>
-                        <?php if (User::isMerchant()): ?>
-                            <?= Html::a(Html::encode(Yii::t('app', 'Azienda')), ['/merchants/company'], [
+                        <?php if (User::isMerchant() && ($ownCompany = User::ownCompanyId()) !== null): ?>
+                            <?= Html::a(Html::encode(Yii::t('app', 'Azienda')), ['/merchants/view', 'id' => Crypt::encrypt($ownCompany)], [
                                 'class' => 'dropdown-item', 'data-napay-company-link' => true,
                             ]) ?>
                         <?php endif ?>

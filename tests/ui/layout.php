@@ -45,6 +45,9 @@ function makeApp($role) {
     $app->db->createCommand('CREATE TABLE privileges (id INTEGER PRIMARY KEY, level INTEGER)')->execute();
     $app->db->createCommand()->insert('privileges', ['id' => 1, 'level' => $role])->execute();
     $app->db->createCommand()->insert('users', ['id' => 1, 'privilege_id' => 1, 'first_name' => 'Ada <svg onload="window.pwned=true">', 'last_name' => 'Test', 'picture' => '/bundles/site/images/logo.png', 'authKey' => 'fixture', 'username' => 'fixture'])->execute();
+    // SIP-033: link "Azienda" verso la view standard dell'azienda del gestore
+    $app->db->createCommand('CREATE TABLE merchants (id INTEGER PRIMARY KEY, user_id INTEGER, description TEXT)')->execute();
+    if ($role === 30) $app->db->createCommand()->insert('merchants', ['id' => 7, 'user_id' => 1, 'description' => 'Fixture company'])->execute();
     $app->user->switchIdentity(app\models\Users::findOne(1));
     $controller = new yii\web\Controller('site', $app);
     $controller->action = new yii\base\Action('index', $controller);
@@ -62,7 +65,7 @@ foreach (['admin' => 50, 'merchant' => 30, 'user' => 0] as $name => $role) {
     check($xpath->query('//aside//a[contains(@href,"/association/")]')->length === ($role === 50 ? 4 : 0), 'Association navigation preserved for administrator only: ' . $name);
     check($xpath->query('//aside//a[contains(@href,"users/view")]')->length === 0, 'Profile absent from sidebar for ' . $name);
     check($xpath->query('//header[contains(@class,"napay-topbar")]//a[@data-napay-profile-link]')->length === 1, 'Profile in top-right account menu for ' . $name);
-    check($xpath->query('//header//a[@data-napay-company-link and @href="/merchants/company"]')->length === ($role === 30 ? 1 : 0), 'Own company menu only for merchant: ' . $name);
+    check($xpath->query('//header//a[@data-napay-company-link and starts-with(@href,"/merchants/view?id=")]')->length === ($role === 30 ? 1 : 0), 'Own company menu (standard view) only for merchant: ' . $name);
     check($xpath->query('//aside//a[contains(@href,"merchants/index")]')->length === ($role === 50 ? 1 : 0), 'Company list only for administrator: ' . $name);
     check($xpath->query('//a[contains(@href,"/debug") or contains(@href,"/gii")]')->length === 0 && !str_contains($html, '>Developer<'), 'No developer menu for ' . $name);
     check(!str_contains($html, '/site/phpinfo'), 'Removed PHPInfo link stays unavailable for ' . $name);
