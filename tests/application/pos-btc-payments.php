@@ -252,6 +252,26 @@ check(BtcPayments::sweep(100, $fake) === ['checked' => 0, 'settled' => 0, 'close
 // vincoli: nessun DELETE logico, ogni riga coerente con lo schema
 check((int) scalar("SELECT COUNT(*) FROM pos_btc_payments WHERE merchant_id=:m AND store_id=:s", [':m' => $merchantA, ':s' => $sA]) === (int) scalar('SELECT COUNT(*) FROM pos_btc_payments'),
     'All payments on the BTC store of the merchant');
+// --- SIP-033 passo 5: storico del POS con TTS e BTC insieme e totali di oggi
+$history = app\components\pos\PosHistory::forOpening($session, $oA['id']);
+$items = array_column($history['payments'], null, 'id');
+$btcRows = $db->createCommand("SELECT COUNT(*) n, SUM(amount_cents) c, SUM(COALESCE(paid_satoshis, amount_satoshis)) s FROM pos_btc_payments WHERE terminal_id=(SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o) AND state IN ('processing','settled')",
+    [':o' => $oA['id']])->queryOne();
+check(array_keys($history) === ['payments', 'totals'] && array_keys($history['payments'][0]) === app\components\pos\PosHistory::ITEM
+    && $items[$p['id']]['method'] === 'btc' && $items[$p['id']]['state'] === 'settled' && $items[$p['id']]['amount'] === '12.34' && $items[$p['id']]['currency'] === 'EUR'
+    && $items[$p['id']]['rate'] === '61700.00' && $items[$p['id']]['paid_btc'] === '0.00024680' && $items[$p['id']]['paid_at'] !== null && $items[$p['id']]['tx_hash'] === null
+    && $items[$p['id']]['own'] === true && !str_contains(json_encode($history), 'bcrt1q') && !str_contains(json_encode($history), 'INV000'),
+    'History: BTC items with method, state, rate and BTC paid; never address or invoice');
+$created = array_column($history['payments'], 'created_at');
+$sorted = $created; rsort($sorted);
+check($created === $sorted, 'History newest first');
+$sum = $history['totals']['btc'];
+check(count($sum) === 1 && $sum[0]['currency'] === 'EUR' && $sum[0]['count'] === (int) $btcRows['n'] && $sum[0]['count'] >= 1
+    && $sum[0]['amount'] === sprintf('%d.%02d', intdiv((int) $btcRows['c'], 100), (int) $btcRows['c'] % 100)
+    && $sum[0]['btc'] === sprintf('%d.%08d', intdiv((int) $btcRows['s'], 100000000), (int) $btcRows['s'] % 100000000),
+    'Totals of today: BTC received or confirmed per currency, in fiat and in BTC paid');
+$tomorrow = app\components\pos\PosHistory::totals((int) scalar('SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o', [':o' => $oA['id']]), time() + 86400);
+check($tomorrow['btc'] === [] && $tomorrow['tts']['count'] === 0, 'Totals start again at midnight (Rome): nothing counted for the next day');
 $log = (string) scalar("SELECT GROUP_CONCAT(description) FROM logs WHERE description LIKE 'Richiesta di pagamento BTC%'");
 $leak = false; foreach ($secrets as $secret) $leak = $leak || str_contains($log, $secret);
 check($log !== '' && !$leak && !str_contains($log, 'app-btc-a') && !str_contains($log, 'INV0000000001'), 'Payment requests audited without tokens, remote IDs or invoice IDs');

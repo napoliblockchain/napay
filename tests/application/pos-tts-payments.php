@@ -251,8 +251,14 @@ if ($phase === 'setup') {
     // --- Storico del terminale: più recenti prima, mai QR, riferimento o destinatario
     $r = api('GET', 'openings/' . $oA['id'] . '/payments', $u);
     $list = $r['json']['payments'] ?? [];
-    check($r['status'] === 200 && array_keys($r['json']) === ['payments'] && count($list) === 7 && array_column($list, 'id') === array_reverse(array_column($created, 'id'))
-        && array_keys($list[0]) === ['id', 'amount', 'currency', 'state', 'created_at', 'paid_at', 'tx_hash', 'own'] && noLeak($r), 'History: seven payments of the terminal, newest first, exact projection');
+    check($r['status'] === 200 && array_keys($r['json']) === ['payments', 'totals'] && count($list) === 7 && array_column($list, 'id') === array_reverse(array_column($created, 'id'))
+        && array_keys($list[0]) === ['id', 'method', 'amount', 'currency', 'state', 'created_at', 'paid_at', 'tx_hash', 'rate', 'paid_btc', 'own'] && noLeak($r)
+        && array_unique(array_column($list, 'method')) === ['tts'], 'History: seven payments of the terminal, newest first, exact projection with the method');
+    $paidToday = $db->createCommand("SELECT COUNT(*) n, COALESCE(SUM(amount_cents),0) c FROM pos_tts_payments WHERE terminal_id=(SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o) AND state='paid'", [':o' => $oA['id']])->queryOne();
+    $totals = $r['json']['totals'];
+    check(array_keys($totals) === ['since', 'tts', 'btc'] && $totals['tts']['count'] === (int) $paidToday['n']
+        && $totals['tts']['amount'] === sprintf('%d.%02d', intdiv((int) $paidToday['c'], 100), (int) $paidToday['c'] % 100) && $totals['btc'] === [] && $totals['since'] <= time(),
+        'Totals of today: paid TTS only (count and amount), no BTC on this POS');
     check($list[0]['state'] === 'cancelled' && $list[6]['amount'] === '12.34' && $list[6]['own'] === true && !str_contains($r['body'], payment($created['ok']['id'])['reference']) && !str_contains($r['body'], $wallet),
         'History items: state and amount, own flag, no reference or destination');
     check(code(api('GET', 'openings/' . $oA['id'] . '/payments', $b)) === 'not_found' && code(api('GET', 'openings/' . $oA['id'] . '/payments', $u2)) === 'not_found',
@@ -319,6 +325,9 @@ if ($phase === 'verify') {
     $byId = array_column($r['json']['payments'] ?? [], null, 'id');
     check($r['status'] === 200 && count($byId) === 7 && $byId[$p['ok']['id']]['state'] === 'paid' && $byId[$p['ok']['id']]['tx_hash'] === $tx['ok']
         && $byId[$p['late']['id']]['state'] === 'expired' && $byId[$p['ok']['id']]['own'] === false, 'Next opening of the terminal sees its history, not owned');
+    $paid = $db->createCommand("SELECT COUNT(*) n, COALESCE(SUM(amount_cents),0) c FROM pos_tts_payments WHERE terminal_id=(SELECT terminal_id FROM pos_terminal_openings WHERE public_id=:o) AND state='paid'", [':o' => $o2['id']])->queryOne();
+    check((int) $paid['n'] >= 1 && $r['json']['totals']['tts'] === ['count' => (int) $paid['n'], 'amount' => sprintf('%d.%02d', intdiv((int) $paid['c'], 100), (int) $paid['c'] % 100)],
+        'Totals of today count the paid TTS payments of the terminal');
     $db->createCommand("UPDATE pos_tts_payments SET created_at=created_at-2000, expires_at=created_at+10 WHERE public_id IN (:a,:b)", [':a' => $p['wrong_amount']['id'], ':b' => $p['no_ref']['id']])->execute();
     check((int) scalar("SELECT COUNT(*) FROM pos_tts_payments WHERE state='pending' AND expires_at < UNIX_TIMESTAMP()") === 2, 'Two pending payments left past expiry for the one-shot sweep');
     // --- pagina Incassi del backoffice (gestore A loggato)

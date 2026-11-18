@@ -8,6 +8,7 @@ use app\components\pos\PosApi;
 use app\components\pos\TerminalOpenings;
 use app\components\pos\btc\BtcPayments;
 use app\components\pos\tts\PaymentException;
+use app\components\pos\PosHistory;
 use app\components\pos\tts\TtsPayments;
 use app\models\PosOperatorSessions;
 use yii\filters\ContentNegotiator;
@@ -60,7 +61,8 @@ class PaymentsController extends \yii\rest\Controller
             if (Yii::$app->request->getRawBody() !== '' || Yii::$app->request->getQueryParams() !== ['opening_id' => $opening_id]) return $this->error(400, 'validation_failed');
             if (preg_match(TerminalOpenings::UUID, $opening_id) !== 1) return $this->error(404, 'not_found');
             if (($wait = PosApi::throttle('payments|view|' . hash('sha256', $token), [60, 60])) > 0) return $this->limited($wait);
-            return TtsPayments::history($session, $opening_id);
+            // SIP-033 passo 5: TTS e BTC insieme, con i totali di oggi
+            return PosHistory::forOpening($session, $opening_id);
         });
     }
 

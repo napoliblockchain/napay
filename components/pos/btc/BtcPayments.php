@@ -100,6 +100,25 @@ final class BtcPayments
         return self::publicPayment($payment, self::openingPublicId((int) $payment['opening_id']), $gateway);
     }
 
+    /**
+     * SIP-033 passo 5: voci BTC dello storico del terminale (PosHistory), più recenti prima. Stato salvato, nessuna chiamata
+     * a BTCPay; ricevuto = processing_at (o settled_at se confermato direttamente). Mai indirizzo, QR o ID della fattura.
+     */
+    public static function history(int $terminalId, int $sessionId, int $since, int $limit): array
+    {
+        $rows = Yii::$app->db->createCommand('SELECT * FROM ' . self::TABLE . ' WHERE terminal_id=:t AND created_at >= :since ORDER BY id DESC LIMIT ' . max(1, min(100, $limit)),
+            [':t' => $terminalId, ':since' => $since])->queryAll();
+        $items = [];
+        foreach ($rows as $row) {
+            $received = $row['processing_at'] ?? $row['settled_at'];
+            $items[] = ['id' => $row['public_id'], 'method' => 'btc', 'amount' => self::amount((int) $row['amount_cents']), 'currency' => $row['currency'], 'state' => $row['state'],
+                'created_at' => (int) $row['created_at'], 'paid_at' => $received === null ? null : (int) $received, 'tx_hash' => null,
+                'rate' => $row['rate_cents'] === null ? null : self::amount((int) $row['rate_cents']),
+                'paid_btc' => $row['paid_satoshis'] === null ? null : self::btc((int) $row['paid_satoshis']), 'own' => (int) $row['session_id'] === $sessionId];
+        }
+        return $items;
+    }
+
     /** Metodi di incasso disponibili per l'apertura propria della sessione (tasti del POS). @return array{tts:bool, btc:bool, btc_currency:?string} */
     public static function methods(PosOperatorSessions $session, string $openingId, ?PosInvoiceGateway $gateway = null): array
     {
