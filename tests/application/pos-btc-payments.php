@@ -200,12 +200,26 @@ $v = BtcPayments::view($session, $p['id'], $fake);
 check($v['paid_btc'] === '0.00024680' && $v['rate'] === '61700.00' && $v['order_btc'] === '0.00020000' && $v['amount_btc'] === '0.00024680',
     'Received: BTC paid updated; rate, order and requested total stay those of the invoice');
 check($v['state'] === 'processing' && $v['processing_at'] !== null && $v['settled_at'] === null && $v['qr'] !== null, 'Public status Processing: received (0 conf), QR still shown');
-check(BtcPayments::applyEvent($instance, $sA2, 'InvoiceSettled', 'INV0000000001') === false && row($p['id'])['state'] === 'processing', 'Event signed for another store ignored');
-check(BtcPayments::applyEvent(hash('sha256', 'https://other.example.invalid'), $sA, 'InvoiceSettled', 'INV0000000001') === false, 'Event of another instance ignored');
-check(BtcPayments::applyEvent($instance, $sA, 'InvoiceReceivedPayment', 'INV0000000001') === false, 'Partial payment event does not change the state');
-check(BtcPayments::applyEvent($instance, $sA, 'InvoiceSettled', 'INV0000000001') === true && row($p['id'])['state'] === 'settled'
-    && BtcPayments::applyEvent($instance, $sA, 'InvoiceSettled', 'INV0000000001') === false && BtcPayments::applyEvent($instance, $sA, 'InvoiceExpired', 'INV0000000001') === false,
-    'InvoiceSettled: confirmed once; repeated or later events never go back');
+// webhook = solo avviso: si rilegge la fattura su BTCPay, mai lo stato o gli importi del webhook
+$reads = count($fake->statusCalls);
+check(BtcPayments::applyEvent($instance, $sA2, 'InvoiceSettled', 'INV0000000001', $fake) === false && row($p['id'])['state'] === 'processing' && count($fake->statusCalls) === $reads,
+    'Event signed for another store ignored, invoice not even read');
+check(BtcPayments::applyEvent(hash('sha256', 'https://other.example.invalid'), $sA, 'InvoiceSettled', 'INV0000000001', $fake) === false && count($fake->statusCalls) === $reads,
+    'Event of another instance ignored');
+check(BtcPayments::applyEvent($instance, $sA, 'InvoiceCreated', 'INV0000000001', $fake) === false && count($fake->statusCalls) === $reads, 'Unrelated event: nothing read');
+$fake->status = [['status' => 'processing', 'confirmations' => 0, 'due_satoshis' => 0, 'paid_satoshis' => 24680]];
+check(BtcPayments::applyEvent($instance, $sA, 'InvoiceSettled', 'INV0000000001', $fake) === false && row($p['id'])['state'] === 'processing',
+    'Webhook says Settled but BTCPay still says Processing: the invoice wins, nothing confirmed');
+$fake->status = [null];
+check(BtcPayments::applyEvent($instance, $sA, 'InvoiceSettled', 'INV0000000001', $fake) === false && row($p['id'])['state'] === 'processing', 'BTCPay unreachable: unchanged (polling and sweep take over)');
+$fake->status = [['status' => 'settled', 'confirmations' => 1, 'due_satoshis' => 0, 'paid_satoshis' => 24680]];
+check(BtcPayments::applyEvent($instance, $sA, 'InvoiceSettled', 'INV0000000001', $fake) === true && row($p['id'])['state'] === 'settled'
+    && (int) row($p['id'])['paid_satoshis'] === 24680 && (int) row($p['id'])['confirmations'] === 1 && $fake->status === [],
+    'Webhook as a trigger: invoice read from BTCPay, confirmed with BTC paid and confirmations');
+$fake->status = [['status' => 'settled', 'confirmations' => 3, 'due_satoshis' => 0, 'paid_satoshis' => 24680], ['status' => 'expired']];
+check(BtcPayments::applyEvent($instance, $sA, 'InvoiceSettled', 'INV0000000001', $fake) === false && (int) row($p['id'])['confirmations'] === 3
+    && BtcPayments::applyEvent($instance, $sA, 'InvoiceExpired', 'INV0000000001', $fake) === false && row($p['id'])['state'] === 'settled',
+    'Confirmed: later events only refresh confirmations, never go back');
 $calls = count($fake->statusCalls);
 $v = BtcPayments::view($session, $p['id'], $fake);
 check($v['state'] === 'settled' && $v['settled_at'] !== null && $v['qr'] === null && $v['checkout_url'] === null && count($fake->statusCalls) === $calls, 'Settled: final, no more BTCPay reads, no QR');
@@ -235,7 +249,9 @@ check($n['state'] === 'pending' && $n['btc_address'] === null && $n['qr'] === nu
 $fake->status = [[]];
 $n = BtcPayments::view($session, $n['id'], $fake);
 check($n['state'] === 'pending' && $n['btc_address'] !== null && $n['qr'] !== null, 'Next read fills address and QR');
-check(BtcPayments::applyEvent($instance, $sA, 'InvoiceExpired', 'INV0000000004') === true && row($n['id'])['state'] === 'expired' && row($n['id'])['closed_at'] !== null, 'InvoiceExpired: closed as expired');
+$fake->status = [['status' => 'expired']];
+check(BtcPayments::applyEvent($instance, $sA, 'InvoiceExpired', 'INV0000000004', $fake) === true && row($n['id'])['state'] === 'expired' && row($n['id'])['closed_at'] !== null,
+    'InvoiceExpired confirmed by the invoice status: closed as expired');
 
 // sweep: creazione incerta oltre la scadenza chiusa; attesa scaduta riletta su BTCPay
 $fake->create = [['outcome' => 'created', 'invoice_id' => 'INV0000000005']]; $fake->status = [[]];

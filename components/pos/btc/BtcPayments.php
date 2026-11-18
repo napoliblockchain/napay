@@ -29,7 +29,8 @@ final class BtcPayments
     /** stato pubblico BTCPay (2.x e nomi storici) -> stato Napay */
     private const STATUS = ['new' => 'pending', 'processing' => 'processing', 'paid' => 'processing', 'settled' => 'settled', 'confirmed' => 'settled',
         'complete' => 'settled', 'expired' => 'expired', 'invalid' => 'invalid'];
-    private const EVENTS = ['InvoiceProcessing' => 'processing', 'InvoiceSettled' => 'settled', 'InvoiceExpired' => 'expired', 'InvoiceInvalid' => 'invalid'];
+    /** Eventi dello store che fanno rileggere la fattura (mai fonte dello stato). */
+    private const EVENTS = ['InvoiceReceivedPayment', 'InvoiceProcessing', 'InvoiceSettled', 'InvoiceExpired', 'InvoiceInvalid'];
     private const NEXT = ['pending' => ['processing', 'settled', 'expired', 'invalid'], 'processing' => ['settled', 'expired', 'invalid']];
 
     /**
@@ -132,20 +133,48 @@ final class BtcPayments
     }
 
     /**
-     * Webhook firmato dello store (già verificato dal chiamante): aggiorna il pagamento della fattura, solo se creata da
-     * Napay per quello stesso negozio. Idempotente (CAS). @return bool true se un pagamento è cambiato
+     * Webhook firmato dello store (già verificato dal chiamante) usato solo come avviso: dal webhook si prende l'ID della
+     * fattura, mai lo stato o gli importi. Il pagamento creato da Napay per quello stesso negozio viene riletto dallo stato
+     * pubblico della fattura su BTCPay (stato, BTC ricevuti, conferme); BTCPay non raggiungibile = invariato (polling e
+     * comando periodico lo riprendono). @return bool true se lo stato del pagamento è cambiato
      */
-    public static function applyEvent(string $instance, int $storeId, string $eventType, ?string $invoiceId): bool
+    public static function applyEvent(string $instance, int $storeId, string $eventType, ?string $invoiceId, ?PosInvoiceGateway $gateway = null): bool
     {
-        $state = self::EVENTS[$eventType] ?? null;
-        if ($state === null || $invoiceId === null) return false;
+        if (!in_array($eventType, self::EVENTS, true) || $invoiceId === null) return false;
         $payment = Yii::$app->db->createCommand('SELECT * FROM ' . self::TABLE . ' WHERE instance=:i AND invoice_id=:v', [':i' => $instance, ':v' => $invoiceId])->queryOne();
         if ($payment === false) return false;
         if ((int) $payment['store_id'] !== $storeId) {
             Log::security(sprintf('Pagamento BTC %s: evento di un altro negozio ignorato', $payment['public_id']));
             return false;
         }
-        return self::advance($payment, $state, null);
+        $gateway ??= BtcpayPosGateway::fromEnv();
+        if ($gateway === null || !hash_equals($gateway->instance(), $instance)) return false;
+        $before = $payment['state'];
+        if (in_array($before, ['pending', 'processing'], true)) {
+            try {
+                $after = self::refresh($payment, $gateway);
+            } catch (\Throwable $error) {
+                return false;
+            }
+            return $after['state'] !== $before;
+        }
+        // già confermato: aggiorna solo BTC ricevuti e conferme (stati finali non tornano mai indietro)
+        if ($before === 'settled') self::capture($payment, $gateway);
+        return false;
+    }
+
+    /** BTC ricevuti, conferme, ordine e cambio dallo stato pubblico, senza cambiare lo stato del pagamento. */
+    private static function capture(array $payment, PosInvoiceGateway $gateway): void
+    {
+        if ($payment['invoice_id'] === null || $payment['amount_satoshis'] === null) return;
+        try {
+            $status = $gateway->status($payment['invoice_id']);
+        } catch (\Throwable $error) {
+            return;
+        }
+        // solo se BTCPay conferma lo stesso stato: una lettura discordante non tocca un pagamento chiuso
+        if ($status === null || !self::matches($payment, $payment['invoice_id'], $status) || (self::STATUS[$status['status']] ?? null) !== $payment['state']) return;
+        self::move($payment, $payment['state'], ['confirmations' => max((int) $payment['confirmations'], $status['confirmations'])] + self::details($payment, $status, (int) $payment['amount_satoshis']));
     }
 
     /**
@@ -253,7 +282,8 @@ final class BtcPayments
     {
         $changes = [];
         $paid = $status['paid_satoshis'] ?? null;
-        if (is_int($paid) && $paid >= 0 && $paid <= 2100000000000000) $changes['paid_satoshis'] = $paid;
+        // i BTC ricevuti non diminuiscono mai (lettura parziale o discordante = valore precedente)
+        if (is_int($paid) && $paid >= 0 && $paid <= 2100000000000000 && ($payment['paid_satoshis'] === null || $paid >= (int) $payment['paid_satoshis'])) $changes['paid_satoshis'] = $paid;
         $order = $status['order_satoshis'] ?? null;
         if ($payment['order_satoshis'] !== null || !is_int($order) || $order < 1 || $order > $total) return $changes;
         $changes['order_satoshis'] = $order;
