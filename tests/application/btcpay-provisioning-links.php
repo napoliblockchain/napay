@@ -9,6 +9,7 @@ if (env('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !=
 define('YII_ENABLE_ERROR_HANDLER', false);
 require $root . '/vendor/autoload.php'; require $root . '/vendor/yiisoft/yii2/Yii.php';
 use app\components\btcpay\provisioning\{ProvisioningHttpException as Http, ProvisioningJobs, ProvisioningLinkWorker, ProvisioningSettingsWorker, ProvisioningStore};
+use app\components\btcpay\StoreSettingsPayload;
 use app\components\btcpay\provisioning\steps\{PosLinkStep, StoreArchiveStep, StoreLinkStep, StoreSettingsStep, StoreWalletStep, StoreWebhookStep};
 
 $password = trim((string) fgets(STDIN));
@@ -424,7 +425,8 @@ check($failure !== null && $failure->getMessage() === 'provisioning_link_worker_
 $long = app\components\btcpay\provisioning\steps\StoreLinkStep::name(str_repeat('Pizzeria Napoletana ', 5), str_repeat('a', 32));
 check(mb_strlen($long) === 50 && str_ends_with($long, ' [napay-' . str_repeat('a', 32) . ']'), 'Creation name never exceeds the 50 characters BTCPay accepts, marker intact');
 $admin->createCommand()->insert('storesettings', ['store_id' => $storeA, 'defaultCurrency' => 'EUR', 'invoiceExpiration' => 900, 'speedPolicy' => 'MediumSpeed',
-    'requiresRefundEmail' => 1, 'receipt' => '{"enabled":1,"showQR":1,"showPayments":0}', 'defaultPaymentMethod' => 'BTC', 'htmlTitle' => 'W3c'])->execute();
+    'requiresRefundEmail' => 1, 'receipt' => '{"enabled":1,"showQR":1,"showPayments":0}', 'defaultPaymentMethod' => 'BTC', 'htmlTitle' => 'W3c',
+    'monitoringExpiration' => 3600, 'showRecommendedFee' => 1, 'website' => 'www.negozio.example', 'customLogo' => 'https://napay.example.invalid/logo.png'])->execute();
 $storeName = (string) $admin->createCommand('SELECT description FROM stores WHERE id=:s', [':s' => $storeA])->queryScalar();
 [$instance, $http, $store, $run] = $scenario();
 $settings = new ProvisioningSettingsWorker($worker, new ProvisioningJobs($worker, $uuid(), 60, $clock), $store, new StoreSettingsStep($http->key()), $instance, $clock);
@@ -439,10 +441,10 @@ $settings->runOnce();
 [$method, $path, $body, $key] = $http->calls[0];
 [$rm, $rp, $rb, $rk] = $http->calls[1];
 check($job($su)['state'] === 'done' && $method === 'PUT' && $path === '/api/v1/stores/st-set' && $key === $apiKey
-    && $body['name'] === $storeName
-    && $body['defaultCurrency'] === 'EUR' && $body['invoiceExpiration'] === 900 && $body['requiresRefundEmail'] === true
-    && $body['receipt'] === ['enabled' => true, 'showQR' => true, 'showPayments' => false] && !array_key_exists('website', $body),
-    'One PUT with the merchant key: plain shop name and typed fixed values read from Napay');
+    && $body === ['name' => $storeName, 'defaultCurrency' => 'EUR'] + StoreSettingsPayload::FIXED
+        + ['website' => 'https://www.negozio.example', 'logoUrl' => 'https://napay.example.invalid/logo.png']
+    && $body['monitoringExpiration'] === 86400 && $body['showRecommendedFee'] === false && $body['htmlTitle'] === 'Attesa pagamento in cryptovaluta...',
+    'One PUT with the merchant key: shop name, currency, website and logo from Napay, the same standard values for every store (old stored values ignored)');
 check(count($http->calls) === 2 && $rm === 'PUT' && $rp === '/api/v1/stores/st-set/rates/configuration/primary' && $rk === $apiKey
     && $rb === ['isCustomScript' => false, 'preferredSource' => 'kraken', 'spread' => '0'], 'SIP-033: then the store rates (fixed source, never a custom script) with the merchant key');
 $sr = $enqueue($instance, 'store_update', $storeA, 3);
@@ -583,4 +585,12 @@ $create = $enqueue($instance, 'store_link', $wake);
 $http->queue = [$r(200, ['id' => 'st-wake'])];
 $run->runOnce();
 check($job($create)['state'] === 'done' && (int) $job($waitSettings)['next_attempt_at'] <= $t, 'Store linked: settings waiting for it are due now');
+// --- SIP-033: sito e logo accettati solo come URL http(s) assoluti senza credenziali
+check(StoreSettingsPayload::url('www.negozio.example/chi-siamo', true) === 'https://www.negozio.example/chi-siamo' && StoreSettingsPayload::url('http://a.example', true) === 'http://a.example'
+    && StoreSettingsPayload::url('www.negozio.example', false) === null && StoreSettingsPayload::url('javascript:alert(1)', true) === null
+    && StoreSettingsPayload::url('ftp://a.example', true) === null && StoreSettingsPayload::url('https://u:p@a.example', true) === null
+    && StoreSettingsPayload::url('https://a.example/x y', true) === null && StoreSettingsPayload::url(str_repeat('a', 250) . '.example', true) === null
+    && StoreSettingsPayload::url(null, true) === null && StoreSettingsPayload::url('  ', true) === null, 'Website and logo: only absolute http(s) URLs, bare host becomes https, anything else omitted');
+$bad = StoreSettingsPayload::build('Negozio', ['defaultCurrency' => 'eur', 'website' => 'not a site', 'customLogo' => 'logo.png']);
+check($bad === ['name' => 'Negozio'] + StoreSettingsPayload::FIXED, 'Invalid currency, website or logo never reach BTCPay: standard values only');
 echo "PASS $checks BTCPay provisioning link worker checks\n";

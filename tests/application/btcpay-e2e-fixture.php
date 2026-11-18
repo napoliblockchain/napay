@@ -33,14 +33,14 @@ try {
                 'phone' => '', 'mobile' => '', 'addressStreet' => '', 'addressNumberHouse' => '', 'addressCity' => '', 'addressZip' => '',
                 'addressProvince' => '', 'addressCountry' => ''])->execute();
             $store = (int) $db->lastInsertID;
-            // impostazioni fisse come StoresController::defaultSettings (SIP-030 punto 4)
+            // impostazioni come StoresController::defaultSettings (SIP-030 punto 4, SIP-033), più un sito senza schema come nel vecchio Napay
             $db->createCommand()->insert('storesettings', ['store_id' => $store, 'defaultCurrency' => 'EUR', 'invoiceExpiration' => 900, 'displayExpirationTimer' => 300,
-                'monitoringExpiration' => 3600, 'speedPolicy' => 'MediumSpeed', 'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
-                'paymentTolerance' => 0, 'anyoneCanCreateInvoice' => 0, 'requiresRefundEmail' => 1, 'checkoutType' => 'V1',
+                'monitoringExpiration' => 86400, 'speedPolicy' => 'MediumSpeed', 'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
+                'paymentTolerance' => 0, 'anyoneCanCreateInvoice' => 0, 'requiresRefundEmail' => 0, 'checkoutType' => 'V1',
                 'receipt' => json_encode(['enabled' => 1, 'showQR' => 1, 'showPayments' => 1]), 'lightningAmountInSatoshi' => 0, 'lightningPrivateRouteHints' => 0,
-                'onChainWithLnInvoiceFallback' => 0, 'redirectAutomatically' => 0, 'showRecommendedFee' => 1, 'recommendedFeeBlockTarget' => 1, 'defaultLang' => 'it-IT',
-                'customLogo' => 'https://napay.example.invalid/bundles/site/images/logopos.png', 'customCSS' => 'https://napay.example.invalid/bundles/site/css/checkout.css',
-                'htmlTitle' => 'E2E negozio ' . $label, 'networkFeeMode' => 'Always', 'payJoinEnabled' => 0, 'lazyPaymentMethods' => 0, 'defaultPaymentMethod' => 'BTC'])->execute();
+                'onChainWithLnInvoiceFallback' => 0, 'redirectAutomatically' => 0, 'showRecommendedFee' => 0, 'recommendedFeeBlockTarget' => 0, 'defaultLang' => 'it-IT',
+                'customLogo' => 'https://napay.example.invalid/bundles/site/images/logobrand-294.png', 'customCSS' => null, 'website' => 'www.negozio-e2e.example',
+                'htmlTitle' => 'Attesa pagamento in cryptovaluta...', 'networkFeeMode' => 'Always', 'payJoinEnabled' => 0, 'lazyPaymentMethods' => 0, 'defaultPaymentMethod' => 'BTC-CHAIN'])->execute();
             $terminal = new app\models\PosTerminals(['merchant_id' => $m['id'], 'store_id' => $store, 'name' => 'E2E cassa ' . $label]);
             if (!$terminal->save()) exit(1);
             // come il web: ogni accodamento nella transazione dell'operazione che lo genera

@@ -47,6 +47,12 @@ use app\components\btcpay\provisioning\ProvisioningStatus;
             'format' => 'raw',
         ],
         [
+            'attribute' => 'website',
+            'label' => Yii::t('app', 'Website'),
+            'value' => Html::encode($model->storesettings->website ?? '-'),
+            'format' => 'raw',
+        ],
+        [
             'label' => Yii::t('app', 'BTC exchange rate'),
             'value' => Html::encode(\Yii::$app->formatter->asCurrency((float) $rates, $model->storesettings->defaultCurrency)),
             'format' => 'raw',

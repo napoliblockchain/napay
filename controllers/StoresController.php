@@ -28,7 +28,6 @@ use app\components\btcpay\XpubAddresses;
 
 use PhpOffice\PhpSpreadsheet\Spreadsheet;
 use PhpOffice\PhpSpreadsheet\IOFactory;
-use yii\helpers\Html;
 
 /**
  * StoresController implements the CRUD actions for Stores model.
@@ -229,7 +228,7 @@ class StoresController extends Controller
     }
 
     /**
-     * Nome e valuta del negozio (SIP-030 punto 4): le altre impostazioni BTCPay restano quelle fisse di defaultSettings().
+     * Nome, valuta e sito del negozio (SIP-030 punto 4, SIP-033): le altre impostazioni BTCPay sono fisse (StoreSettingsPayload::FIXED).
      * @param string $id ID cifrato
      */
     public function actionUpdateGeneral($id)
@@ -243,19 +242,23 @@ class StoresController extends Controller
             $postSettings = Yii::$app->request->post('Storesettings');
             $description = is_array($postStore) && is_string($postStore['description'] ?? null) ? trim($postStore['description']) : '';
             $currency = is_array($postSettings) && is_string($postSettings['defaultCurrency'] ?? null) ? $postSettings['defaultCurrency'] : '';
+            $website = is_array($postSettings) && is_string($postSettings['website'] ?? null) ? trim($postSettings['website']) : '';
             $model->description = $description;
             $store->defaultCurrency = $currency;
+            $store->website = $website === '' ? null : $website;
             if ($description === '') $model->addError('description', Yii::t('app', 'Description is required.'));
             if (!array_key_exists($currency, self::CURRENCIES)) $store->addError('defaultCurrency', Yii::t('app', 'Select a currency.'));
+            // SIP-033: sito del negozio mostrato sulla pagina di pagamento BTCPay (facoltativo, http/https)
+            if ($website !== '' && StoreSettingsPayload::url($website, true) === null) $store->addError('website', Yii::t('app', 'Enter a valid web address.'));
+            else if ($website !== '') $store->website = StoreSettingsPayload::url($website, true);
 
             if (!$model->hasErrors() && !$store->hasErrors()) {
-                $store->htmlTitle = Html::encode($description);
                 $transaction = Yii::$app->db->beginTransaction();
                 try {
                     $logUpdate = fn() => Log::save(Yii::$app->controller->id, Yii::$app->controller->action->id, Yii::t('app', 'User {user} has updated general {item} settings: {itemname}', [
                         'user' => Yii::$app->user->identity->username, 'item' => Yii::$app->controller->id, 'itemname' => $model->description,
                     ]));
-                    if (!$model->save(true, ['description']) || !$store->save(true, ['defaultCurrency', 'htmlTitle'])) {
+                    if (!$model->save(true, ['description']) || !$store->save(true, ['defaultCurrency', 'website'])) {
                         Yii::$app->session->setFlash('error', Yii::t('app', 'Store not saved. Try again.'));
                     } elseif (!$this->legacy($model)) {
                         // SIP-022 passo 3: nessuna chiamata dal web, il worker allinea lo store con la chiave del merchant
@@ -541,7 +544,7 @@ class StoresController extends Controller
      * @return Stores the loaded model
      * @throws NotFoundHttpException if the model cannot be found
      */
-    /** Impostazioni iniziali del negozio (quelle che il vecchio flusso inviava a BTCPay alla creazione). */
+    /** Impostazioni iniziali del negozio: copia locale degli standard (a BTCPay vanno sempre StoreSettingsPayload::FIXED). */
     private function defaultSettings(Stores $model): Storesettings
     {
         return new Storesettings([
@@ -550,12 +553,12 @@ class StoresController extends Controller
             'defaultCurrency' => 'EUR',
             'invoiceExpiration' => 900,
             'displayExpirationTimer' => 300,
-            'monitoringExpiration' => 3600,
+            'monitoringExpiration' => 86400,
             'speedPolicy' => 'MediumSpeed', // -> 1 confirmation 'HighSpeed' 0,
             'lightningDescriptionTemplate' => 'Paid to {StoreName} (Order ID: {OrderId})',
             'paymentTolerance' => 0,
             'anyoneCanCreateInvoice' => 0,
-            'requiresRefundEmail' => 1,
+            'requiresRefundEmail' => 0,
             'checkoutType' => 'V1',
             'receipt' => json_encode([
                 'enabled' => 1,
@@ -566,16 +569,16 @@ class StoresController extends Controller
             'lightningPrivateRouteHints' => 0,
             'onChainWithLnInvoiceFallback' => 0,
             'redirectAutomatically' => 0,
-            'showRecommendedFee' => 1,
-            'recommendedFeeBlockTarget' => 1,
+            'showRecommendedFee' => 0,
+            'recommendedFeeBlockTarget' => 0,
             'defaultLang' => 'it-IT',
-            'customLogo' => Url::to('@web/bundles/site/images/logopos.png', true),
-            'customCSS' => Url::to('@web/bundles/site/css/checkout.css', true),
-            'htmlTitle' => Html::encode($model->description),
+            'customLogo' => Url::to('@web' . StoreSettingsPayload::DEFAULT_LOGO, true),
+            'customCSS' => null,
+            'htmlTitle' => StoreSettingsPayload::FIXED['htmlTitle'],
             'networkFeeMode' => 'Always',
             'payJoinEnabled' => 0,
             'lazyPaymentMethods' => 0,
-            'defaultPaymentMethod' => 'BTC',
+            'defaultPaymentMethod' => StoreSettingsPayload::FIXED['defaultPaymentMethod'],
             // salvo i criteria in DB, ma non invio request tramite API
             'paymentMethodCriteria' => json_encode([
                 0 => ['paymentMethod' => 'BTC', 'currencyCode' => 'EUR', 'amount' => 0, 'above' => 1],

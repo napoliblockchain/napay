@@ -69,8 +69,12 @@ $created = web('/stores/create', ['_csrf' => csrf($page), 'Stores' => ['descript
 $store = $db->createCommand("SELECT * FROM stores WHERE description='Negozio senza BTCPay'")->queryOne();
 check($created['status'] === 302 && $store !== false && (int) $store['merchant_id'] === $merchantA, 'Store created without BTCPay, forced to the manager merchant (tampered merchant_id ignored)');
 check($created['seconds'] < 5, 'Creation does not wait for any BTCPay call');
-$settings = $db->createCommand('SELECT bps_storeid, defaultCurrency FROM storesettings WHERE store_id=:s', [':s' => $store['id']])->queryOne();
+$settings = $db->createCommand('SELECT bps_storeid, defaultCurrency, monitoringExpiration, showRecommendedFee, htmlTitle, customLogo, customCSS, website FROM storesettings WHERE store_id=:s',
+    [':s' => $store['id']])->queryOne();
 check($settings !== false && $settings['bps_storeid'] === null && $settings['defaultCurrency'] === 'EUR', 'Default store settings saved, not linked to BTCPay yet');
+check((int) $settings['monitoringExpiration'] === 86400 && (int) $settings['showRecommendedFee'] === 0 && $settings['htmlTitle'] === app\components\btcpay\StoreSettingsPayload::FIXED['htmlTitle']
+    && str_ends_with((string) $settings['customLogo'], app\components\btcpay\StoreSettingsPayload::DEFAULT_LOGO) && is_file(dirname(__DIR__, 2) . '/web' . app\components\btcpay\StoreSettingsPayload::DEFAULT_LOGO)
+    && $settings['customCSS'] === null && $settings['website'] === null, 'SIP-033: new store with the standard values and the Napay logo (an existing file), no CSS, no website yet');
 // Gli ID cifrati dipendono dalla sessione web: si usano quelli prodotti dalle pagine.
 check(str_contains(location($created), 'stores/view') && preg_match('/[?&]id=([^&]+)/', location($created), $match), 'Redirect to the new store');
 $id = $match[1];

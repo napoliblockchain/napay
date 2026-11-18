@@ -242,6 +242,10 @@ api GET "/api/v1/stores/$remoteA" "" "verify-$iA.hdr"
 [ "$code" = 200 ] && [ "$(json "(d['name'], d['defaultCurrency'], d['speedPolicy'], d['invoiceExpiration'], d['networkFeeMode'])" "$work/w/out.json")" = "('E2E negozio A', 'EUR', 'MediumSpeed', 900, 'Always')" ] \
     || fail "store settings not applied ($code)"
 pass 'Fixed store settings and the plain shop name (shown at checkout) applied to BTCPay by the worker'
+[ "$(json "(d['monitoringExpiration'], d['paymentTolerance'], d['showRecommendedFee'], d['htmlTitle'], d['defaultLang'], d['defaultPaymentMethod'], d['website'], d['logoUrl'], d.get('cssUrl'))" "$work/w/out.json")" \
+    = "(86400, 0.0, False, 'Attesa pagamento in cryptovaluta...', 'it-IT', 'BTC-CHAIN', 'https://www.negozio-e2e.example', 'https://napay.example.invalid/bundles/site/images/logobrand-294.png', None)" ] \
+    || fail "standard store settings: $(json "(d['monitoringExpiration'], d['paymentTolerance'], d['showRecommendedFee'], d['htmlTitle'], d['defaultLang'], d['defaultPaymentMethod'], d.get('website'), d.get('logoUrl'), d.get('cssUrl'))" "$work/w/out.json")"
+pass 'SIP-033: standard settings of the old Napay (monitoring 24 h, no recommended fee, fixed title), shop website and logo on BTCPay'
 api GET "/api/v1/stores/$remoteA/rates/configuration/primary" "" "verify-$iA.hdr"
 [ "$code" = 200 ] && [ "$(json "(d['isCustomScript'], d['preferredSource'])" "$work/w/out.json")" = "(False, 'kraken')" ] \
     || fail "store rates not applied ($code)"
