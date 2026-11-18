@@ -36,7 +36,7 @@ if ($btcpayWorker) {
     // SIP-033: web e cron creano/leggono le fatture POS su BTCPay solo tramite il proxy, con la CA locale e l'origine del digest
     foreach (['web', 'cron'] as $service) {
         $env = $services[$service]['environment'];
-        localCheck(($env['BTCPAY_PROVISION_ORIGIN'] ?? '') === 'https://btcpay.local' && ($env['BTCPAY_PROVISION_CA_FILE'] ?? '') === '/run/btcpay-ca.crt'
+        localCheck(($env['BTCPAY_PROVISION_ORIGIN'] ?? '') === 'https://btcpay.local' && ($env['BTCPAY_PROVISION_CA_FILE'] ?? '') === '/var/www/html/runtime/btcpay-ca.crt'
             && ($env['BTCPAY_PROVISION_INSTANCE'] ?? '') === hash('sha256', 'https://btcpay.local') && ($env['PAYMENT_PROXY'] ?? '') === 'http://egress:3128'
             && empty($services[$service]['secrets']) && !isset($env['BTCPAY_PROVISIONER_KEY_FILE']) && !isset($env['BTCPAY_KEK_KEYRING_FILE']));
     }

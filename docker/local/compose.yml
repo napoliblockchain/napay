@@ -31,6 +31,8 @@ services:
       - |
         install -d -o 33 -g 33 -m 0700 /var/www/html/runtime
         install -d -o 33 -g 33 -m 0755 /var/www/html/web/assets
+        # SIP-033: CA locale di BTCPay (file privato dell'host, uid dell'utente) copiata per www-data nel runtime, condiviso col cron
+        [ ! -f /run/btcpay-ca-source.crt ] || install -o 33 -g 33 -m 0400 /run/btcpay-ca-source.crt /var/www/html/runtime/btcpay-ca.crt
         exec sh /var/www/html/docker/web-entrypoint.sh apache2-foreground
   # cron della sandbox: stesso codice e runtime del web (mail in runtime/mail), chain di sviluppo per la scadenza dei pagamenti TTS
   cron:

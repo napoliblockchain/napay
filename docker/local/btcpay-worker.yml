@@ -10,16 +10,16 @@ services:
     depends_on:
       egress:
         condition: service_healthy
+  # web e cron girano come www-data: la CA (0600, uid dell'host) è copiata per www-data dall'entrypoint del web
+  # nel runtime condiviso (docker/local/compose.yml)
   web:
     environment:
-      BTCPAY_PROVISION_CA_FILE: /run/btcpay-ca.crt
+      BTCPAY_PROVISION_CA_FILE: /var/www/html/runtime/btcpay-ca.crt
     volumes:
-      - ${NAPAY_LOCAL_BTCPAY_CA:?Set local gateway CA}:/run/btcpay-ca.crt:ro
+      - ${NAPAY_LOCAL_BTCPAY_CA:?Set local gateway CA}:/run/btcpay-ca-source.crt:ro
   cron:
     environment:
       PAYMENT_PROXY: "http://egress:3128"
-      BTCPAY_PROVISION_CA_FILE: /run/btcpay-ca.crt
-    volumes:
-      - ${NAPAY_LOCAL_BTCPAY_CA:?Set local gateway CA}:/run/btcpay-ca.crt:ro
+      BTCPAY_PROVISION_CA_FILE: /var/www/html/runtime/btcpay-ca.crt
     networks:
       egress: {}
