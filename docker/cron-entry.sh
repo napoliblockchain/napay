@@ -60,6 +60,9 @@ register_job "${CRON_ENABLE_TTS_SWEEP:-1}" "${CRON_TTS_SWEEP_SCHEDULE:-*/5 * * *
 # SIP-033: pagamenti BTC del POS oltre la scadenza (stato dal server BTCPay, creazioni incerte chiuse)
 register_job "${CRON_ENABLE_BTC_SWEEP:-1}" "${CRON_BTC_SWEEP_SCHEDULE:-*/5 * * * *}" \
     "php yii btc-payments/sweep --once" btc-sweep
+# SIP-030 passo 5: negozi v1 sul ponte BTCPay, webhook e app POS dei terminali (spento senza BTCPAY_STORES_API_KEY)
+register_job "${CRON_ENABLE_BTCPAY_BRIDGE:-1}" "${CRON_BTCPAY_BRIDGE_SCHEDULE:-*/5 * * * *}" \
+    "php yii btcpay-bridge/sync --once" btcpay-bridge
 
 crontab -u www-data "$TMP_CRON"
 echo "[cron] ${#JOBS[@]} job(s) loaded (TZ=$CRON_TZ)."

@@ -17,6 +17,9 @@ services:
       BTCPAY_PROVISION_INSTANCE: ${BTCPAY_PROVISION_INSTANCE:?Set SHA-256 of the BTCPay origin}
       BTCPAY_PROVISION_ORIGIN: ${BTCPAY_PROVISION_ORIGIN:?Set BTCPay origin}
       BTCPAY_PROVISION_CA_FILE: ${BTCPAY_PROVISION_CA_FILE:-}
+      # SIP-030 passo 5: webhook degli store v1 sul ponte (btcpay-bridge/sync), stessi valori del worker
+      BTCPAY_STORE_WEBHOOK_KEY: ${BTCPAY_STORE_WEBHOOK_KEY:?Set store webhook master key}
+      BTCPAY_STORE_WEBHOOK_URL: ${BTCPAY_STORE_WEBHOOK_URL:?Set public store webhook URL}
   btcpay-worker:
     image: napay/bootstrap:dev
     user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"

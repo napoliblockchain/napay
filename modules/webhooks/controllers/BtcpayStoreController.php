@@ -14,7 +14,8 @@ use yii\rest\Controller;
 use yii\web\Response;
 
 /**
- * POST /api/btcpay/v1/store-webhook: webhook degli store BTCPay dei negozi (SIP-022 passo 4), registrati dal worker.
+ * POST /api/btcpay/v1/store-webhook: webhook degli store BTCPay dei negozi (SIP-022 passo 4), registrati dal worker
+ * (negozi v1 sul ponte: dal comando btcpay-bridge/sync).
  * Lo store si riconosce dal suo ID nel corpo; la firma BTCPay-Sig si verifica con il segreto derivato per quel negozio
  * (BTCPAY_STORE_WEBHOOK_KEY), quindi un evento firmato per uno store non vale per un altro. Ogni consegna è registrata
  * una sola volta con il negozio di provenienza. SIP-033: l'evento aggiorna il pagamento BTC del POS con quella fattura
@@ -64,7 +65,10 @@ class BtcpayStoreController extends Controller
         $remoteStore = is_array($event) ? ($event['storeId'] ?? null) : null;
         if (!is_string($remoteStore) || preg_match('/^[A-Za-z0-9_-]{1,64}$/D', $remoteStore) !== 1) return $this->reply(400, 'invalid');
         $db = Yii::$app->db;
-        $storeId = $db->createCommand('SELECT store_id FROM {{%btcpay_store_links}} WHERE instance=:i AND remote_store_id=:r', [':i' => $instance, ':r' => $remoteStore])->queryScalar();
+        // negozi del provisioning (SIP-022) o negozi v1 sul ponte (BridgePosApps): stesso segreto derivato per negozio
+        $storeId = $db->createCommand('SELECT store_id FROM {{%btcpay_store_links}} WHERE instance=:i AND remote_store_id=:r'
+            . ' UNION ALL SELECT store_id FROM {{%btcpay_bridge_stores}} WHERE instance=:i AND remote_store_id=:r', [':i' => $instance, ':r' => $remoteStore])->queryColumn();
+        $storeId = count($storeId) === 1 ? $storeId[0] : false;
         // store senza collegamento Napay (o firma non valida): nessun dettaglio su quale dei due
         if ($storeId === false || !StoreWebhookSecret::signatureValid($raw, $request->headers->get('BTCPay-Sig'), StoreWebhookSecret::derive($master, $instance, (int) $storeId))) {
             Log::security('Webhook BTCPay di negozio rifiutato (store sconosciuto o firma non valida)');

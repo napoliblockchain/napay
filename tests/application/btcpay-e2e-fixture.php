@@ -2,6 +2,7 @@
 // SIP-022 collaudo reale: fixture e lettura stato per tests/docker/btcpay-provisioning-e2e.sh (DB usa-e-getta).
 //   --seed   due merchant PG qualificati (A, B), un negozio e un terminale ciascuno, lavori accodati come fa il web
 //   --state  JSON dello stato locale del provisioning (mai credenziali o ciphertext)
+//   --bridge-seed / --bridge-state  negozio v1 sul ponte BTCPay (SIP-030 passo 5, tests/docker/btcpay-bridge-e2e.sh)
 if (PHP_SAPI !== 'cli') exit(1);
 $root = dirname(__DIR__, 2);
 require $root . '/config/env.php';
@@ -96,6 +97,23 @@ try {
             $db->createCommand()->update('storesettings', ['derivationScheme' => $scheme === '' ? null : $scheme], ['store_id' => $storeId])->execute();
             ProvisioningOutbox::enqueueStoreWallet($db, $storeId, (int) $row['merchant_id'], (int) $row['user_id']) || exit(1);
         });
+    } elseif (($argv[1] ?? '') === '--bridge-seed') {
+        // SIP-030 passo 5: negozio importato dalla v1 (store BTCPay del ponte in bps_storeid, xpub), terminale abilitato
+        $m = $merchants['A']; $remote = (string) ($argv[2] ?? ''); $scheme = (string) ($argv[3] ?? '');
+        $db->createCommand()->insert('stores', ['merchant_id' => $m['id'], 'description' => 'E2E negozio v1', 'email' => 'e2e@example.invalid', 'phone' => '', 'mobile' => '',
+            'addressStreet' => '', 'addressNumberHouse' => '', 'addressCity' => '', 'addressZip' => '', 'addressProvince' => '', 'addressCountry' => ''])->execute();
+        $store = (int) $db->lastInsertID;
+        $db->createCommand()->insert('storesettings', ['store_id' => $store, 'bps_storeid' => $remote, 'defaultCurrency' => 'EUR', 'derivationScheme' => $scheme])->execute();
+        $terminal = new app\models\PosTerminals(['merchant_id' => $m['id'], 'store_id' => $store, 'name' => 'E2E cassa v1', 'is_enabled' => 1]);
+        if (!$terminal->save()) exit(1);
+        $target = (new ReflectionMethod(app\components\pos\btc\BtcPayments::class, 'target'))->invoke(null, $db, (int) $terminal->id, $m['id'], $instance);
+        echo json_encode(['store' => $store, 'terminal' => (int) $terminal->id, 'merchant' => $m['id'], 'target_before' => $target], JSON_THROW_ON_ERROR), "\n";
+    } elseif (($argv[1] ?? '') === '--bridge-state') {
+        $terminal = (int) ($argv[2] ?? 0);
+        $q = static fn(string $sql) => $db->createCommand($sql, [':i' => $instance])->queryAll();
+        echo json_encode(['stores' => $q('SELECT store_id, remote_store_id, webhook_state, last_error_code FROM btcpay_bridge_stores WHERE instance=:i ORDER BY id'),
+            'pos' => $q('SELECT terminal_id, marker, remote_app_id, currency, state, last_error_code FROM btcpay_bridge_pos_links WHERE instance=:i ORDER BY id'),
+            'target' => (new ReflectionMethod(app\components\pos\btc\BtcPayments::class, 'target'))->invoke(null, $db, $terminal, $merchants['A']['id'], $instance)], JSON_THROW_ON_ERROR), "\n";
     } elseif (($argv[1] ?? '') === '--preview') {
         echo json_encode(app\components\btcpay\XpubAddresses::parse((string) ($argv[2] ?? ''), (string) ($argv[3] ?? ''))->receiveAddresses(5)), "\n";
     } elseif (($argv[1] ?? '') === '--archive-store') {

@@ -226,21 +226,33 @@ final class BtcPayments
     }
 
     /**
-     * Negozio con wallet BTC (xpub, non v1), store e app POS del terminale collegati sulla stessa istanza, valuta ammessa.
+     * Negozio con wallet BTC (xpub), store e app POS del terminale collegati sulla stessa istanza, valuta ammessa.
+     * Negozi del provisioning: collegamenti SIP-022. Negozi v1 (`bps_storeid`): store del ponte e app POS creata con la
+     * chiave ponte (BridgePosApps), sullo stesso store indicato dal negozio.
      * @return array{remote_store_id:string, remote_app_id:string, currency:string}|null
      */
     private static function target(Connection $db, int $terminalId, int $merchantId, string $instance): ?array
     {
-        $row = $db->createCommand('SELECT s.remote_store_id, p.remote_app_id, ss.defaultCurrency AS currency, ss.derivationScheme AS scheme, ss.bps_storeid AS legacy
+        $base = $db->createCommand('SELECT ss.defaultCurrency AS currency, ss.derivationScheme AS scheme, ss.bps_storeid AS legacy
             FROM {{%pos_terminals}} t
             JOIN {{%stores}} st ON st.id=t.store_id AND st.merchant_id=t.merchant_id AND st.archived_at IS NULL
             JOIN {{%storesettings}} ss ON ss.store_id=t.store_id
-            JOIN {{%btcpay_store_links}} s ON s.store_id=t.store_id AND s.merchant_id=t.merchant_id AND s.instance=:i AND s.state=\'synced\'
-            JOIN {{%btcpay_pos_links}} p ON p.terminal_id=t.id AND p.store_id=t.store_id AND p.merchant_id=t.merchant_id AND p.instance=:i AND p.state=\'synced\'
-            WHERE t.id=:t AND t.merchant_id=:m', [':t' => $terminalId, ':m' => $merchantId, ':i' => $instance])->queryOne();
-        if ($row === false || !is_string($row['remote_store_id']) || !is_string($row['remote_app_id']) || !in_array($row['currency'], self::CURRENCIES, true)
-            || !is_string($row['scheme']) || trim($row['scheme']) === '' || !empty($row['legacy'])) return null;
-        return ['remote_store_id' => $row['remote_store_id'], 'remote_app_id' => $row['remote_app_id'], 'currency' => $row['currency']];
+            WHERE t.id=:t AND t.merchant_id=:m', [':t' => $terminalId, ':m' => $merchantId])->queryOne();
+        if ($base === false || !in_array($base['currency'], self::CURRENCIES, true) || !is_string($base['scheme']) || trim($base['scheme']) === '') return null;
+        $params = [':t' => $terminalId, ':m' => $merchantId, ':i' => $instance];
+        if (trim((string) $base['legacy']) === '') {
+            $row = $db->createCommand('SELECT s.remote_store_id, p.remote_app_id FROM {{%pos_terminals}} t
+                JOIN {{%btcpay_store_links}} s ON s.store_id=t.store_id AND s.merchant_id=t.merchant_id AND s.instance=:i AND s.state=\'synced\'
+                JOIN {{%btcpay_pos_links}} p ON p.terminal_id=t.id AND p.store_id=t.store_id AND p.merchant_id=t.merchant_id AND p.instance=:i AND p.state=\'synced\'
+                WHERE t.id=:t AND t.merchant_id=:m', $params)->queryOne();
+        } else {
+            $row = $db->createCommand('SELECT b.remote_store_id, p.remote_app_id FROM {{%pos_terminals}} t
+                JOIN {{%btcpay_bridge_stores}} b ON b.store_id=t.store_id AND b.merchant_id=t.merchant_id AND b.instance=:i AND b.remote_store_id=:r
+                JOIN {{%btcpay_bridge_pos_links}} p ON p.terminal_id=t.id AND p.bridge_store_id=b.id AND p.instance=:i AND p.state=\'synced\'
+                WHERE t.id=:t AND t.merchant_id=:m', $params + [':r' => trim((string) $base['legacy'])])->queryOne();
+        }
+        if ($row === false || !is_string($row['remote_store_id']) || !is_string($row['remote_app_id'])) return null;
+        return ['remote_store_id' => $row['remote_store_id'], 'remote_app_id' => $row['remote_app_id'], 'currency' => $base['currency']];
     }
 
     /** Fattura creata: verificata sullo stato pubblico prima di registrarla. Stato non leggibile ora = registrata senza indirizzo. */
