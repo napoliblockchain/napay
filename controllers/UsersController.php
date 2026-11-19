@@ -49,6 +49,8 @@ class UsersController extends Controller
                     'disable' => ['POST'],
                     'export' => ['POST'],
                     'change-collapsed' => ['POST'],
+                    'change-password' => ['GET', 'POST'],
+                    'send-password-reset' => ['POST'],
                 ],
             ],
             'access' => [
@@ -58,6 +60,7 @@ class UsersController extends Controller
                         'actions' => [
                             'view',
                             'change-collapsed',
+                            'change-password',
                         ],
                         'allow' => true,
                         'roles' => ['@'],
@@ -79,6 +82,7 @@ class UsersController extends Controller
                             'update',
                             'disable',
                             'enable',
+                            'send-password-reset',
                         ],
                         'allow' => true,
                         'roles' => ['@'],
@@ -272,13 +276,36 @@ class UsersController extends Controller
         return $this->changeStatus($model, (int) $input['is_active']);
     }
 
-    /**
-     * Activates an existing Users model.
-     * If deletion is successful, the browser will be redirected to the 'index' page.
-     * @param integer $id
-     * @return mixed
-     * @throws NotFoundHttpException if the model cannot be found
-     */
+    /** Self-service only; account IDs supplied by the browser are ignored. */
+    public function actionChangePassword()
+    {
+        Yii::$app->response->headers->set('Cache-Control', 'no-store');
+        $model = new \app\models\forms\ChangePasswordForm();
+        if (Yii::$app->request->isPost && $model->load(Yii::$app->request->post())) {
+            if ($model->change()) {
+                Yii::$app->user->logout();
+                Yii::$app->session->setFlash('success', Yii::t('app', 'Password changed. Please sign in again.'));
+                return $this->redirect(['/site/login']);
+            }
+            if ($model->retryAfter > 0) {
+                Yii::$app->response->statusCode = 429;
+                Yii::$app->response->headers->set('Retry-After', (string) $model->retryAfter);
+            }
+        }
+        $model->current_password = $model->password = $model->repeat_password = '';
+        return $this->render('change-password', ['model' => $model]);
+    }
+
+    public function actionSendPasswordReset($id)
+    {
+        $user = $this->findModel($id);
+        $form = new \app\models\forms\PasswordResetRequestForm(['email' => $user->email]);
+        $form->sendEmail();
+        Log::save($this->id, $this->action->id, 'Password reset link requested for account ID ' . $user->id . '.');
+        Yii::$app->session->setFlash('info', Yii::t('app', 'If the account is eligible, a password reset link will be sent.'));
+        return $this->redirect(['view', 'id' => Crypt::encrypt($user->id)]);
+    }
+
     public function actionEnable($id)
     {
         return $this->changeStatus($this->findModel($id), Users::STATUS_ACTIVE);
