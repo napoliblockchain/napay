@@ -18,6 +18,8 @@ use app\components\merchant\MerchantLogo;
  *   valida da np_mpk. Mai i segreti v1 (chiavi exchange, securityToken, nonce) né la wallet_key dei wallet.
  * - Wallet TTS del titolare copiato su tutti i suoi negozi attivi; logo del primo negozio con logo = logo del merchant,
  *   letto da custom/<storeid>/CustomLogo.* della cartella file v1 e ricodificato (mai sovrascritto se già presente).
+ * - Passo 5b: POS v1 = casse del loro negozio (np_pos), senza operatori (li invita il merchant); POS eliminati o di negozi
+ *   archiviati = casse disabilitate. Codice di abbinamento v1 non importato. Chiave tecnica in legacy_pos_terminals.
  */
 final class LegacyMerchantImport
 {
@@ -35,7 +37,7 @@ final class LegacyMerchantImport
     {
         $report = ['merchants' => 0, 'merchants_linked' => 0, 'merchants_skipped' => 0, 'stores' => 0, 'stores_archived' => 0, 'stores_skipped' => 0,
             'btcpay_stores' => 0, 'websites' => 0, 'xpubs' => 0, 'xpubs_invalid' => 0, 'tts_wallets' => 0, 'tts_wallets_invalid' => 0,
-            'logos' => 0, 'logos_missing' => 0, 'membership_store' => null];
+            'logos' => 0, 'logos_missing' => 0, 'terminals' => 0, 'terminals_disabled' => 0, 'terminals_skipped' => 0, 'membership_store' => null];
         $merchants = [];
         foreach (Db::rows($source, 'SELECT * FROM np_merchants ORDER BY id_merchant') as $row) {
             $legacyUser = trim((string) $row['id_user']);
@@ -101,7 +103,20 @@ final class LegacyMerchantImport
             if ($btcpay !== null) $report['btcpay_stores']++;
             if ($website !== null) $report['websites']++;
             if ($owned['derivationScheme'] !== null) $report['xpubs']++;
-            $stores[] = ['id' => $storeId, 'merchant' => (int) $row['id_merchant'], 'archived' => $archived, 'logo' => $storeSettings['CustomLogo'] ?? ''];
+            $stores[$legacyStore] = ['id' => $storeId, 'merchant' => (int) $row['id_merchant'], 'archived' => $archived, 'logo' => $storeSettings['CustomLogo'] ?? ''];
+        }
+
+        // passo 5b: POS v1 = casse del negozio importato (merchant del negozio v2), mai riscritte
+        foreach (Db::rows($source, 'SELECT id_pos, denomination, id_store, deleted FROM np_pos ORDER BY id_pos') as $row) {
+            $store = $stores[(int) $row['id_store']] ?? null;
+            if ($store === null) { $report['terminals_skipped']++; continue; }
+            $report['terminals']++;
+            $enabled = (int) $row['deleted'] !== 1 && !$store['archived'];
+            if (!$enabled) $report['terminals_disabled']++;
+            if (Db::rows($target, 'SELECT terminal_id FROM legacy_pos_terminals WHERE legacy_id=?', [(int) $row['id_pos']]) !== []) continue;
+            $terminal = self::insert($target, 'pos_terminals', ['public_id' => self::uuid(), 'merchant_id' => $merchants[$store['merchant']]['id'], 'store_id' => $store['id'],
+                'name' => self::cut($row['denomination'], 256) ?? 'Cassa ' . (int) $row['id_pos'], 'is_enabled' => $enabled ? 1 : 0, 'created_at' => $now, 'updated_at' => $now]);
+            self::insert($target, 'legacy_pos_terminals', ['legacy_id' => (int) $row['id_pos'], 'terminal_id' => $terminal]);
         }
 
         // wallet TTS del titolare su tutti i suoi negozi attivi (mai la wallet_key v1)
@@ -155,6 +170,24 @@ final class LegacyMerchantImport
             || (int) Db::rows($target, 'SELECT COUNT(*) AS n FROM stores WHERE legacy_id IS NOT NULL')[0]['n'] !== $stores) {
             throw new LegacyImportException('Legacy reconciliation failed: merchants and stores.');
         }
+        // casse: ogni POS v1 di un negozio importato ha la sua cassa, nel negozio giusto
+        $imported = [];
+        foreach (Db::rows($target, 'SELECT legacy_id FROM stores WHERE legacy_id IS NOT NULL') as $row) $imported[(int) $row['legacy_id']] = true;
+        $terminals = 0;
+        foreach (Db::rows($source, 'SELECT id_store FROM np_pos') as $row) if (isset($imported[(int) $row['id_store']])) $terminals++;
+        $linked = (int) Db::rows($target, 'SELECT COUNT(*) AS n FROM legacy_pos_terminals l JOIN pos_terminals t ON t.id=l.terminal_id JOIN stores s ON s.id=t.store_id'
+            . ' AND s.merchant_id=t.merchant_id WHERE s.legacy_id IS NOT NULL')[0]['n'];
+        if ($linked !== $terminals || (int) Db::rows($target, 'SELECT COUNT(*) AS n FROM legacy_pos_terminals')[0]['n'] !== $terminals) {
+            throw new LegacyImportException('Legacy reconciliation failed: POS terminals.');
+        }
+    }
+
+    private static function uuid(): string
+    {
+        $bytes = random_bytes(16);
+        $bytes[6] = chr((ord($bytes[6]) & 0x0f) | 0x40);
+        $bytes[8] = chr((ord($bytes[8]) & 0x3f) | 0x80);
+        return vsprintf('%s%s-%s-%s-%s-%s%s%s', str_split(bin2hex($bytes), 4));
     }
 
     private static function cut($value, int $length): ?string
