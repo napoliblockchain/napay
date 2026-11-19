@@ -619,6 +619,7 @@ return [
     'Price' => 'Prezzo',
     'Price currency' => 'Valuta prezzo',
     'Change password' => 'Cambia password',
+    'Use password recovery for your own account.' => 'Per il tuo account usa il recupero password.',
     'Confirm password' => 'Conferma password',
     'Passwords do not match.' => 'Le password non coincidono.',
     'Current password' => 'Password attuale',

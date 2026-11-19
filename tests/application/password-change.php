@@ -62,6 +62,10 @@ $nodes = $xp->query('//tr[.//*[contains(text(),"other@example.invalid")]]//a[con
 check($nodes->length > 0, 'Admin target profile link exists'); $profile = request($nodes->item(0)->nodeValue);
 $targetQuery = parse_url($nodes->item(0)->nodeValue, PHP_URL_QUERY);
 $path = '/users/send-password-reset?' . $targetQuery;
+$profileDoc = new DOMDocument(); @$profileDoc->loadHTML($profile['body'], LIBXML_NONET);
+check((new DOMXPath($profileDoc))->query('//form[contains(@action,"send-password-reset")]')->length === 1, 'Admin target profile contains exactly one POST reset form');
+$ownLink = $xp->query('//a[@data-napay-profile-link]/@href')->item(0)->nodeValue;
+check(request('/users/send-password-reset?' . parse_url($ownLink, PHP_URL_QUERY), ['_csrf' => csrf($profile)])['status'] === 403, 'Admin own reset action denied; self-service remains separate');
     check(request($path)['status'] === 405, 'Admin reset is POST only');
     check(request($path, [])['status'] === 400, 'Admin reset requires CSRF');
     $app->cache->flush(); check(request($path, ['_csrf' => csrf($profile)])['status'] === 302, 'Admin sends existing reset flow');

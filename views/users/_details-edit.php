@@ -24,3 +24,4 @@ use app\components\Crypt;
         <?= Html::endForm() ?>
     <?php endif; ?>
 </div>
+<?= $this->render('_password-reset', ['model' => $model]) ?>

@@ -299,6 +299,7 @@ class UsersController extends Controller
     public function actionSendPasswordReset($id)
     {
         $user = $this->findModel($id);
+        if ((int) $user->id === (int) Yii::$app->user->id) throw new ForbiddenHttpException(Yii::t('app', 'Use password recovery for your own account.'));
         $form = new \app\models\forms\PasswordResetRequestForm(['email' => $user->email]);
         $form->sendEmail();
         Log::save($this->id, $this->action->id, 'Password reset link requested for account ID ' . $user->id . '.');
