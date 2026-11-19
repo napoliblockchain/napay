@@ -124,6 +124,20 @@ class m261118_100000_create_pos_btc_payments extends Migration
         'ck-pos-btc-payments-txids' => "((txids is null) or regexp_like(txids,'^[0-9a-f]{64}(,[0-9a-f]{64}){0,9}$','c'))",
     ];
 
+    /**
+     * SIP-030 passo 5c (m261119_120000): storico v1 nella stessa tabella; apertura, sessione, utente e app POS facoltativi
+     * solo tutti insieme e solo per pagamenti chiusi. Accettato solo esattamente così, dopo il passo 5.
+     */
+    private const LEGACY_COLUMNS = [
+        'opening_id' => ['INT NULL', 'int', 'YES', null, null, ''],
+        'session_id' => ['INT NULL', 'int', 'YES', null, null, ''],
+        'user_id' => ['INT NULL', 'int', 'YES', null, null, ''],
+        'remote_app_id' => ["VARCHAR(64) CHARACTER SET ascii COLLATE ascii_bin NULL", 'varchar(64)', 'YES', null, 'ascii_bin', ''],
+    ];
+    private const LEGACY_CHECKS = [
+        'ck-pos-btc-payments-origin' => "(((opening_id is null) = (session_id is null)) and ((opening_id is null) = (user_id is null)) and ((opening_id is null) = (remote_app_id is null)) and ((opening_id is not null) or (state in ('settled','expired','invalid'))) and regexp_like(remote_store_id,'^[A-Za-z0-9_-]{1,64}$','c'))",
+    ];
+
     private function verify(string $name): void
     {
         $definition = self::tables()[$name];
@@ -136,6 +150,11 @@ class m261118_100000_create_pos_btc_payments extends Migration
         if (array_column($columns, 'COLUMN_NAME') === array_merge(array_keys($expected), array_keys(self::STEP5_COLUMNS))) {
             $expected += self::STEP5_COLUMNS;
             $definition['checks'] += self::STEP5_CHECKS;
+            $live = array_column($columns, 'IS_NULLABLE', 'COLUMN_NAME');
+            if ($live['opening_id'] === 'YES') {
+                $expected = array_replace($expected, self::LEGACY_COLUMNS);
+                $definition['checks'] += self::LEGACY_CHECKS;
+            }
         }
         if (array_column($columns, 'COLUMN_NAME') !== array_keys($expected)) $this->incompatible();
         foreach ($columns as $column) {

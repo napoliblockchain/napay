@@ -128,7 +128,8 @@ class PosPaymentsController extends Controller
         $query = (new Query())->from(['p' => $table])
             ->innerJoin(['s' => Stores::tableName()], 's.id=p.store_id')
             ->innerJoin(['t' => PosTerminals::tableName()], 't.id=p.terminal_id')
-            ->innerJoin(['u' => Users::tableName()], 'u.id=p.user_id')
+            // storico importato dalla v1 (SIP-030 passo 5c): nessun operatore v2
+            ->leftJoin(['u' => Users::tableName()], 'u.id=p.user_id')
             ->innerJoin(['m' => Merchants::tableName()], 'm.id=p.merchant_id');
         $this->scope->apply($query, 'p.merchant_id');
         return $query;

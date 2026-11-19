@@ -68,6 +68,17 @@ foreach (['processing', 'settled', 'expired', 'invalid', 'failed', 'reconcile_re
     if (in_array($state, ['expired', 'invalid', 'failed'], true)) $changes['closed_at'] = $now;
     $write($payment($changes)); check(true, 'Valid BTC state persisted: ' . $state);
 }
+// SIP-030 passo 5c: storico v1 nella stessa tabella, senza apertura/sessione/utente/app solo se chiuso
+$legacy = ['opening_id' => null, 'session_id' => null, 'user_id' => null, 'remote_app_id' => null, 'creation_started_at' => $now];
+$write($payment($legacy + ['state' => 'settled', 'settled_at' => $now, 'invoice_id' => 'LegacySettled'])); check(true, 'v1 settled payment without v2 opening, session, user or app persisted');
+$write($payment($legacy + ['state' => 'expired', 'closed_at' => $now, 'invoice_id' => 'LegacyExpired'])); check(true, 'v1 expired payment persisted');
+foreach ([
+    $legacy + ['state' => 'pending', 'invoice_id' => 'LegacyPending'], $legacy + ['state' => 'processing', 'processing_at' => $now, 'invoice_id' => 'LegacyProcessing'],
+    ['session_id' => null, 'state' => 'settled', 'settled_at' => $now, 'invoice_id' => 'PartialA', 'creation_started_at' => $now],
+    ['user_id' => null, 'state' => 'expired', 'closed_at' => $now, 'invoice_id' => 'PartialB', 'creation_started_at' => $now],
+    ['remote_app_id' => null], ['opening_id' => null, 'session_id' => null, 'user_id' => null, 'state' => 'expired', 'closed_at' => $now, 'invoice_id' => 'NoAppMissing', 'creation_started_at' => $now],
+    $legacy + ['state' => 'expired', 'closed_at' => $now, 'invoice_id' => 'LegacyBadStore', 'remote_store_id' => '../x'],
+] as $n => $changes) rejected(static fn() => $write($payment($changes)), 'Payment without v2 context only when closed and complete: ' . $n);
 foreach ([['store_id' => $stores[1]], ['terminal_id' => $terminals[1]], ['merchant_id' => $merchants[1]], ['user_id' => 2147483647], ['session_id' => 2147483647], ['opening_id' => 2147483647]] as $n => $changes) {
     rejected(static fn() => $write($payment($changes)), 'Foreign key or composite tenant scope enforced: ' . $n, [1452]);
 }

@@ -340,6 +340,17 @@ $body = $csv->content ?? '';
 check(str_contains($body, ';BTC;') && str_contains($body, ';EUR;settled;') && str_contains($body, ';61700,00;0.00024680;' . $p['id']) && !str_contains($body, 'INV000'),
     'CSV export: method, currency, state, rate and BTC paid for BTC payments');
 $app->response->clear();
+// SIP-030 passo 5c: incasso importato dalla v1 (nessuna apertura, sessione, operatore o app POS) nello stesso elenco
+$legacyId = uuid(); $t0 = time() + 5;
+$db->createCommand()->insert('pos_btc_payments', ['public_id' => $legacyId, 'merchant_id' => $merchantA, 'store_id' => $sA, 'terminal_id' => $tAi, 'instance' => $instance,
+    'remote_store_id' => 'st-btc-a', 'invoice_id' => 'LegacyV1Invoice', 'amount_cents' => 150, 'currency' => 'EUR', 'state' => 'settled', 'creation_started_at' => $t0,
+    'settled_at' => $t0, 'idempotency_sha256' => hash('sha256', 'v1|1'), 'request_sha256' => hash('sha256', 'v1|r1'), 'created_at' => $t0, 'updated_at' => $t0, 'expires_at' => $t0 + 900,
+    'rate_cents' => 1040710, 'paid_satoshis' => 14414])->execute();
+$list = $page('index');
+$detail = $page('view', [], [$legacyId]);
+check(str_contains($list, '/pos-payments/view?id=' . $legacyId) && str_contains($list, '1,50 EUR') && str_contains($detail, '0.00014414 BTC') && str_contains($detail, '10.407,10 EUR')
+    && !str_contains($detail, 'LegacyV1Invoice'), 'v1 payment without operator listed and shown in the backoffice like the others');
+$app->response->clear();
 $log = (string) scalar("SELECT GROUP_CONCAT(description) FROM logs WHERE description LIKE 'Richiesta di pagamento BTC%'");
 $leak = false; foreach ($secrets as $secret) $leak = $leak || str_contains($log, $secret);
 check($log !== '' && !$leak && !str_contains($log, 'app-btc-a') && !str_contains($log, 'INV0000000001'), 'Payment requests audited without tokens, remote IDs or invoice IDs');

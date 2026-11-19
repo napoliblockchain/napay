@@ -213,6 +213,8 @@ final class LegacyImporter
         $report['settings'] = $settings;
         // SIP-030 passo 5a: merchant, negozi, impostazioni, wallet TTS e logo
         $report['merchants'] = LegacyMerchantImport::import($source, $target, $userMap, $comuni, $filesDir, time());
+        // SIP-030 passo 5c: storico POS v1 (BTC e TTS) negli incassi v2, sulle casse appena importate
+        $report['pos_history'] = LegacyPaymentImport::import($source, $target, time());
         return $report;
     }
 
@@ -248,6 +250,7 @@ final class LegacyImporter
         ksort($actual);
         if ($expected !== $actual) throw new LegacyImportException('Legacy reconciliation failed: payment totals.');
         LegacyMerchantImport::reconcile($source, $target);
+        LegacyPaymentImport::reconcile($source, $target);
     }
 
     private static function upsertLookup(PDO $source, PDO $target, string $sql, string $table, array $columns, callable $values): array

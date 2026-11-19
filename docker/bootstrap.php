@@ -10,6 +10,7 @@ try {
     require_once dirname(__DIR__) . '/components/btcpay/StoreSettingsPayload.php';
     require_once dirname(__DIR__) . '/components/merchant/MerchantLogo.php';
     require_once dirname(__DIR__) . '/components/legacy/LegacyMerchantImport.php';
+    require_once dirname(__DIR__) . '/components/legacy/LegacyPaymentImport.php';
     env_required('COOKIE_VALIDATION_KEY');
     env_required('SECRET_HASH_KEY');
     env_required('ADMIN_EMAIL');

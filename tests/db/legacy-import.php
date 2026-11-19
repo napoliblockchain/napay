@@ -8,9 +8,11 @@ require_once dirname(__DIR__, 2) . '/components/legacy/LegacyImporter.php';
 require_once dirname(__DIR__, 2) . '/components/btcpay/StoreSettingsPayload.php';
 require_once dirname(__DIR__, 2) . '/components/merchant/MerchantLogo.php';
 require_once dirname(__DIR__, 2) . '/components/legacy/LegacyMerchantImport.php';
+require_once dirname(__DIR__, 2) . '/components/legacy/LegacyPaymentImport.php';
 use app\components\db\V2Bootstrap as Db;
 use app\components\legacy\LegacyImporter as Importer;
 use app\components\legacy\LegacyMerchantImport;
+use app\components\legacy\LegacyPaymentImport;
 if (getenv('NAPAY_TEST_DB_CONFIRM') !== 'isolated-fixture' || env('DB_DATABASE') !== 'napay_test_bootstrap') exit(1);
 $config = napayBootstrapConfig();
 $db = Db::connect($config['dsn'], $config['user'], $config['password']);
@@ -31,13 +33,13 @@ function user($email) { global $db; return one($db, 'SELECT u.*, p.level FROM us
 function digest() {
     global $db;
     $tables = ['users', 'member_profiles', 'association_roles', 'membership_fees', 'payment_methods', 'membership_payments', 'assembly_minutes', 'settings',
-        'merchants', 'stores', 'storesettings', 'store_tts_wallets', 'merchant_logos', 'pos_terminals', 'legacy_pos_terminals'];
+        'merchants', 'stores', 'storesettings', 'store_tts_wallets', 'merchant_logos', 'pos_terminals', 'legacy_pos_terminals', 'pos_btc_payments', 'pos_tts_payments'];
     $keys = ['storesettings' => 'store_id', 'store_tts_wallets' => 'store_id', 'merchant_logos' => 'merchant_id', 'legacy_pos_terminals' => 'legacy_id'];
     return hash('sha256', json_encode(array_map(fn($t) => Db::rows($db, 'SELECT ' . ($t === 'merchant_logos' ? 'merchant_id, sha256, width, height, updated_by, updated_at' : '*') . " FROM $t ORDER BY " . ($keys[$t] ?? 'id')), $tables), JSON_THROW_ON_ERROR));
 }
 function legacyChecksum() {
     global $legacy;
-    return json_encode(Db::rows($legacy, 'CHECKSUM TABLE np_comuni_italiani, np_users_type, np_users, st_cariche, st_quote, st_tipo_pagamenti, st_pagamenti, st_verbali, np_settings_webapp, np_merchants, np_stores, np_settings_stores, np_mpk, np_wallets, np_pos EXTENDED'));
+    return json_encode(Db::rows($legacy, 'CHECKSUM TABLE np_comuni_italiani, np_users_type, np_users, st_cariche, st_quote, st_tipo_pagamenti, st_pagamenti, st_verbali, np_settings_webapp, np_merchants, np_stores, np_settings_stores, np_mpk, np_wallets, np_pos, np_transactions, np_pos_invoices EXTENDED'));
 }
 $files = '/tmp/napay-legacy-files';
 function import($filesDir = 'default') { global $legacy, $db, $files; return Importer::run($legacy, $db, $filesDir === 'default' ? $files : $filesDir); }
@@ -60,6 +62,8 @@ foreach ([
     "CREATE TABLE np_settings_stores (id_setting int NOT NULL AUTO_INCREMENT, id_store int NOT NULL, setting_name varchar(50) NOT NULL, setting_value varchar(2000) NOT NULL, PRIMARY KEY (id_setting)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "CREATE TABLE np_mpk (id_mpk int NOT NULL AUTO_INCREMENT, id_store int NOT NULL, asset varchar(20) NOT NULL, AddressType varchar(50) NOT NULL, DerivationScheme varchar(1000) NOT NULL, Addresses varchar(1500) NOT NULL, PRIMARY KEY (id_mpk)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "CREATE TABLE np_wallets (id_wallet int NOT NULL AUTO_INCREMENT, id_user int NOT NULL, wallet_address varchar(50) NOT NULL, blocknumber varchar(50) NOT NULL, PRIMARY KEY (id_wallet)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_transactions (id_transaction int NOT NULL AUTO_INCREMENT, id_pos int NOT NULL, id_merchant int NOT NULL, status varchar(250) NOT NULL DEFAULT 'null', btc_price float NOT NULL, btc_due float NOT NULL, price float NOT NULL, currency varchar(10) NOT NULL, item_desc varchar(15000) NOT NULL, item_code varchar(60) NOT NULL, id_invoice_bps varchar(60) NOT NULL, invoice_timestamp int NOT NULL, expiration_timestamp int NOT NULL, current_tempo int NOT NULL, btc_paid float NOT NULL, rate float NOT NULL, bitcoin_address varchar(250) NOT NULL, token text NOT NULL, satoshis_perbyte float NOT NULL, total_fee float NOT NULL, PRIMARY KEY (id_transaction)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
+    "CREATE TABLE np_pos_invoices (id_token int NOT NULL AUTO_INCREMENT, id_user int NOT NULL, type varchar(250) DEFAULT NULL, status varchar(250) NOT NULL DEFAULT 'null', token_price float NOT NULL, token_ricevuti float NOT NULL, fiat_price float NOT NULL, currency varchar(10) NOT NULL, id_pos varchar(60) NOT NULL, invoice_timestamp int NOT NULL, expiration_timestamp int NOT NULL, rate float NOT NULL, from_address varchar(250) NOT NULL, to_address varchar(250) NOT NULL, blocknumber float NOT NULL, txhash varchar(80) NOT NULL, PRIMARY KEY (id_token)) ENGINE=MyISAM DEFAULT CHARSET=utf8mb3",
     "CREATE TABLE np_pos (id_pos int NOT NULL AUTO_INCREMENT, denomination varchar(300) NOT NULL, id_store int NOT NULL, id_merchant int NOT NULL, pairingCode varchar(10) DEFAULT NULL, deleted int NOT NULL DEFAULT '0', PRIMARY KEY (id_pos)) ENGINE=InnoDB DEFAULT CHARSET=utf8mb3",
     "INSERT INTO np_users_type VALUES (1,'POS','0','Profilo POS'),(2,'Commerciante','10','x'),(3,'Amministratore','20','x'),(5,'Socio','5','x'),(6,'Istituto','10','x')",
     "INSERT INTO st_cariche VALUES (1,3,'Presidente'),(4,3,'Segretario'),(5,5,'Socio ordinario')",
@@ -107,6 +111,20 @@ foreach ([
     "INSERT INTO np_mpk (id_store,asset,AddressType,DerivationScheme,Addresses) VALUES (21,'BTC','p2wpkh','$xpub',''),(25,'BTC','p2pkh','12XQnotAnExtendedKey','')",
     "INSERT INTO np_wallets (id_user,wallet_address,blocknumber) VALUES (12,'$wallet','1'),(16,'not-an-address','1')",
     // POS v1: attivo, eliminato, di negozio eliminato, di merchant scartato, senza nome (con codice di abbinamento v1)
+    // storico BTC v1: pagata, scaduta, new, 8000 EUR, importo 0 con fattura malformata, POS di merchant scartato, invalid, negozio senza store BTCPay
+    "INSERT INTO np_transactions VALUES " . implode(',', array_map(fn($t) => "($t[0],$t[1],1,'$t[2]',$t[3],$t[4],$t[5],'EUR','descrizione cliente must-not-import','x','$t[6]',1700000000,1700000900,1700000300,$t[7],$t[8],'$t[9]','token-must-not-import',1,0)", [
+        [1001, 1, 'complete', 0.00014414, 0.00014414, 1.5, 'InvPaid1001', 0.00014414, 10407.1, 'bc1q' . str_repeat('a', 38)],
+        [1002, 1, 'expired', 0.0001, 0.00012, 1, 'InvExpired1002', 0, 10000, 'bc1q' . str_repeat('b', 38)],
+        [1003, 2, 'new', 0.0001, 0.00012, 1, 'InvNew1003', 0, 10000, 'bc1q' . str_repeat('c', 38)],
+        [1004, 1, 'expired', 0.8, 0.8, 8000, 'InvTooBig1004', 0, 10000, 'bc1q' . str_repeat('d', 38)],
+        [1005, 1, 'new', 0, 0, 0, 'bad/invoice', 0, 0, ''],
+        [1006, 4, 'complete', 0.0001, 0.0001, 1, 'InvGhost1006', 0.0001, 10000, 'bc1q' . str_repeat('e', 38)],
+        [1007, 2, 'invalid', 0.0001, 0.00012, 1, 'InvInvalid1007', 0.00005, 10000, 'bc1q' . str_repeat('f', 38)],
+        [1008, 5, 'expired', 0.0001, 0.00012, 1, 'InvNoStore1008', 0, 10000, 'bc1q' . str_repeat('g', 38)],
+    ])),
+    // storico TTS v1: scaduta, pagata, POS di merchant scartato
+    "INSERT INTO np_pos_invoices VALUES (1,12,'token','expired',3,0,3,'EUR','1',1700000000,1700000900,1,'0xfrom','$wallet',100,'0x0'),"
+        . "(2,12,'token','complete',2,2,2,'EUR','1',1700001000,1700001900,1,'0xfrom','$wallet',150,'0x" . str_repeat('ab', 32) . "'),(3,12,'token','expired',1,0,1,'EUR','4',1700000000,1700000900,1,'0xfrom','$wallet',1,'0x0')",
     "INSERT INTO np_pos VALUES (1,'Cassa Shop',21,1,'',0),(2,'Vecchia cassa',21,1,'',1),(3,'Cassa chiuso',22,1,'',0),(4,'Cassa fantasma',24,2,'',0),(5,'  ',25,3,'w1RTz9A',0)",
 ] as $sql) $legacy->exec($sql);
 @mkdir($files . '/custom/' . $storeBtc, 0700, true);
@@ -172,6 +190,25 @@ check(array_map(fn($t) => [(int) $t['legacy_id'], $t['name'], (int) $t['is_enabl
 check($tills[3]['merchant_id'] === one($db, 'SELECT id FROM merchants WHERE legacy_id=3')['id'] && preg_match('/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/D', $tills[0]['public_id']) === 1
     && one($db, 'SELECT COUNT(*) AS n FROM pos_store_operators')['n'] === '0', 'tills belong to the store merchant, new public ID, no operators granted');
 check(one($db, "SELECT COUNT(*) AS n FROM pos_terminals WHERE name LIKE '%w1RTz9A%'")['n'] === '0', 'v1 pairing code never imported');
+check($report['pos_history'] === ['btc' => 4, 'btc_settled' => 1, 'btc_skipped_terminal' => 1, 'btc_skipped_invalid' => 3, 'btc_instance' => 'unknown',
+    'tts' => 2, 'tts_paid' => 1, 'tts_skipped_terminal' => 1, 'tts_skipped_invalid' => 0], 'POS history report: imported, skipped (no till, invalid unpaid), BTCPay instance not configured');
+$till = static fn(int $pos) => one($db, 'SELECT terminal_id FROM legacy_pos_terminals WHERE legacy_id=?', [$pos])['terminal_id'];
+$paidBtc = one($db, "SELECT * FROM pos_btc_payments WHERE invoice_id='InvPaid1001'");
+check($paidBtc['state'] === 'settled' && $paidBtc['terminal_id'] === $till(1) && $paidBtc['opening_id'] === null && $paidBtc['session_id'] === null && $paidBtc['user_id'] === null
+    && $paidBtc['remote_app_id'] === null && $paidBtc['remote_store_id'] === $storeBtc && $paidBtc['amount_cents'] === '150' && $paidBtc['currency'] === 'EUR'
+    && $paidBtc['rate_cents'] === '1040710' && $paidBtc['order_satoshis'] === '14414' && $paidBtc['paid_satoshis'] === '14414' && $paidBtc['amount_satoshis'] === '14414'
+    && $paidBtc['created_at'] === '1700000000' && $paidBtc['settled_at'] === '1700000300' && $paidBtc['closed_at'] === null,
+    'paid v1 BTC invoice in the v2 BTC payments of its till: integers, rate, BTC detail, received time, no v2 session');
+check(array_column(Db::rows($db, "SELECT invoice_id, state, closed_at FROM pos_btc_payments WHERE session_id IS NULL ORDER BY invoice_id"), 'state', 'invoice_id')
+    === ['InvExpired1002' => 'expired', 'InvInvalid1007' => 'invalid', 'InvNew1003' => 'expired', 'InvPaid1001' => 'settled']
+    && one($db, "SELECT closed_at FROM pos_btc_payments WHERE invoice_id='InvNew1003'")['closed_at'] === '1700000900', 'old new invoices closed as expired at their expiry; invalid kept; nothing else imported');
+$paidTts = one($db, 'SELECT * FROM pos_tts_payments WHERE session_id IS NULL AND state=\'paid\'');
+check($paidTts['terminal_id'] === $till(1) && $paidTts['amount_cents'] === '200' && $paidTts['fiat_cents'] === '200' && $paidTts['rate_cents'] === '100'
+    && $paidTts['tx_hash'] === '0x' . str_repeat('ab', 32) && $paidTts['paid_block'] === '150' && $paidTts['to_address'] === $wallet
+    && one($db, 'SELECT COUNT(*) AS n FROM pos_tts_payments WHERE session_id IS NULL')['n'] === '2', 'v1 TTS requests in the v2 TTS payments: paid with its transaction, expired closed');
+rejected(fn() => $db->exec("INSERT INTO pos_tts_payments (public_id,merchant_id,store_id,terminal_id,amount_cents,to_address,reference,start_block,state,idempotency_sha256,request_sha256,created_at,expires_at,fiat_cents,rate_cents)"
+    . " SELECT '" . '11111111-1111-4111-8111-111111111111' . "',merchant_id,store_id,terminal_id,100,to_address,'" . str_repeat('c', 32) . "',0,'pending','" . str_repeat('d', 64) . "','" . str_repeat('e', 64) . "',1,2,100,100 FROM pos_tts_payments LIMIT 1"),
+    'open TTS payment without a v2 session refused by the database');
 check(one($db, 'SELECT file_sha256 FROM assembly_minutes WHERE legacy_id=1')['file_sha256'] === hash_file('sha256', $files . '/abc123.pdf')
     && one($db, 'SELECT file_content FROM assembly_minutes WHERE legacy_id=2')['file_content'] === null, 'minutes PDF stored, missing file left empty');
 
@@ -216,6 +253,15 @@ check($changed['payments']['removed'] === 1 && one($db, 'SELECT id FROM membersh
 check(one($db, 'SELECT status FROM membership_payments WHERE legacy_id=101')['status'] === 'paid' && one($db, 'SELECT id FROM membership_payments WHERE legacy_id=107') !== null, 'legacy status change and new payment propagate');
 check(user('socio@example.invalid')['first_name'] === 'Socio Renamed' && password_verify('v2-pass', user('linked@example.invalid')['password']), 'imported user follows legacy, linked v2 user does not');
 
+$legacy->exec("INSERT INTO np_transactions VALUES (1009,1,1,'complete',0.1,0.1,1,'EUR','x','x','bad/paid',1700000000,1700000900,1700000300,0.1,10,'x','x',1,0)");
+$historyBefore = digest();
+rejected(fn() => import(), 'paid v1 BTC invoice not importable blocks the whole import');
+check(digest() === $historyBefore, 'blocked import rolled back');
+$legacy->exec('DELETE FROM np_transactions WHERE id_transaction=1009');
+$db->exec("DELETE FROM pos_btc_payments WHERE invoice_id='InvPaid1001'");
+rejected(fn() => LegacyPaymentImport::reconcile($legacy, $db), 'missing paid v1 BTC payment detected by reconciliation');
+import();
+check(one($db, "SELECT state FROM pos_btc_payments WHERE invoice_id='InvPaid1001'")['state'] === 'settled', 'next import restores the missing paid payment');
 $legacy->exec("INSERT INTO np_pos VALUES (6,'Cassa senza import',21,1,'',0)");
 rejected(fn() => LegacyMerchantImport::reconcile($legacy, $db), 'v1 POS without its till detected by reconciliation');
 $legacy->exec('DELETE FROM np_pos WHERE id_pos=6');
