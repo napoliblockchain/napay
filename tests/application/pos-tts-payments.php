@@ -121,6 +121,14 @@ if ($phase === 'setup') {
     try { TtsChain::fromEnv(); check(false, 'Invalid token address is a configuration error'); } catch (yii\base\InvalidConfigException $e) { check(true, 'Invalid token address is a configuration error'); }
     putenv('TTS_TOKEN_ADDRESS');
     check(TtsChain::fromEnv() !== null, 'Container configuration restored');
+    // SIP-036 A1: chain HTTP interna sempre diretta; chain HTTPS solo tramite il proxy di uscita (non valido = nessuna connessione)
+    $proxyEnv = getenv('PAYMENT_PROXY'); $rpcEnv = getenv('TTS_RPC_URL');
+    putenv('PAYMENT_PROXY=not a proxy');
+    check(str_starts_with((string) $rpcEnv, 'http://') && TtsChain::fromEnv()->blockNumber() > 0, 'Internal HTTP chain reached directly, egress proxy setting ignored');
+    putenv('TTS_RPC_URL=https://poa.example.invalid');
+    try { TtsChain::fromEnv()->blockNumber(); check(false, 'HTTPS chain with an invalid egress proxy refused'); } catch (TtsChainException $e) { check(true, 'HTTPS chain with an invalid egress proxy refused before any connection'); }
+    $proxyEnv === false ? putenv('PAYMENT_PROXY') : putenv('PAYMENT_PROXY=' . $proxyEnv);
+    putenv('TTS_RPC_URL=' . $rpcEnv);
 
     // --- Fixture: merchant A (gestore runtime-merchant) con due negozi, wallet solo sul primo; merchant B senza wallet
     $hash = password_hash('fixture-password-only', PASSWORD_BCRYPT);

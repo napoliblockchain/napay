@@ -1,6 +1,7 @@
 <?php
 namespace app\components\pos\tts;
 
+use app\components\payments\Egress;
 use yii\base\InvalidConfigException;
 
 /**
@@ -109,14 +110,27 @@ final class TtsChain
         return $this->request($method, $params);
     }
 
+    /**
+     * SIP-036 A1: RPC HTTPS (chain di produzione su un'altra VPS) tramite il proxy di uscita se configurato, come
+     * PayPal e BTCPay; RPC HTTP (chain interna della sandbox) sempre diretto. Proxy non valido = nessuna connessione.
+     */
+    private static function proxy(string $url): string
+    {
+        if (parse_url($url, PHP_URL_SCHEME) !== 'https') return '';
+        $proxy = Egress::proxy();
+        if ($proxy === false) throw new TtsChainException();
+        return $proxy ?? '';
+    }
+
     private function request(string $method, array $params)
     {
         $id = ++$this->id;
         $body = json_encode(['jsonrpc' => '2.0', 'id' => $id, 'method' => $method, 'params' => $params], JSON_THROW_ON_ERROR);
+        $proxy = self::proxy($this->url);
         $curl = curl_init($this->url);
         $received = '';
         curl_setopt_array($curl, [CURLOPT_POST => true, CURLOPT_POSTFIELDS => $body, CURLOPT_HTTPHEADER => ['Content-Type: application/json', 'Accept: application/json'],
-            CURLOPT_CONNECTTIMEOUT => 2, CURLOPT_TIMEOUT => 5, CURLOPT_PROXY => '', CURLOPT_FOLLOWLOCATION => false,
+            CURLOPT_CONNECTTIMEOUT => 2, CURLOPT_TIMEOUT => 5, CURLOPT_PROXY => $proxy, CURLOPT_HTTPPROXYTUNNEL => $proxy !== '', CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_PROTOCOLS => CURLPROTO_HTTP | CURLPROTO_HTTPS,
             CURLOPT_WRITEFUNCTION => static function ($handle, string $chunk) use (&$received): int {
                 if (strlen($received) + strlen($chunk) > self::MAX_RESPONSE) return 0;
