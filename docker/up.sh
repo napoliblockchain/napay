@@ -9,6 +9,16 @@ env_file=$1
 napay_private_input "$env_file" file
 export NAPAY_ENV_FILE="$env_file"
 compose=(docker compose --project-directory "$root" --env-file "$env_file" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml")
+# SIP-036: overlay aggiuntivi (produzione, worker BTCPay) passati da docker/deploy.sh: solo file docker-compose.<nome>.yml
+# del repository, in ordine, separati da ':'.
+if [[ -n ${NAPAY_COMPOSE_OVERLAYS:-} ]]; then
+    IFS=: read -r -a overlays <<< "$NAPAY_COMPOSE_OVERLAYS"
+    for overlay in "${overlays[@]}"; do
+        [[ $overlay =~ ^docker-compose\.[a-z0-9-]+\.yml$ && $overlay != docker-compose.roles.yml && -f $root/$overlay && ! -L $root/$overlay ]] \
+            || { echo 'Invalid compose overlay.' >&2; exit 1; }
+        compose+=(-f "$root/$overlay")
+    done
+fi
 paths=$("${compose[@]}" --profile db-check config --format json | docker run --rm -i --network none --read-only --cap-drop ALL --security-opt no-new-privileges:true \
     -v "$root/docker/role-config.php:/check.php:ro" --entrypoint php php:8.3.36-cli /check.php)
 mapfile -t fields <<< "$paths"

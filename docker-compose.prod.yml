@@ -1,0 +1,71 @@
+# SIP-036 A2: Napay in produzione (VPS A). Overlay da includere dopo docker-compose.yml e docker-compose.roles.yml, tramite
+# docker/deploy.sh (mai a mano). Come la sandbox: web senza porte sull'host, raggiunto solo dal gateway dell'orchestratore
+# sulla sua rete (NAPAY_GATEWAY_NETWORK); codice in sola lettura, runtime e asset in volumi; uscita verso PayPal, BTCPay
+# (VPS B) e chain TTS (VPS C) solo dal proxy con allowlist (docker/egress).
+services:
+  web:
+    image: napay/napay:${NAPAY_IMAGE_TAG:?Set image tag (docker/deploy.sh)}
+    ports: !reset []
+    environment:
+      # IP reale dei client solo dal gateway (X-Forwarded-For accettato solo da questa rete)
+      TRUSTED_PROXIES: ${NAPAY_TRUSTED_PROXIES:?Set gateway network CIDR}
+      PAYMENT_PROXY: "http://egress:3128"
+    networks: !override
+      database: {}
+      egress: {}
+      gateway:
+        aliases: [napay-web]
+    volumes: !override
+      - .:/var/www/html:ro
+      # HTTPS terminato dal gateway: l'app genera link e cookie sicuri
+      - ./docker/local/https.conf:/etc/apache2/conf-enabled/napay-https.conf:ro
+      - runtime:/var/www/html/runtime
+      - assets:/var/www/html/web/assets
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        install -d -o 33 -g 33 -m 0700 /var/www/html/runtime
+        install -d -o 33 -g 33 -m 0755 /var/www/html/web/assets
+        exec sh /var/www/html/docker/web-entrypoint.sh apache2-foreground
+  cron:
+    image: napay/napay:${NAPAY_IMAGE_TAG:?Set image tag (docker/deploy.sh)}
+    environment:
+      PAYMENT_PROXY: "http://egress:3128"
+    networks: !override
+      database: {}
+      egress: {}
+    volumes: !override
+      - .:/var/www/html:ro
+      - runtime:/var/www/html/runtime
+  egress:
+    build:
+      context: ./docker/egress
+    image: napay/egress:${NAPAY_IMAGE_TAG:?Set image tag (docker/deploy.sh)}
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks: [egress, internet]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "3128"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+networks:
+  # web e cron <-> proxy, senza uscita
+  egress:
+    internal: true
+  # solo il proxy
+  internet: {}
+  # rete del gateway dell'orchestratore (creata dall'orchestratore)
+  gateway:
+    name: ${NAPAY_GATEWAY_NETWORK:?Set gateway network name}
+    external: true
+volumes:
+  runtime:
+  assets:
