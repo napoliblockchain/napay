@@ -30,7 +30,7 @@ backup_dir=$(env_value NAPAY_BACKUP_DIR)
 napay_private_input "$backup_dir" directory || fail 'NAPAY_BACKUP_DIR mancante o non privata (0700, fuori dal repository).'
 overlays=docker-compose.prod.yml
 if [[ -n $(env_value BTCPAY_PROVISIONER_KEY_SECRET_FILE) ]]; then overlays+=:docker-compose.btcpay-worker.yml; fi
-export NAPAY_IMAGE_TAG=$tag NAPAY_COMPOSE_OVERLAYS=$overlays
+export NAPAY_IMAGE_TAG=$tag NAPAY_COMPOSE_OVERLAYS=$overlays NAPAY_ENV_FILE=$env_file
 
 if [[ ${2:-} == --check ]]; then
     bash "$root/docker/up.sh" "$env_file" --check

@@ -69,7 +69,7 @@ pass 'Valid production configuration: preflight only, no build, start or backup'
 
 # modello compose effettivo di produzione (stessi file di deploy.sh)
 tag=$(git -C "$root" rev-parse --short=12 HEAD)
-NAPAY_IMAGE_TAG=$tag "$real_docker" compose --project-directory "$root" --env-file "$work/test.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml" \
+NAPAY_ENV_FILE="$work/test.env" NAPAY_IMAGE_TAG=$tag "$real_docker" compose --project-directory "$root" --env-file "$work/test.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml" \
     -f "$root/docker-compose.prod.yml" config --format json > "$work/model.json"
 check_model() { php_expr=$1; docker run --rm -i --network none --read-only --entrypoint php php:8.3.36-cli -r '
     $m = json_decode(stream_get_contents(STDIN), true, 512, JSON_THROW_ON_ERROR); $s = $m["services"];
