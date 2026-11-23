@@ -88,6 +88,25 @@ check_model '$s["web"]["image"] === "napay/napay:'"$tag"'" && $s["cron"]["image"
     && $s["web"]["environment"]["TRUSTED_PROXIES"] === "10.250.0.0/24"' \
     && pass 'Images tagged with the release commit; payment proxy and trusted gateway set'
 
+# con i segreti del worker BTCPay: overlay del worker incluso, uscita solo dal proxy, cron con i webhook del ponte
+for name in provisioner keyring webhook-key; do openssl rand -hex 32 > "$work/$name"; done
+cat >> "$work/test.env" <<WENV
+BTCPAY_PROVISION_INSTANCE=$(printf %s https://btcpay.example.invalid | sha256sum | cut -c1-64)
+BTCPAY_PROVISION_ORIGIN=https://btcpay.example.invalid
+BTCPAY_STORE_WEBHOOK_KEY=$(openssl rand -hex 32)
+BTCPAY_STORE_WEBHOOK_URL=https://napay.example.invalid/api/btcpay/v1/store-webhook
+BTCPAY_PROVISIONER_KEY_SECRET_FILE=$work/provisioner
+BTCPAY_KEK_KEYRING_SECRET_FILE=$work/keyring
+BTCPAY_STORE_WEBHOOK_KEY_SECRET_FILE=$work/webhook-key
+WENV
+run_deploy
+grep -q 'Napay deploy preflight OK' "$work/output" && [[ ! -e $work/persistent ]] || exit 1
+NAPAY_ENV_FILE="$work/test.env" NAPAY_IMAGE_TAG=$tag "$real_docker" compose --project-directory "$root" --env-file "$work/test.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml" \
+    -f "$root/docker-compose.prod.yml" -f "$root/docker-compose.btcpay-worker.yml" config --format json > "$work/model.json"
+check_model 'array_keys($s["btcpay-worker"]["networks"]) == ["database","egress"] && $s["btcpay-worker"]["environment"]["PAYMENT_PROXY"] === "http://egress:3128"
+    && $s["cron"]["environment"]["BTCPAY_STORE_WEBHOOK_URL"] === "https://napay.example.invalid/api/btcpay/v1/store-webhook" && !isset($s["btcpay-worker"]["ports"])' \
+    && pass 'With worker secrets: BTCPay worker included, only database and egress proxy; cron gets the bridge webhook settings'
+cp "$work/base.env" "$work/test.env"
 change NAPAY_GATEWAY_NETWORK ''; reject 'Missing gateway network refused'
 change NAPAY_GATEWAY_NETWORK 'bad name;x'; reject 'Invalid gateway network name refused'
 change NAPAY_TRUSTED_PROXIES ''; reject 'Missing trusted proxy CIDR refused'
