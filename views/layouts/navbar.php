@@ -13,6 +13,7 @@ use app\components\User;
         </button>
         <a class="nav-link px-2" href="<?= Url::to(['site/index'], true) ?>">Home</a>
         <div class="navbar-nav flex-row ms-auto gap-2">
+            <?= \app\widgets\AppShortcuts::widget() ?>
             <button type="button" class="btn btn-icon btn-ghost-secondary" data-napay-theme-toggle
                     data-label-light="<?= Html::encode(Yii::t('app', 'Use light theme')) ?>"
                     data-label-dark="<?= Html::encode(Yii::t('app', 'Use dark theme')) ?>"

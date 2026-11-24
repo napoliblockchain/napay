@@ -11,6 +11,8 @@ return [
     'adminPhone' => env('ADMIN_PHONE', ''),
     'adminEmail' => env_required('ADMIN_EMAIL'),
     'website' => env('APP_WEBSITE', ''),
+    'walletAppUrl' => env('NAPAY_WALLET_APP_URL', ''),
+    'posAppUrl' => env('NAPAY_POS_APP_URL', ''),
 
     /**
      * app settings

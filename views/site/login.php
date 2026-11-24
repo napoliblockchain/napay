@@ -26,4 +26,5 @@ $this->title = Yii::t('app', 'Sign in');
         <?= Html::a(Html::encode(Yii::t('app', 'Install to home screen')), '#', ['onclick' => 'saveOnDesktop(); return false;']) ?>
     </div>
     <?php ActiveForm::end(); ?>
+    <?= \app\widgets\AppShortcuts::widget(['publicPage' => true]) ?>
 </div>
