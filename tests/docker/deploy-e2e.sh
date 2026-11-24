@@ -10,9 +10,11 @@ dataset=${NAPAY_TEST_DATASET:?Set reviewed private v2 dataset directory}
 [[ -z $(git -C "$root" status --porcelain --untracked-files=no) ]] || { echo 'FAIL: commit first (deploy releases only a commit).' >&2; exit 1; }
 tag=$(git -C "$root" rev-parse --short=12 HEAD)
 work=$(mktemp -d)
-# come sulla VPS: clone pulito del commit (senza vendor/ e runtime/, esclusi da git)
-git clone -q --no-hardlinks "$root" "$work/src" && git -C "$work/src" checkout -q "$(git -C "$root" rev-parse HEAD)"
-orig=$root; root=$work/src
+# come sulla VPS: clone pulito del commit (senza vendor/ e runtime/, esclusi da git), in una cartella leggibile
+# come /srv/napay-project (0755), separata da $work che contiene i segreti
+src=$(mktemp -d); chmod 755 "$src"
+(umask 022; git clone -q --no-hardlinks "$root" "$src/napay" && git -C "$src/napay" checkout -q "$(git -C "$root" rev-parse HEAD)")
+orig=$root; root=$src/napay
 run=$(openssl rand -hex 4)
 export COMPOSE_PROJECT_NAME="napay-deploy-$run"
 gateway="napay-deploy-gw-$run"
@@ -31,7 +33,7 @@ cleanup() {
     docker network rm "$gateway" >/dev/null 2>&1 || true
     docker image rm "napay/napay:$tag" "napay/egress:$tag" >/dev/null 2>&1 || true
     docker rm -f "napay-restore-$run" "napay-wallet-db-$run" >/dev/null 2>&1 || true
-    rm -rf "$work"
+    rm -rf "$work" "$src"
     exit "$code"
 }
 trap cleanup EXIT
