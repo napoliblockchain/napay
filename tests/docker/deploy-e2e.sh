@@ -10,6 +10,9 @@ dataset=${NAPAY_TEST_DATASET:?Set reviewed private v2 dataset directory}
 [[ -z $(git -C "$root" status --porcelain --untracked-files=no) ]] || { echo 'FAIL: commit first (deploy releases only a commit).' >&2; exit 1; }
 tag=$(git -C "$root" rev-parse --short=12 HEAD)
 work=$(mktemp -d)
+# come sulla VPS: clone pulito del commit (senza vendor/ e runtime/, esclusi da git)
+git clone -q --no-hardlinks "$root" "$work/src" && git -C "$work/src" checkout -q "$(git -C "$root" rev-parse HEAD)"
+orig=$root; root=$work/src
 run=$(openssl rand -hex 4)
 export COMPOSE_PROJECT_NAME="napay-deploy-$run"
 gateway="napay-deploy-gw-$run"
@@ -110,10 +113,10 @@ bash "$root/docker/backup.sh" "$work/napay.env" > "$work/backup.log" 2>&1 || fai
     || fail 'rotation'
 pass 'Rotation removes only daily backups older than the retention; release backups stay'
 # script dell'orchestratore (quando napay è dentro napay-project): Napay + database del wallet
-if [[ -f $root/../backup-daily.sh ]]; then
+if [[ -f $orig/../backup-daily.sh ]]; then
     docker run -d --name "napay-wallet-db-$run" --network none -e MYSQL_ROOT_PASSWORD="$(openssl rand -hex 16)" -e MYSQL_DATABASE=wallet_e2e mysql:8.0 >/dev/null
     for _ in $(seq 1 60); do docker exec "napay-wallet-db-$run" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "CREATE TABLE IF NOT EXISTS wallet_e2e.mp_wallets (id INT PRIMARY KEY)"' >/dev/null 2>&1 && break; sleep 2; done
-    WALLET_DB_CONTAINER="napay-wallet-db-$run" bash "$root/../backup-daily.sh" "$work/napay.env" > "$work/daily.log" 2>&1 || { cat "$work/daily.log" >&2; fail 'orchestrator daily backup'; }
+    WALLET_DB_CONTAINER="napay-wallet-db-$run" bash "$orig/../backup-daily.sh" "$work/napay.env" > "$work/daily.log" 2>&1 || { cat "$work/daily.log" >&2; fail 'orchestrator daily backup'; }
     wallet=$(ls "$work/backup"/wallet-*-daily.sql.gz | head -n 1)
     [[ $(stat -c '%a' "$wallet") == 600 ]] && gzip -dc "$wallet" | grep -q 'CREATE TABLE `mp_wallets`' && [[ $(ls "$work/backup"/napay-*-daily.sql.gz | wc -l) == 3 ]] \
         || fail 'orchestrator daily backup content'

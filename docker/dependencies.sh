@@ -8,14 +8,18 @@ case "${1:-}" in
     *) echo 'Usage: docker/dependencies.sh [--dev]' >&2; exit 1 ;;
 esac
 [ "$#" -le 1 ] && [ -f "$root/composer.lock" ] || exit 1
-mkdir -p "$root/vendor"
+# immagine con PHP ed estensioni del rilascio (docker/deploy.sh passa quella del commit); in locale napay/napay:dev
+image=${NAPAY_DEPENDENCIES_IMAGE:-napay/napay:dev}
+case $image in napay/napay:[A-Za-z0-9]*) ;; *) echo 'NAPAY_DEPENDENCIES_IMAGE must be a napay/napay image.' >&2; exit 1 ;; esac
+# leggibile dai container (www-data, utente del bootstrap) anche se chi lancia ha umask 077
+install -d -m 0755 "$root/vendor"
 docker run --rm --user "$(id -u):$(id -g)" --cap-drop ALL \
     --security-opt no-new-privileges:true --read-only --tmpfs /tmp \
     -e COMPOSER_HOME=/tmp/composer \
     -v "$root/composer.json:/app/composer.json:ro" \
     -v "$root/composer.lock:/app/composer.lock:ro" \
     -v "$root/vendor:/app/vendor" -w /app \
-    --entrypoint sh napay/napay:dev -c '
+    --entrypoint sh "$image" -c '
         set -eu
         composer validate --strict --no-check-publish --no-plugins --no-scripts
         # The sole allowlisted Yii installer registers extension aliases/bootstrap.

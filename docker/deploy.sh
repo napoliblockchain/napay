@@ -57,6 +57,13 @@ bash "$root/docker/up.sh" "$env_file" --check
 compose=(docker compose --project-directory "$root" --env-file "$env_file" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml")
 IFS=: read -r -a files <<< "$overlays"
 for file in "${files[@]}"; do compose+=(-f "$root/$file"); done
+# Un clone pulito non ha vendor/ né runtime/ (esclusi da git) e il codice è montato in sola lettura: dipendenze
+# del composer.lock del commit installate con l'immagine del rilascio (composer audit compreso), punto di montaggio
+# di runtime/ creato qui. Leggibili dai container anche con umask 077.
+"${compose[@]}" build web >/dev/null || fail 'immagine web non costruita.'
+NAPAY_DEPENDENCIES_IMAGE="napay/napay:$tag" bash "$root/docker/dependencies.sh" >/dev/null \
+    || fail 'dipendenze PHP non installate (composer install/audit): nessun rilascio.'
+install -d -m 0755 "$root/runtime"
 volume=$(env_value NAPAY_MYSQL_VOLUME)
 if [[ -n $volume ]] && docker volume inspect "$volume" >/dev/null 2>&1; then
     "${compose[@]}" up -d --wait --wait-timeout 300 mysql >/dev/null
