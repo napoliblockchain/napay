@@ -17,6 +17,10 @@
  * NOTE: this file must be saved in UTF-8 encoding.
  */
 return [
+    'Apps' => 'App',
+    'Open Wallet TTS' => 'Apri Wallet TTS',
+    'Open POS' => 'Apri POS',
+    ' (opens in a new tab)' => ' (si apre in una nuova scheda)',
     'Abilita i metodi di pagamento solo quando l\'importo è …' => '',
     'Abilita pagina di ricevuta per transazioni saldate' => '',
     'Abilitato' => '',
