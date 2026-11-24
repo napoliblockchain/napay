@@ -1,0 +1,17 @@
+# SIP-036: inoltro TCP verso il solo server di posta (docker-compose.mail.yml). Valori sostituiti all'avvio dall'immagine nginx.
+worker_processes 1;
+pid /tmp/nginx.pid;
+error_log stderr warn;
+events { worker_connections 64; }
+stream {
+    # DNS pubblico: con quello di Docker il nome del server di posta punterebbe a questo stesso inoltro
+    resolver ${NAPAY_SMTP_RESOLVER} valid=300s ipv6=off;
+    resolver_timeout 5s;
+    map "" $napay_smtp_upstream { default "${NAPAY_SMTP_UPSTREAM}:${MAIL_SMTP_PORT}"; }
+    server {
+        listen ${MAIL_SMTP_PORT};
+        proxy_pass $napay_smtp_upstream;
+        proxy_connect_timeout 10s;
+        proxy_timeout 120s;
+    }
+}

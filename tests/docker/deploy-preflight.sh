@@ -107,6 +107,22 @@ check_model 'array_keys($s["btcpay-worker"]["networks"]) == ["database","egress"
     && $s["cron"]["environment"]["BTCPAY_STORE_WEBHOOK_URL"] === "https://napay.example.invalid/api/btcpay/v1/store-webhook" && !isset($s["btcpay-worker"]["ports"])' \
     && pass 'With worker secrets: BTCPay worker included, only database and egress proxy; cron gets the bridge webhook settings'
 cp "$work/base.env" "$work/test.env"
+# posta SMTP: inoltro dedicato incluso solo con MAIL_TRANSPORT=smtp, host e porta validati
+printf 'MAIL_TRANSPORT=smtp\nMAIL_SMTP_HOST=authsmtp.securemail.pro\nMAIL_SMTP_PORT=465\nMAIL_SMTP_SCHEME=smtps\nMAIL_SMTP_USERNAME=fixture@example.invalid\nMAIL_SMTP_PASSWORD=%s\n' "$(openssl rand -hex 16)" >> "$work/test.env"
+run_deploy
+grep -q 'Napay deploy preflight OK' "$work/output" && [[ ! -e $work/persistent ]] || exit 1
+NAPAY_ENV_FILE="$work/test.env" NAPAY_IMAGE_TAG=$tag "$real_docker" compose --project-directory "$root" --env-file "$work/test.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml" \
+    -f "$root/docker-compose.prod.yml" -f "$root/docker-compose.mail.yml" config --format json > "$work/model.json"
+check_model '$s["smtp-egress"]["networks"]["egress"]["aliases"] === ["authsmtp.securemail.pro"] && array_keys($s["smtp-egress"]["networks"]) == ["egress","internet"]
+    && !isset($s["smtp-egress"]["ports"]) && $s["smtp-egress"]["environment"]["NAPAY_SMTP_UPSTREAM"] === "authsmtp.securemail.pro"
+    && array_keys($s["web"]["networks"]) == ["database","egress","gateway"]' \
+    && pass 'With SMTP: dedicated relay aliased as the mail server on the egress network; web still without internet'
+for bad in 'MAIL_SMTP_HOST=bad_host' 'MAIL_SMTP_PORT=25' 'NAPAY_SMTP_RESOLVER=any'; do
+    sed "/^${bad%%=*}=/d" "$work/test.env" > "$work/bad.env"; printf '%s\n' "$bad" >> "$work/bad.env"; chmod 600 "$work/bad.env"
+    if run_deploy "$work/bad.env"; then echo "FAIL: accepted $bad" >&2; exit 1; fi
+done
+pass 'Invalid mail server, port (only 465/587) or resolver refused'
+cp "$work/base.env" "$work/test.env"
 change NAPAY_GATEWAY_NETWORK ''; reject 'Missing gateway network refused'
 change NAPAY_GATEWAY_NETWORK 'bad name;x'; reject 'Invalid gateway network name refused'
 change NAPAY_TRUSTED_PROXIES ''; reject 'Missing trusted proxy CIDR refused'

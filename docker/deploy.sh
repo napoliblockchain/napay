@@ -7,7 +7,8 @@
 # (mysql-tools.sh backup, gzip, 0600) in NAPAY_BACKUP_DIR: le migration non si annullano, il ritorno alla versione
 # precedente è il ripristino di quel backup con il commit precedente.
 # Variabili in più rispetto a up.sh: NAPAY_GATEWAY_NETWORK (rete del gateway dell'orchestratore), NAPAY_TRUSTED_PROXIES
-# (CIDR di quella rete), NAPAY_BACKUP_DIR (cartella privata 0700 fuori dal repository).
+# (CIDR di quella rete), NAPAY_BACKUP_DIR (cartella privata 0700 fuori dal repository). Con MAIL_TRANSPORT=smtp anche
+# l'inoltro della posta (docker-compose.mail.yml; facoltative NAPAY_SMTP_RESOLVER, NAPAY_SMTP_UPSTREAM).
 set -euo pipefail
 umask 077
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -30,6 +31,19 @@ backup_dir=$(env_value NAPAY_BACKUP_DIR)
 napay_private_input "$backup_dir" directory || fail 'NAPAY_BACKUP_DIR mancante o non privata (0700, fuori dal repository).'
 overlays=docker-compose.prod.yml
 if [[ -n $(env_value BTCPAY_PROVISIONER_KEY_SECRET_FILE) ]]; then overlays+=:docker-compose.btcpay-worker.yml; fi
+# posta SMTP: inoltro TCP dedicato verso il solo server di posta (docker-compose.mail.yml)
+if [[ $(env_value MAIL_TRANSPORT) == smtp ]]; then
+    [[ $(env_value MAIL_SMTP_HOST) =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || fail 'MAIL_SMTP_HOST mancante o non valido.'
+    port=$(env_value MAIL_SMTP_PORT); [[ -z $port || $port =~ ^(465|587)$ ]] || fail 'MAIL_SMTP_PORT ammessa: 465 o 587.'
+    for name in NAPAY_SMTP_RESOLVER NAPAY_SMTP_UPSTREAM; do
+        value=$(env_value $name)
+        case $name in
+            NAPAY_SMTP_RESOLVER) [[ -z $value || $value =~ ^[0-9.]{7,15}(\ [0-9.]{7,15}){0,3}$ ]] || fail 'NAPAY_SMTP_RESOLVER non valido (IPv4 separati da spazi).' ;;
+            NAPAY_SMTP_UPSTREAM) [[ -z $value || $value =~ ^[a-z0-9]([a-z0-9.-]{0,252})$ ]] || fail 'NAPAY_SMTP_UPSTREAM non valido.' ;;
+        esac
+    done
+    overlays+=:docker-compose.mail.yml
+fi
 export NAPAY_IMAGE_TAG=$tag NAPAY_COMPOSE_OVERLAYS=$overlays NAPAY_ENV_FILE=$env_file
 
 if [[ ${2:-} == --check ]]; then

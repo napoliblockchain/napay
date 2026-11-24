@@ -1,0 +1,36 @@
+# SIP-036: invio SMTP in produzione. Incluso da docker/deploy.sh solo con MAIL_TRANSPORT=smtp, dopo docker-compose.prod.yml.
+# Web e cron non hanno internet: sulla rete egress il nome del server di posta (MAIL_SMTP_HOST) è un alias di questo inoltro
+# TCP, che passa la connessione solo a quell'host e porta. TLS e credenziali restano tra Napay e il server di posta
+# (certificato verificato da Napay); l'inoltro non decifra nulla. L'indirizzo vero lo risolve con un DNS pubblico
+# (NAPAY_SMTP_RESOLVER), mai con quello di Docker, dove il nome punterebbe a sé stesso.
+services:
+  smtp-egress:
+    image: nginx:1.31.0-alpine
+    restart: unless-stopped
+    user: "101:101"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    # porta SMTP (465/587) senza privilegi di root
+    sysctls:
+      net.ipv4.ip_unprivileged_port_start: 0
+    tmpfs: [/tmp]
+    environment:
+      MAIL_SMTP_PORT: ${MAIL_SMTP_PORT:-465}
+      NAPAY_SMTP_RESOLVER: ${NAPAY_SMTP_RESOLVER:-1.1.1.1 9.9.9.9}
+      NAPAY_SMTP_UPSTREAM: ${NAPAY_SMTP_UPSTREAM:-${MAIL_SMTP_HOST}}
+      # il template diventa la configurazione in /tmp (file system in sola lettura)
+      NGINX_ENVSUBST_TEMPLATE_DIR: /etc/nginx/smtp-templates
+      NGINX_ENVSUBST_OUTPUT_DIR: /tmp
+    command: [nginx, -g, "daemon off;", -c, /tmp/smtp-egress.conf]
+    volumes:
+      - ./docker/smtp-egress/smtp-egress.conf.template:/etc/nginx/smtp-templates/smtp-egress.conf.template:ro
+    networks:
+      egress:
+        aliases: ["${MAIL_SMTP_HOST:?Set MAIL_SMTP_HOST}"]
+      internet: {}
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "${MAIL_SMTP_PORT:-465}"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
