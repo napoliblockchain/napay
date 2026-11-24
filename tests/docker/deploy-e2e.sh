@@ -27,6 +27,7 @@ cleanup() {
     docker volume rm "$volume" >/dev/null 2>&1 || true
     docker network rm "$gateway" >/dev/null 2>&1 || true
     docker image rm "napay/napay:$tag" "napay/egress:$tag" >/dev/null 2>&1 || true
+    docker rm -f "napay-restore-$run" "napay-wallet-db-$run" >/dev/null 2>&1 || true
     rm -rf "$work"
     exit "$code"
 }
@@ -86,6 +87,38 @@ gzip -dc "$backup" | grep -q 'CREATE TABLE `users`' || fail 'backup content'
 grep -q "Backup: $backup" "$work/second.log" && grep -q "Napay deploy OK: commit $tag" "$work/second.log" || fail 'second deploy output'
 [[ $(probe /site/login) == 200 ]] || fail 'login page after second deploy'
 pass 'Second deploy: private gzip backup of the database (0600) before migrations, service back up'
+# --- backup giornaliero (SIP-036 parte C), ripristino reale e rotazione
+bash "$root/docker/backup.sh" "$work/napay.env" > "$work/backup.log" 2>&1 || { cat "$work/backup.log" >&2; fail 'daily backup'; }
+daily=$(ls "$work/backup"/napay-*-daily.sql.gz 2>/dev/null | head -n 1)
+[[ -n $daily && $(stat -c '%a' "$daily") == 600 ]] && gzip -t "$daily" && [[ -z $(ls "$work/backup"/*.partial 2>/dev/null) ]] || fail 'daily backup file'
+pass 'Daily backup: complete gzip file, 0600, no partial file left'
+sql() { compose exec -T mysql sh -c 'MYSQL_PWD="$(cat /run/secrets/mysql_root_password)" mysql -uroot -N -B -e "$1"' sh "$1"; }
+source_tables=$(sql "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='napay_deploy_e2e'")
+source_users=$(sql 'SELECT COUNT(*) FROM napay_deploy_e2e.users')
+openssl rand -hex 16 > "$work/restore-pw"; chmod 644 "$work/restore-pw"
+docker run -d --name "napay-restore-$run" --network none -e MYSQL_ROOT_PASSWORD_FILE=/pw -e MYSQL_DATABASE=restored -v "$work/restore-pw:/pw:ro" mysql:8.4 >/dev/null
+rsql() { docker exec -i "napay-restore-$run" sh -c 'MYSQL_PWD="$(cat /pw)" mysql -uroot -N -B "$@"' sh "$@"; }
+for _ in $(seq 1 60); do rsql -e 'SELECT 1' >/dev/null 2>&1 && break; sleep 2; done
+gzip -dc "$daily" | rsql restored || fail 'restore'
+[[ $(rsql -e "SELECT COUNT(*) FROM information_schema.tables WHERE table_schema='restored'") == "$source_tables" && $(rsql -e 'SELECT COUNT(*) FROM restored.users') == "$source_users" && $source_users -gt 0 ]] \
+    || fail 'restored content differs'
+pass "Daily backup restores into an empty MySQL: same $source_tables tables and $source_users users"
+printf x | gzip > "$work/backup/napay-20000101T000000Z-daily.sql.gz"; printf x | gzip > "$work/backup/napay-20000101T000000Z-oldrelease.sql.gz"
+touch -d '30 days ago' "$work/backup/napay-20000101T000000Z-daily.sql.gz" "$work/backup/napay-20000101T000000Z-oldrelease.sql.gz"
+bash "$root/docker/backup.sh" "$work/napay.env" > "$work/backup.log" 2>&1 || fail 'second daily backup'
+[[ ! -e $work/backup/napay-20000101T000000Z-daily.sql.gz && -e $work/backup/napay-20000101T000000Z-oldrelease.sql.gz && $(ls "$work/backup"/napay-*-daily.sql.gz | wc -l) == 2 ]] \
+    || fail 'rotation'
+pass 'Rotation removes only daily backups older than the retention; release backups stay'
+# script dell'orchestratore (quando napay è dentro napay-project): Napay + database del wallet
+if [[ -f $root/../backup-daily.sh ]]; then
+    docker run -d --name "napay-wallet-db-$run" --network none -e MYSQL_ROOT_PASSWORD="$(openssl rand -hex 16)" -e MYSQL_DATABASE=wallet_e2e mysql:8.0 >/dev/null
+    for _ in $(seq 1 60); do docker exec "napay-wallet-db-$run" sh -c 'MYSQL_PWD="$MYSQL_ROOT_PASSWORD" mysql -uroot -e "CREATE TABLE IF NOT EXISTS wallet_e2e.mp_wallets (id INT PRIMARY KEY)"' >/dev/null 2>&1 && break; sleep 2; done
+    WALLET_DB_CONTAINER="napay-wallet-db-$run" bash "$root/../backup-daily.sh" "$work/napay.env" > "$work/daily.log" 2>&1 || { cat "$work/daily.log" >&2; fail 'orchestrator daily backup'; }
+    wallet=$(ls "$work/backup"/wallet-*-daily.sql.gz | head -n 1)
+    [[ $(stat -c '%a' "$wallet") == 600 ]] && gzip -dc "$wallet" | grep -q 'CREATE TABLE `mp_wallets`' && [[ $(ls "$work/backup"/napay-*-daily.sql.gz | wc -l) == 3 ]] \
+        || fail 'orchestrator daily backup content'
+    pass 'Orchestrator backup-daily.sh: Napay and wallet databases, both 0600'
+fi
 for log in first second; do
     for secret in root migrator worker; do grep -Fq -f "$work/$secret" "$work/$log.log" && fail "secret in $log deploy output"; done
 done
