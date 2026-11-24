@@ -1,6 +1,8 @@
 <?php
 
 use yii\helpers\Html;
+use yii\helpers\Json;
+use yii\helpers\Url;
 use yii\grid\GridView;
 use yii\grid\CheckboxColumn;
 
@@ -10,6 +12,19 @@ use yii\grid\CheckboxColumn;
 
 $this->title = Yii::t('app', 'Membership requests');
 $this->params['breadcrumbs'][] = $this->title;
+
+if (!$readOnly && $dataProvider->getTotalCount() > 0) {
+    $confirm = Json::htmlEncode(Yii::t('app', 'Reject the selected requests? The accounts are deleted and the reason is sent by email.'));
+    // Keep native submission: Yii data-confirm drops the submitter and its formaction.
+    $this->registerJs(<<<JS
+document.getElementById('membership-requests-form').addEventListener('submit', function (event) {
+    const button = event.submitter;
+    if (!button || button.name !== 'decision' || (button.value === 'reject' && !window.confirm($confirm))) {
+        event.preventDefault();
+    }
+});
+JS);
+}
 ?>
 <?php if ($readOnly): ?>
     <div class="alert alert-info"><?= Html::encode(Yii::t('app', 'Dati sincronizzati dal vecchio Napay: modifica disattivata.')) ?></div>
@@ -21,7 +36,7 @@ $this->params['breadcrumbs'][] = $this->title;
     <div class="card-body border-bottom text-secondary small">
         <?= Html::encode(Yii::t('app', 'Only requests with a verified email are listed; accounts never verified are deleted after {days} days. An approved member can log in and pay the fee; a rejected request deletes the account.', ['days' => app\components\association\MembershipRequests::UNVERIFIED_DAYS])) ?>
     </div>
-    <?= Html::beginForm(['approve'], 'post', ['id' => 'membership-requests-form']) ?>
+    <?= Html::beginForm(['index'], 'post', ['id' => 'membership-requests-form']) ?>
     <div class="table-responsive">
         <?= GridView::widget([
             'dataProvider' => $dataProvider,
@@ -54,10 +69,11 @@ $this->params['breadcrumbs'][] = $this->title;
                 <?= Html::textarea('reason', '', ['id' => 'membership-reject-reason', 'class' => 'form-control', 'rows' => 3, 'maxlength' => 1000]) ?>
             </div>
             <div class="d-flex gap-2">
-                <?= Html::submitButton('<i class="fas fa-check me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Approve selected')), ['class' => 'btn btn-success']) ?>
+                <?= Html::submitButton('<i class="fas fa-check me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Approve selected')), [
+                    'class' => 'btn btn-success', 'formaction' => Url::to(['approve']), 'name' => 'decision', 'value' => 'approve',
+                ]) ?>
                 <?= Html::submitButton('<i class="fas fa-times me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Reject selected')), [
-                    'class' => 'btn btn-outline-danger', 'formaction' => yii\helpers\Url::to(['reject']),
-                    'data-confirm' => Yii::t('app', 'Reject the selected requests? The accounts are deleted and the reason is sent by email.'),
+                    'class' => 'btn btn-outline-danger', 'formaction' => Url::to(['reject']), 'name' => 'decision', 'value' => 'reject',
                 ]) ?>
             </div>
         </div>

@@ -16,6 +16,7 @@ use yii\helpers\Json;
 
 use app\components\Crypt;
 use app\components\User;
+use app\components\association\MemberDeletion;
 use app\components\identity\AccountEligibility;
 use app\components\legacy\LegacyImporter;
 use app\models\AssemblyMinutes;
@@ -49,7 +50,7 @@ class AssociationController extends Controller
                     'members' => ['GET'], 'member' => ['GET'], 'payments' => ['GET'], 'receipt' => ['GET'],
                     'minutes' => ['GET'], 'minute-file' => ['GET'], 'tables' => ['GET'], 'export' => ['POST'],
                     'payment-create' => ['GET', 'POST'], 'payment-update' => ['GET', 'POST'], 'payment-delete' => ['POST'],
-                    'member-update' => ['GET', 'POST'], 'table-edit' => ['GET', 'POST'], 'table-delete' => ['POST'],
+                    'member-update' => ['GET', 'POST'], 'member-delete' => ['POST'], 'table-edit' => ['GET', 'POST'], 'table-delete' => ['POST'],
                     'minute-create' => ['GET', 'POST'], 'minute-update' => ['GET', 'POST'], 'minute-delete' => ['POST'],
                 ],
             ],
@@ -100,6 +101,7 @@ class AssociationController extends Controller
         if ($member === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
         return $this->render('member', [
             'member' => $member,
+            'canDelete' => !$this->view->params['associationReadOnly'] && MemberDeletion::canDelete($member, (int) Yii::$app->user->id),
             'payments' => MembershipPayments::find()->where(['user_id' => $member->id])->with(['method', 'fee'])
                 ->orderBy(['registered_on' => SORT_DESC, 'id' => SORT_DESC])->all(),
         ]);
@@ -286,6 +288,21 @@ class AssociationController extends Controller
             'user' => $user, 'profile' => $profile,
             'roles' => ArrayHelper::map(AssociationRoles::find()->orderBy('id')->all(), 'id', 'description'),
         ]);
+    }
+
+    public function actionMemberDelete($id)
+    {
+        self::ensureWritable();
+        $userId = $this->decodeId($id);
+        if ($userId === 0 || !MemberProfiles::find()->where(['user_id' => $userId])->exists()) {
+            throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        }
+        if (!MemberDeletion::delete($userId, (int) Yii::$app->user->id)) {
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'This member cannot be deleted because the account is protected or has linked records.'));
+            return $this->redirect(['member', 'id' => $id]);
+        }
+        Yii::$app->session->setFlash('success', Yii::t('app', 'Member and account deleted.'));
+        return $this->redirect(['members']);
     }
 
     public function actionTableEdit($type, $id = null)

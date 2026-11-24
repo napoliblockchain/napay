@@ -17,6 +17,11 @@
  * NOTE: this file must be saved in UTF-8 encoding.
  */
 return [
+    'Invalid request.' => 'Richiesta non valida.',
+    'Delete member and account' => 'Elimina socio e account',
+    'Permanently delete this member and their account? This cannot be undone.' => 'Eliminare definitivamente questo socio e il suo account? L’operazione non si può annullare.',
+    'This member cannot be deleted because the account is protected or has linked records.' => 'Il socio non si può eliminare: l’account è protetto o ha dati collegati.',
+    'Member and account deleted.' => 'Socio e account eliminati.',
     'Abilita i metodi di pagamento solo quando l\'importo è …' => '',
     'Abilita pagina di ricevuta per transazioni saldate' => '',
     'Abilitato' => '',

@@ -6,6 +6,7 @@ use yii\widgets\DetailView;
 /* @var $this yii\web\View */
 /* @var $member app\models\Members */
 /* @var $payments app\models\MembershipPayments[] */
+/* @var $canDelete bool */
 
 $this->title = trim($member->last_name . ' ' . $member->first_name);
 $this->params['breadcrumbs'][] = ['label' => Yii::t('app', 'Soci'), 'url' => ['members']];
@@ -41,6 +42,16 @@ $writable = empty($this->params['associationReadOnly']);
                     ['label' => Yii::t('app', 'Indirizzo'), 'value' => trim(implode(' ', array_filter([$profile->address ?? null, $profile->cap ?? null, $profile->city ?? null, $profile->country ?? null])))],
                 ],
             ]) ?>
+            <?php if ($canDelete): ?>
+                <div class="card-footer">
+                    <?= Html::beginForm(['member-delete', 'id' => \app\components\Crypt::encrypt($member->id)], 'post') ?>
+                    <?= Html::submitButton('<i class="fas fa-trash me-1" aria-hidden="true"></i>' . Html::encode(Yii::t('app', 'Delete member and account')), [
+                        'class' => 'btn btn-outline-danger',
+                        'data-confirm' => Yii::t('app', 'Permanently delete this member and their account? This cannot be undone.'),
+                    ]) ?>
+                    <?= Html::endForm() ?>
+                </div>
+            <?php endif; ?>
         </div>
     </div>
     <div class="col-lg-8">

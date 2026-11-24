@@ -85,7 +85,7 @@ check(MembershipRequests::count() === 4 && array_map('intval', MembershipRequest
 $jar = tempnam(sys_get_temp_dir(), 'napay-requests-');
 check(web('/membership-requests/index')['status'] === 302, 'Guest redirected to login');
 check(login('req-g@example.invalid')['status'] === 302 && web('/membership-requests/index')['status'] === 403
-    && web('/membership-requests/approve', ['_csrf' => csrf(web('/site/index')), 'selection' => [$a]])['status'] === 403 && !MemberProfiles::isPending($approved) && MemberProfiles::isPending($a),
+    && web('/membership-requests/approve', ['_csrf' => csrf(web('/site/index')), 'decision' => 'approve', 'selection' => [$a]])['status'] === 403 && !MemberProfiles::isPending($approved) && MemberProfiles::isPending($a),
     'Approved member logs in but cannot see or approve requests (403)');
 check(login('req-b@example.invalid')['status'] === 200 && str_contains(login('req-b@example.invalid')['body'], 'in attesa di approvazione'), 'Pending member cannot log in');
 check(app\components\association\MembershipFee::quote(app\models\Users::findOne($b))['reason'] === 'not_approved'
@@ -98,10 +98,31 @@ check(str_contains($home, 'data-dashboard="requests"') && str_contains($home, 'R
 $page = web('/membership-requests/index');
 check($page['status'] === 200 && str_contains($page['body'], 'req-a@example.invalid') && str_contains($page['body'], 'Bot Srl') && str_contains($page['body'], 'Vecchio Napay')
     && !str_contains($page['body'], 'req-d@example.invalid') && !str_contains($page['body'], 'req-g@example.invalid'), 'Admin list with type, legal name and old-Napay badge');
+$doc = new DOMDocument();
+$doc->loadHTML($page['body'], LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+$xpath = new DOMXPath($doc);
+$form = $xpath->query('//form[@id="membership-requests-form"]')->item(0);
+check($form instanceof DOMElement && $form->getAttribute('action') === '/membership-requests/index', 'Form default is not a write action');
+$targets = [];
+foreach (['approve', 'reject'] as $decision) {
+    $button = $xpath->query('.//button[@type="submit" and @name="decision" and @value="' . $decision . '"]', $form)->item(0);
+    check($button instanceof DOMElement && !$button->hasAttribute('data-confirm')
+        && $button->getAttribute('formaction') === '/membership-requests/' . $decision, 'Native explicit ' . $decision . ' submit destination');
+    $targets[$decision] = $button->getAttribute('formaction');
+}
+check(str_contains($page['body'], 'event.submitter') && str_contains($page['body'], 'window.confirm('), 'Rejection confirms without replacing native form submission');
+$posted = ['_csrf' => csrf($page), 'selection' => [(string) $c], 'reason' => 'Old cached rejection'];
+$mail = mails();
+check(web($targets['approve'], $posted)['status'] === 400
+    && web($targets['approve'], $posted + ['decision' => 'reject'])['status'] === 400
+    && web($targets['approve'], $posted + ['decision' => ['approve']])['status'] === 400
+    && web($targets['reject'], $posted + ['decision' => 'approve'])['status'] === 400
+    && web($form->getAttribute('action'), $posted)['status'] === 405
+    && MemberProfiles::isPending($c) && mails() === $mail, 'Cached or mismatched submission cannot change state or send mail');
 check(web('/membership-requests/approve', ['selection' => [$a]])['status'] === 400 && web('/membership-requests/approve')['status'] === 405
     && MemberProfiles::isPending($a), 'Approval needs POST with CSRF');
 $mail = mails();
-$r = web('/membership-requests/approve', ['_csrf' => csrf($page), 'selection' => [(string) $a, (string) $legacy, (string) $approved, 'x', (string) $oldUnverified]]);
+$r = web($targets['approve'], ['_csrf' => csrf($page), 'decision' => 'approve', 'selection' => [(string) $a, (string) $legacy, (string) $approved, 'x', (string) $oldUnverified]]);
 $sent = array_values(array_diff(mails(), $mail));
 check($r['status'] === 302 && !MemberProfiles::isPending($a) && !MemberProfiles::isPending($legacy) && MemberProfiles::isPending($oldUnverified)
     && (int) scalar('SELECT approved_by FROM member_profiles WHERE user_id=:u', [':u' => $a]) === (int) scalar("SELECT id FROM users WHERE email='admin@example.invalid'"),
@@ -114,10 +135,12 @@ check(count($sent) === 2 && str_contains(mailTo($sent, 'req-a@example.invalid'),
 check((int) scalar("SELECT COUNT(*) FROM logs WHERE description=:d", [':d' => 'Iscrizione approvata: utente ' . $a]) === 1, 'Approval audited');
 
 $page = web('/membership-requests/index');
-$r = web('/membership-requests/reject', ['_csrf' => csrf($page), 'selection' => [(string) $c], 'reason' => ' x ']);
+$r = web($targets['reject'], ['_csrf' => csrf($page), 'decision' => 'reject', 'selection' => [(string) $c], 'reason' => ' x ']);
 check($r['status'] === 302 && MemberProfiles::isPending($c) && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $c]) === 1, 'Reject without a real reason refused, nothing deleted');
+$r = web($targets['reject'], ['_csrf' => csrf($page), 'decision' => 'reject', 'selection' => [(string) $c], 'reason' => ['Invalid reason']]);
+check($r['status'] === 302 && MemberProfiles::isPending($c), 'Reject with malformed reason refused');
 $mail = mails();
-$r = web('/membership-requests/reject', ['_csrf' => csrf($page), 'selection' => [(string) $c, (string) $approved], 'reason' => "Dati non verificabili <script>x</script>"]);
+$r = web($targets['reject'], ['_csrf' => csrf($page), 'decision' => 'reject', 'selection' => [(string) $c, (string) $approved], 'reason' => "Dati non verificabili <script>x</script>"]);
 $sent = array_values(array_diff(mails(), $mail));
 $rejectMail = mailTo($sent, 'req-c@example.invalid');
 check($r['status'] === 302 && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $c]) === 0
@@ -136,4 +159,48 @@ check(login('req-a@example.invalid')['status'] === 302, 'Approved member logs in
 check(MembershipRequests::purgeUnverified(time()) === 1 && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $oldUnverified]) === 0
     && (int) scalar('SELECT COUNT(*) FROM users WHERE id IN (:e, :b)', [':e' => $newUnverified, ':b' => $b]) === 2, 'Purge removes only site accounts unverified for more than 7 days');
 check(MembershipRequests::purgeUnverified(time()) === 0, 'Purge is idempotent');
+
+check(web('/association/member-delete?id=invalid', ['_csrf' => csrf(web('/site/index'))])['status'] === 403, 'Non-admin cannot access the member deletion route');
+check(login('admin@example.invalid')['status'] === 302, 'Admin opens approved member records');
+$memberPath = static function (string $email): string {
+    $list = web('/association/members?' . http_build_query(['MembersSearch' => ['q' => $email]]));
+    $doc = new DOMDocument();
+    $doc->loadHTML($list['body'], LIBXML_NONET | LIBXML_NOERROR | LIBXML_NOWARNING);
+    $href = (new DOMXPath($doc))->query('//a[starts-with(@href,"/association/member?id=")]/@href')->item(0);
+    if ($href === null) throw new RuntimeException('Member detail link missing.');
+    return $href->nodeValue;
+};
+$deletePath = static fn(string $url): string => str_replace('/association/member?', '/association/member-delete?', $url);
+$memberA = $memberPath('req-a@example.invalid');
+$detail = web($memberA);
+check($detail['status'] === 200 && str_contains($detail['body'], 'Elimina socio e account'), 'Admin can choose to delete an approved member with no dependencies');
+check(web($deletePath($memberA))['status'] === 405 && web($deletePath($memberA), [])['status'] === 400
+    && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $a]) === 1, 'Account deletion requires POST and CSRF');
+check(web('/association/member-delete?id=invalid', ['_csrf' => csrf($detail)])['status'] === 404, 'Invalid member reference rejected');
+$rootAdmin = (int) scalar("SELECT id FROM users WHERE email='admin@example.invalid'");
+$adminDeleteStatus = web($deletePath($memberPath('admin@example.invalid')), ['_csrf' => csrf($detail)])['status'];
+check(in_array($adminDeleteStatus, [302, 404], true)
+    && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $rootAdmin]) === 1, 'Admin/non-member account remains intact');
+
+$db->createCommand()->insert('membership_fees', ['description' => 'Deletion guard fee', 'duration' => 365, 'amount' => '1.00'])->execute();
+$fee = (int) $db->lastInsertID;
+$db->createCommand()->insert('payment_methods', ['description' => 'Deletion guard method', 'min_level' => 0])->execute();
+$method = (int) $db->lastInsertID;
+$today = date('Y-m-d');
+$db->createCommand()->insert('membership_payments', ['user_id' => $approved, 'fee_id' => $fee, 'payment_method_id' => $method,
+    'amount' => '1.00', 'registered_on' => $today, 'starts_on' => $today, 'expires_on' => $today, 'status' => 'paid'])->execute();
+$protectedMember = $memberPath('req-g@example.invalid');
+$protectedDetail = web($protectedMember);
+check($protectedDetail['status'] === 200 && !str_contains($protectedDetail['body'], 'Elimina socio e account')
+    && web($deletePath($protectedMember), ['_csrf' => csrf($detail)])['status'] === 302
+    && (int) scalar('SELECT COUNT(*) FROM membership_payments WHERE user_id=:u', [':u' => $approved]) === 1
+    && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $approved]) === 1, 'Paid member protected in both UI and direct POST');
+
+$mail = mails();
+check(web($deletePath($memberA), ['_csrf' => csrf($detail)])['status'] === 302
+    && (int) scalar('SELECT COUNT(*) FROM users WHERE id=:u', [':u' => $a]) === 0
+    && (int) scalar('SELECT COUNT(*) FROM member_profiles WHERE user_id=:u', [':u' => $a]) === 0
+    && (int) scalar('SELECT COUNT(*) FROM user_consensus WHERE user_id=:u', [':u' => $a]) === 0
+    && (int) scalar('SELECT COUNT(*) FROM logs WHERE description=:d', [':d' => 'Member and account deleted: user ' . $a]) === 1
+    && mails() === $mail, 'Manual deletion removes account, member and consents in one operation, is audited and sends no mail');
 printf("PASS %d membership request checks\n", $checks);

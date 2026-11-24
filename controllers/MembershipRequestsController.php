@@ -7,6 +7,7 @@ use yii\data\ArrayDataProvider;
 use yii\filters\AccessControl;
 use yii\filters\VerbFilter;
 use yii\web\Controller;
+use yii\web\BadRequestHttpException;
 use yii\web\ForbiddenHttpException;
 
 use app\components\User;
@@ -41,6 +42,7 @@ class MembershipRequestsController extends Controller
     public function actionApprove()
     {
         $this->writable();
+        $this->requireDecision('approve');
         $count = MembershipRequests::approve($this->selection(), (int) Yii::$app->user->id);
         Yii::$app->session->setFlash($count > 0 ? 'success' : 'warning', Yii::t('app', 'Approved requests: {n}.', ['n' => $count]));
         return $this->redirect(['index']);
@@ -49,7 +51,9 @@ class MembershipRequestsController extends Controller
     public function actionReject()
     {
         $this->writable();
-        $reason = trim((string) Yii::$app->request->post('reason', ''));
+        $this->requireDecision('reject');
+        $reason = Yii::$app->request->post('reason', '');
+        $reason = is_string($reason) ? trim($reason) : '';
         if (mb_strlen($reason) < 3 || mb_strlen($reason) > 1000) {
             Yii::$app->session->setFlash('danger', Yii::t('app', 'Write the reason for the rejection (3 to 1000 characters): it is sent by email.'));
             return $this->redirect(['index']);
@@ -63,6 +67,13 @@ class MembershipRequestsController extends Controller
     {
         $selection = Yii::$app->request->post('selection', []);
         return is_array($selection) ? $selection : [];
+    }
+
+    private function requireDecision(string $decision): void
+    {
+        if (Yii::$app->request->post('decision') !== $decision) {
+            throw new BadRequestHttpException(Yii::t('app', 'Invalid request.'));
+        }
     }
 
     /** @throws ForbiddenHttpException finché i soci arrivano dall'import legacy */
