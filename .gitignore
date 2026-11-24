@@ -35,6 +35,8 @@ tests/_support/_generated
 # Database exports must never enter Git or the application document root.
 /backups/
 *.sql
+# dataset base del primo avvio in produzione (SIP-036 A5): solo schema, migration e livelli di privilegio
+!docker/base-dataset/napay-v2.sql
 *.sql.gz
 *.sql.partial
 *.sql.gz.partial
