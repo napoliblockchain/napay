@@ -88,6 +88,7 @@ try {
     $token = $match[1];
     check(fixture()->activationCode !== $token && fixture()->activationCode === app\models\Users::passwordResetDigest($token), 'Only reset token hash stored');
     check(!str_contains($message, 'fixture-password-only'), 'Email never contains password');
+    check(str_contains($message, 'https://napay.example.invalid/brand/logo-wordmark.png') && !str_contains($message, 'logo-60.png'), 'Email shows the current Napay logo');
     $count = count(mailFiles());
     check(forgot('other@example.invalid', 'attacker.example.invalid')['status'] === 302 && count(mailFiles()) === $count, 'Immediate repeat throttled without account disclosure');
     $jar = newJar();

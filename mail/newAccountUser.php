@@ -38,8 +38,8 @@ $URL = sendMail::activationUrl($user);
     }
 
     .card-header img {
-        width: 80px;
-        margin-right: 10px;
+        width: 168px;
+        height: 48px;
         vertical-align: middle;
     }
 
@@ -70,8 +70,7 @@ $URL = sendMail::activationUrl($user);
 
 <div class="card">
     <div class="card-header">
-        <img src="<?= Html::encode(sendMail::applicationUrl('bundles/site/images/logo-60.png')) ?>" alt="Logo">
-        <span><?= Html::encode(Yii::$app->name) ?></span>
+        <img src="<?= Html::encode(sendMail::applicationUrl('brand/logo-wordmark.png')) ?>" alt="<?= Html::encode(Yii::$app->name) ?>" width="168" height="48">
     </div>
     <div class="card-title">
         <h2>Richiesta di registrazione</h2>
