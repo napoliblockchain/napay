@@ -8,7 +8,8 @@
 # precedente è il ripristino di quel backup con il commit precedente.
 # Variabili in più rispetto a up.sh: NAPAY_GATEWAY_NETWORK (rete del gateway dell'orchestratore), NAPAY_TRUSTED_PROXIES
 # (CIDR di quella rete), NAPAY_BACKUP_DIR (cartella privata 0700 fuori dal repository). Con MAIL_TRANSPORT=smtp anche
-# l'inoltro della posta (docker-compose.mail.yml; facoltative NAPAY_SMTP_RESOLVER, NAPAY_SMTP_UPSTREAM).
+# l'inoltro della posta (docker-compose.mail.yml; facoltative NAPAY_SMTP_RESOLVER, NAPAY_SMTP_UPSTREAM). Facoltative
+# NAPAY_WALLET_MAIL_VOLUME e NAPAY_WALLET_URL: email del wallet salvate su file visibili nella pagina "Posta in uscita".
 set -euo pipefail
 umask 077
 root=$(CDPATH= cd -- "$(dirname -- "$0")/.." && pwd -P)
@@ -44,6 +45,14 @@ if [[ $(env_value MAIL_TRANSPORT) == smtp ]]; then
     done
     overlays+=:docker-compose.mail.yml
 fi
+# posta del wallet su file: cartella in sola lettura per la pagina admin "Posta in uscita" (docker-compose.wallet-mail.yml)
+wallet_mail=$(env_value NAPAY_WALLET_MAIL_VOLUME)
+if [[ -n $wallet_mail ]]; then
+    [[ $wallet_mail =~ ^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,63}$ ]] || fail 'NAPAY_WALLET_MAIL_VOLUME non valido.'
+    [[ $(env_value NAPAY_WALLET_URL) =~ ^https://([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}/?$ ]] \
+        || fail 'NAPAY_WALLET_URL mancante o non valido (https://dominio del wallet).'
+    overlays+=:docker-compose.wallet-mail.yml
+fi
 export NAPAY_IMAGE_TAG=$tag NAPAY_COMPOSE_OVERLAYS=$overlays NAPAY_ENV_FILE=$env_file
 
 if [[ ${2:-} == --check ]]; then
@@ -53,6 +62,8 @@ if [[ ${2:-} == --check ]]; then
 fi
 
 docker network inspect "$gateway" >/dev/null 2>&1 || fail 'rete del gateway assente: avviare prima l'"'"'orchestratore.'
+[[ -z $wallet_mail ]] || docker volume inspect "$wallet_mail" >/dev/null 2>&1 \
+    || fail 'volume della posta del wallet assente: rilasciare prima il wallet (deploy-wallet.sh).'
 bash "$root/docker/up.sh" "$env_file" --check
 compose=(docker compose --project-directory "$root" --env-file "$env_file" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml")
 IFS=: read -r -a files <<< "$overlays"

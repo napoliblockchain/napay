@@ -638,4 +638,16 @@ return [
     'If the account is eligible, a password reset link will be sent.' => 'Se l\'account è idoneo, riceverà un link per reimpostare la password.',
     'Send password reset link' => 'Invia link per reimpostare la password',
     'Changing your password signs out your other sessions. Wallet keys and funds are not affected.' => 'Cambiare password disconnette le altre sessioni. Chiavi del wallet e fondi restano invariati.',
+    // Posta in uscita salvata su file (SMTP non disponibile)
+    'Outgoing mail' => 'Posta in uscita',
+    'Napay emails' => 'Email di Napay',
+    'Wallet emails' => 'Email del wallet',
+    'Recipient' => 'Destinatario',
+    'Subject' => 'Oggetto',
+    'Links' => 'Link',
+    'No emails.' => 'Nessuna email.',
+    'No links.' => 'Nessun link.',
+    'Email not readable.' => 'Email non leggibile.',
+    'Emails are sent normally: there is no saved mail to show.' => 'Le email vengono inviate normalmente: non ci sono email salvate da mostrare.',
+    'Outgoing mail is not available: emails are saved here instead of being sent. Copy the link and send it to the recipient in another way. The last {n} emails are listed.' => 'L\'invio delle email non è disponibile: le email vengono salvate qui invece di essere spedite. Copia il link e giralo al destinatario in un altro modo. Sono elencate le ultime {n} email.',
 ];

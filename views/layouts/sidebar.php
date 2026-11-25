@@ -6,6 +6,7 @@ use app\components\User;
 use app\widgets\TablerSidebarMenu;
 use app\components\identity\AccountEligibility;
 use app\components\pos\management\Scope;
+use app\components\mail\Outbox;
 
 $admin = !Yii::$app->user->isGuest && User::isAdministrator();
 $scope = Yii::$app->user->isGuest ? null : Scope::current();
@@ -38,6 +39,7 @@ $items = [
         ['label'=>Yii::t('app', 'Profili e privilegi'), 'url'=>['privileges/index'], 'visible'=>$admin, 'active'=>$on('privileges')],
         ['label'=>Yii::t('app', 'Impostazioni'), 'url'=>['settings/index'], 'visible'=>$admin, 'active'=>$on('settings')],
         ['label'=>Yii::t('app', 'Registro attività'), 'url'=>['logs/index'], 'visible'=>$admin, 'active'=>$on('logs')],
+        ['label'=>Yii::t('app', 'Outgoing mail'), 'url'=>['mail-outbox/index'], 'visible'=>$admin && Outbox::sources() !== [], 'active'=>$on('mail-outbox')],
     ]],
 ];
 ?>
