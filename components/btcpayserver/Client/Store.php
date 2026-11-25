@@ -38,8 +38,9 @@ class Store extends AbstractBps
         $class = new ReflectionMethod($class, $method);
         $class->setAccessible(true);
 
-        // richiamo la classe dello store
-        $store = new \BTCPayServer\Client\Store($this->_host, $this->_key);
+        // richiamo la classe dello store, sempre dal proxy di uscita come le quote (in produzione il web non ha DNS)
+        $scheme = parse_url((string) $this->_host, PHP_URL_SCHEME) === 'https' ? 'https' : 'http';
+        $store = new \BTCPayServer\Client\Store($this->_host, $this->_key, \app\components\payments\BTCPay::httpClient($scheme));
 
         return $class->invoke($store);
     }

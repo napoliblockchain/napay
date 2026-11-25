@@ -128,15 +128,25 @@ final class BTCPay
 
     private static function client(array $config): Invoice
     {
+        return new Invoice($config['url'], $config['key'], self::httpClient($config['scheme']));
+    }
+
+    /**
+     * Client HTTP per BTCPay: proxy di uscita (PAYMENT_PROXY) se configurato, timeout, niente redirect, TLS verificato.
+     * Usato anche dal client dei negozi v1 (chiave ponte): in produzione il web non ha internet né DNS.
+     * @throws PaymentGatewayException proxy configurato ma non valido
+     */
+    public static function httpClient(string $scheme): CurlClient
+    {
         $proxy = Egress::proxy();
         if ($proxy === false) throw new PaymentGatewayException('Invalid PAYMENT_PROXY.');
         $http = new CurlClient();
         $http->setCurlOptions(($proxy !== null ? [CURLOPT_PROXY => $proxy, CURLOPT_PROXYTYPE => CURLPROXY_HTTP] : []) + [
             CURLOPT_CONNECTTIMEOUT => 5, CURLOPT_TIMEOUT => 15, CURLOPT_FOLLOWLOCATION => false,
             CURLOPT_SSL_VERIFYPEER => true, CURLOPT_SSL_VERIFYHOST => 2,
-            CURLOPT_PROTOCOLS => $config['scheme'] === 'https' ? CURLPROTO_HTTPS : CURLPROTO_HTTP,
+            CURLOPT_PROTOCOLS => $scheme === 'https' ? CURLPROTO_HTTPS : CURLPROTO_HTTP,
         ]);
-        return new Invoice($config['url'], $config['key'], $http);
+        return $http;
     }
 
     /** Errori della libreria convertiti in messaggi sicuri (classe soltanto: i messaggi contengono URL e risposte) */

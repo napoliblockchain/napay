@@ -173,4 +173,25 @@ check(web('/stores/view?id=' . urlencode($id))['status'] === 404 && !str_contain
 $page = web('/pos-management/index');
 web('/pos-management/terminal-enable?id=' . urlencode((string) $terminal->public_id), ['_csrf' => csrf($page)]);
 check((int) scalar('SELECT is_enabled FROM pos_terminals WHERE id=' . (int) $terminal->id) === 0, 'A terminal of an archived store cannot be enabled again');
+// negozi v1 (chiave ponte): il client BTCPay passa dal proxy di uscita come le quote; in produzione il web non ha DNS
+$proxyDir = sys_get_temp_dir() . '/napay-proxy-' . bin2hex(random_bytes(6));
+mkdir($proxyDir, 0700);
+file_put_contents("$proxyDir/router.php", '<?php file_put_contents(__DIR__ . "/seen", $_SERVER["REQUEST_URI"] . "\n" . ($_SERVER["HTTP_HOST"] ?? "") . "\n", FILE_APPEND); header("Content-Type: application/json"); echo "[]";');
+$proxy = proc_open(['php', '-S', '127.0.0.1:8097', "$proxyDir/router.php"], [['file', '/dev/null', 'r'], ['file', '/dev/null', 'w'], ['file', '/dev/null', 'w']], $pipes);
+try {
+    for ($i = 0; $i < 50 && !@fsockopen('127.0.0.1', 8097); $i++) usleep(100000);
+    $previous = getenv('PAYMENT_PROXY');
+    putenv('PAYMENT_PROXY=http://127.0.0.1:8097');
+    (new app\components\BTCPayServer('http://btcpay-v1.example.invalid', str_repeat('a', 40)))->getRates('StoreV1', 'BTC-CHAIN_EUR');
+    $seen = (string) @file_get_contents("$proxyDir/seen");
+    check(str_contains($seen, 'btcpay-v1.example.invalid') && str_contains($seen, '/api/v1/stores/StoreV1/rates'), 'Store BTCPay client (v1 bridge) goes through the egress proxy, no direct DNS');
+    putenv('PAYMENT_PROXY=not a proxy');
+    $refused = false;
+    try { (new app\components\BTCPayServer('http://btcpay-v1.example.invalid', str_repeat('a', 40)))->getRates('StoreV1', 'BTC-CHAIN_EUR'); } catch (app\components\payments\PaymentGatewayException $e) { $refused = true; }
+    check($refused, 'Invalid proxy: store BTCPay client makes no connection');
+    putenv($previous === false ? 'PAYMENT_PROXY' : "PAYMENT_PROXY=$previous");
+} finally {
+    proc_terminate($proxy); proc_close($proxy);
+    array_map('unlink', glob("$proxyDir/*") ?: []); rmdir($proxyDir);
+}
 echo "PASS $checks store without BTCPay checks\n";

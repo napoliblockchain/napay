@@ -21,7 +21,7 @@ use Yii;
  * @property string $addressCountry
  *
  * @property Merchants $merchant
- * @property Storesettings[] $storesettings
+ * @property Storesettings|null $storesettings
  */
 class Stores extends \yii\db\ActiveRecord
 {

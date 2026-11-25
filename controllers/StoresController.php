@@ -135,7 +135,13 @@ class StoresController extends Controller
         // recupero il rate da exchange
         $storeId = $model->storesettings->bps_storeid;
         $defaultCurrency = $model->storesettings->defaultPaymentMethod . '_' . $model->storesettings->defaultCurrency;
-        $rates = $BTCPayServer === null ? null : $BTCPayServer->getRates($storeId, $defaultCurrency);
+        try {
+            $rates = $BTCPayServer === null ? null : $BTCPayServer->getRates($storeId, $defaultCurrency);
+        } catch (\Throwable $error) {
+            // BTCPay non raggiungibile: pagina comunque visibile, cambio non disponibile (solo la classe nei log)
+            Yii::error('Store rate unavailable: ' . get_class($error), __METHOD__);
+            $rates = null;
+        }
         
         if (isset($rates['statusCode']) && $rates['statusCode'] == 200){
             $value = (empty($rates->getData()[0]['errors']) ? $rates->getData()[0]['rate'] : $rates->getData()[0]['errors']) . chr(32) . $model->storesettings->defaultCurrency;
