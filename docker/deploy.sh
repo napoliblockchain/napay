@@ -35,7 +35,8 @@ if [[ -n $(env_value BTCPAY_PROVISIONER_KEY_SECRET_FILE) ]]; then overlays+=:doc
 # posta SMTP: inoltro TCP dedicato verso il solo server di posta (docker-compose.mail.yml)
 if [[ $(env_value MAIL_TRANSPORT) == smtp ]]; then
     [[ $(env_value MAIL_SMTP_HOST) =~ ^([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\.)+[a-z]{2,63}$ ]] || fail 'MAIL_SMTP_HOST mancante o non valido.'
-    port=$(env_value MAIL_SMTP_PORT); [[ -z $port || $port =~ ^(465|587)$ ]] || fail 'MAIL_SMTP_PORT ammessa: 465 o 587.'
+    # 2525: porta alternativa dei relay (es. Brevo) quando il provider della VPS blocca 465/587; TLS sempre obbligatorio
+    port=$(env_value MAIL_SMTP_PORT); [[ -z $port || $port =~ ^(465|587|2525)$ ]] || fail 'MAIL_SMTP_PORT ammessa: 465, 587 o 2525.'
     for name in NAPAY_SMTP_RESOLVER NAPAY_SMTP_UPSTREAM; do
         value=$(env_value $name)
         case $name in

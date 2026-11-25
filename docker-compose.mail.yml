@@ -11,7 +11,7 @@ services:
     read_only: true
     cap_drop: [ALL]
     security_opt: [no-new-privileges:true]
-    # porta SMTP (465/587) senza privilegi di root
+    # porta SMTP (465/587/2525) senza privilegi di root
     sysctls:
       net.ipv4.ip_unprivileged_port_start: 0
     tmpfs: [/tmp]

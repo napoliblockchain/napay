@@ -121,7 +121,13 @@ for bad in 'MAIL_SMTP_HOST=bad_host' 'MAIL_SMTP_PORT=25' 'NAPAY_SMTP_RESOLVER=an
     sed "/^${bad%%=*}=/d" "$work/test.env" > "$work/bad.env"; printf '%s\n' "$bad" >> "$work/bad.env"; chmod 600 "$work/bad.env"
     if run_deploy "$work/bad.env"; then echo "FAIL: accepted $bad" >&2; exit 1; fi
 done
-pass 'Invalid mail server, port (only 465/587) or resolver refused'
+pass 'Invalid mail server, port (only 465/587/2525) or resolver refused'
+# relay su porta alternativa (es. Brevo 2525, STARTTLS): accettato; porta 25 sempre rifiutata
+sed "/^MAIL_SMTP_\(HOST\|PORT\|SCHEME\)=/d" "$work/test.env" > "$work/bad.env"; printf 'MAIL_SMTP_HOST=smtp-relay.brevo.com\nMAIL_SMTP_PORT=2525\nMAIL_SMTP_SCHEME=smtp\n' >> "$work/bad.env"; chmod 600 "$work/bad.env"
+run_deploy "$work/bad.env" && grep -q 'Napay deploy preflight OK' "$work/output" || { echo 'FAIL: port 2525 refused' >&2; exit 1; }
+sed -i 's/^MAIL_SMTP_PORT=2525$/MAIL_SMTP_PORT=25/' "$work/bad.env"
+if run_deploy "$work/bad.env"; then echo 'FAIL: accepted port 25' >&2; exit 1; fi
+pass 'Relay on port 2525 accepted, port 25 refused'
 cp "$work/base.env" "$work/test.env"
 # posta del wallet su file: volume esterno in sola lettura per la pagina "Posta in uscita", URL del wallet validato
 printf 'NAPAY_WALLET_MAIL_VOLUME=napay_wallet_mail\nNAPAY_WALLET_URL=https://wallet.example.org\n' >> "$work/test.env"
