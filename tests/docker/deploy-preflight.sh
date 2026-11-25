@@ -123,6 +123,23 @@ for bad in 'MAIL_SMTP_HOST=bad_host' 'MAIL_SMTP_PORT=25' 'NAPAY_SMTP_RESOLVER=an
 done
 pass 'Invalid mail server, port (only 465/587) or resolver refused'
 cp "$work/base.env" "$work/test.env"
+# posta del wallet su file: volume esterno in sola lettura per la pagina "Posta in uscita", URL del wallet validato
+printf 'NAPAY_WALLET_MAIL_VOLUME=napay_wallet_mail\nNAPAY_WALLET_URL=https://wallet.example.org\n' >> "$work/test.env"
+run_deploy
+grep -q 'Napay deploy preflight OK' "$work/output" && [[ ! -e $work/persistent ]] || exit 1
+NAPAY_ENV_FILE="$work/test.env" NAPAY_IMAGE_TAG=$tag "$real_docker" compose --project-directory "$root" --env-file "$work/test.env" -f "$root/docker-compose.yml" -f "$root/docker-compose.roles.yml" \
+    -f "$root/docker-compose.prod.yml" -f "$root/docker-compose.wallet-mail.yml" config --format json > "$work/model.json"
+check_model 'count(array_filter($s["web"]["volumes"], fn($v) => $v["target"] === "/var/napay-wallet-mail" && $v["source"] === "wallet-mail" && ($v["read_only"] ?? false) === true)) === 1
+    && $m["volumes"]["wallet-mail"]["external"] === true && $m["volumes"]["wallet-mail"]["name"] === "napay_wallet_mail"
+    && $s["web"]["environment"]["NAPAY_WALLET_MAIL_DIR"] === "/var/napay-wallet-mail"
+    && count(array_filter($s["cron"]["volumes"], fn($v) => $v["target"] === "/var/napay-wallet-mail")) === 0' \
+    && pass 'With wallet mail: external volume read-only in web only'
+for bad in 'NAPAY_WALLET_URL=http://wallet.example.org' 'NAPAY_WALLET_URL=' 'NAPAY_WALLET_MAIL_VOLUME=bad;name'; do
+    sed "/^${bad%%=*}=/d" "$work/test.env" > "$work/bad.env"; printf '%s\n' "$bad" >> "$work/bad.env"; chmod 600 "$work/bad.env"
+    if run_deploy "$work/bad.env"; then echo "FAIL: accepted $bad" >&2; exit 1; fi
+done
+pass 'Invalid wallet URL (HTTPS only) or volume name refused'
+cp "$work/base.env" "$work/test.env"
 change NAPAY_GATEWAY_NETWORK ''; reject 'Missing gateway network refused'
 change NAPAY_GATEWAY_NETWORK 'bad name;x'; reject 'Invalid gateway network name refused'
 change NAPAY_TRUSTED_PROXIES ''; reject 'Missing trusted proxy CIDR refused'
