@@ -80,7 +80,7 @@ class UserConsensus extends \yii\db\ActiveRecord
         return [
             [['user_id', 'consenso_statuto', 'consenso_privacy', 'consenso_condizioni',  ], 'required'],
             
-            [['user_id', 'consenso_statuto', 'consenso_privacy', 'consenso_condizioni', 'consenso_condizioni_pos', 'consenso_marketing', 'timestamp_statuto', 'timestamp_privacy', 'timestamp_condizioni', 'timestamp_condizioni_pos', 'timestamp_marketing'], 'integer'],
+            [['user_id', 'consenso_statuto', 'consenso_privacy', 'consenso_condizioni', 'consenso_condizioni_pos', 'consenso_marketing', 'timestamp_statuto', 'timestamp_privacy', 'timestamp_condizioni', 'timestamp_condizioni_pos', 'timestamp_marketing', 'privacy_document_id', 'terms_document_id'], 'integer'],
             [['user_id'], 'exist', 'skipOnError' => true, 'targetClass' => Users::class, 'targetAttribute' => ['user_id' => 'id']],
 
             // Altre regole di validazione...

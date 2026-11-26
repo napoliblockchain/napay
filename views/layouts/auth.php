@@ -47,6 +47,7 @@ ServiceWorkerAsset::register($this);
                 <img class="auth-logo-uni" src="<?= Html::encode(Yii::getAlias('@web/bundles/auth/parthenope.jpg')) ?>" alt="Università degli Studi di Napoli Parthenope">
             </div>
             <p class="auth-footer"><?= Html::encode(Yii::$app->params['webapp_society']) ?> &copy;<?= date('Y') ?> · <?= Html::encode(Yii::t('app', 'Version')) ?> <?= Html::encode(Yii::$app->params['version']) ?></p>
+            <p class="auth-footer"><?= implode(' · ', array_map(static fn($t) => Html::a(Html::encode(\app\models\LegalDocuments::typeLabel($t)), ['/legal/view', 'type' => $t]), \app\models\LegalDocuments::TYPES)) // SIP-040 ?></p>
         </div>
     </main>
 </div>

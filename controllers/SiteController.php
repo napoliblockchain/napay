@@ -6,6 +6,7 @@ use Yii;
 use yii\filters\AccessControl;
 use yii\web\Controller;
 use yii\filters\VerbFilter;
+use yii\helpers\Html;
 use app\models\forms\LoginForm;
 use app\models\forms\SignupForm;
 use app\models\forms\PasswordResetRequestForm;
@@ -13,6 +14,7 @@ use app\models\forms\ResetPasswordForm;
 use app\models\forms\ActivationResendForm;
 use app\models\Users;
 use app\models\UserConsensus;
+use app\models\LegalDocuments;
 use app\models\MemberProfiles;
 
 use app\components\Log;
@@ -45,10 +47,10 @@ class SiteController extends Controller
         return [
             'access' => [
                 'class' => AccessControl::class,
-                'only' => ['logout'],
+                'only' => ['logout', 'accept-terms'],
                 'rules' => [
                     [
-                        'actions' => ['logout'],
+                        'actions' => ['logout', 'accept-terms'],
                         'allow' => true,
                         'roles' => ['@'],
                         'denyCallback' => function ($rule, $action) {
@@ -65,6 +67,7 @@ class SiteController extends Controller
                     'reset-password' => ['GET', 'POST'],
                     'activate' => ['GET', 'POST'],
                     'resend-activation' => ['GET', 'POST'],
+                    'accept-terms' => ['GET', 'POST'],
                 ],
             ],
         ];
@@ -194,6 +197,11 @@ class SiteController extends Controller
 
         $model = new SignupForm();
         $consensus = new UserConsensus();
+        $legal = [];
+        foreach (['privacy', 'terms'] as $type) {
+            $current = LegalDocuments::current($type);
+            $legal[$type] = $current === null ? null : (int) $current->id;
+        }
 
         $post = Yii::$app->request->post();
 
@@ -209,6 +217,18 @@ class SiteController extends Controller
                         $value = 0;
                     }
                     $consensus->$attribute = $value;
+                }
+
+                // SIP-040: il consenso vale per le versioni mostrate nel modulo; se nel frattempo ne è stata pubblicata una
+                // nuova il modulo si ripresenta. Nessuna versione pubblicata = NULL (decisione utente B, 2026-11-26).
+                $posted = Yii::$app->request->post('legal');
+                foreach (['privacy' => 'privacy_document_id', 'terms' => 'terms_document_id'] as $type => $column) {
+                    $shown = is_array($posted) && is_string($posted[$type] ?? null) ? $posted[$type] : '';
+                    if ($shown !== (string) ($legal[$type] ?? '')) {
+                        $invalidConsent = true;
+                        $consensus->addError('consenso_' . ($type === 'terms' ? 'condizioni' : 'privacy'), Yii::t('app', 'The document has just been updated: read it again and confirm.'));
+                    }
+                    $consensus->$column = $legal[$type];
                 }
 
                 $connection = \Yii::$app->db;
@@ -250,12 +270,12 @@ class SiteController extends Controller
                 $errors = $model->getErrors();
                 foreach ($errors as $id => $error) {
                     foreach ($error as $e)
-                        $p .= '<p>' . $e . '</p>';
+                        $p .= '<p>' . Html::encode($e) . '</p>';
                 }
                 $errors = $consensus->getErrors();
                 foreach ($errors as $id => $error) {
                     foreach ($error as $e)
-                        $p .= '<p>' . $e . '</p>';
+                        $p .= '<p>' . Html::encode($e) . '</p>';
                 }
 
                 Yii::$app->session->setFlash('error', $p);
@@ -265,7 +285,29 @@ class SiteController extends Controller
         return $this->render('signup', [
             'model' => $model,
             'consensus' => $consensus,
+            'legal' => $legal,
         ]);
+    }
+
+    /** SIP-040: nuova accettazione delle condizioni in vigore (TermsGate); la versione accettata è quella mostrata. */
+    public function actionAcceptTerms()
+    {
+        $userId = (int) Yii::$app->user->id;
+        $pending = \app\components\legal\TermsGate::pending($userId);
+        if ($pending === null) return $this->goHome();
+        if (Yii::$app->request->isPost) {
+            $shown = Yii::$app->request->post('document');
+            $accepted = Yii::$app->request->post('accept') === '1';
+            if ($accepted && is_string($shown) && preg_match('/^[1-9][0-9]{0,9}$/D', $shown)
+                && \app\components\legal\TermsGate::accept($userId, (int) $shown)) {
+                Log::event(sprintf('Terms of use v%d accepted', (int) $pending->version), Log::TYPE_DATA);
+                return $this->goHome();
+            }
+            Yii::$app->session->setFlash('warning', Yii::t('app', 'To continue, read the terms of use and confirm that you accept them.'));
+            return $this->redirect(['accept-terms']);
+        }
+        $this->layout = 'auth';
+        return $this->render('accept-terms', ['document' => $pending]);
     }
 
     /**

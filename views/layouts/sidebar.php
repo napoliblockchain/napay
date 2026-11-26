@@ -39,6 +39,7 @@ $items = [
         ['label'=>Yii::t('app', 'Profili e privilegi'), 'url'=>['privileges/index'], 'visible'=>$admin, 'active'=>$on('privileges')],
         ['label'=>Yii::t('app', 'Impostazioni'), 'url'=>['settings/index'], 'visible'=>$admin, 'active'=>$on('settings')],
         ['label'=>Yii::t('app', 'Registro attività'), 'url'=>['logs/index'], 'visible'=>$admin, 'active'=>$on('logs')],
+        ['label'=>Yii::t('app', 'Legal documents'), 'url'=>['legal-documents/index'], 'visible'=>$admin, 'active'=>$on('legal-documents')],
         ['label'=>Yii::t('app', 'Outgoing mail'), 'url'=>['mail-outbox/index'], 'visible'=>$admin && Outbox::sources() !== [], 'active'=>$on('mail-outbox')],
     ]],
 ];

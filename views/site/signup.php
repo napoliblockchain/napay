@@ -36,13 +36,16 @@ SignupAsset::register($this);
     'statute' => $link(Yii::t('app', 'Statute'), 'https://napoliblockchain.it/chi-siamo/statuto-associazione-napoli-blockchain-ets/'),
 ])) ?>
 <?= $form->field($consensus, 'consenso_privacy')->checkbox()->label(Yii::t('app', 'I have read the {privacy} and authorise the processing of my personal data.', [
-    'privacy' => $link(Yii::t('app', 'Privacy notice'), Url::to(['site/print-privacy'])),
+    'privacy' => $link(Yii::t('app', 'Privacy notice'), Url::to(['legal/view', 'type' => 'privacy'])),
 ])) ?>
 <?= $form->field($consensus, 'consenso_condizioni')->checkbox()->label(Yii::t('app', 'I accept the {terms} of the software.', [
-    'terms' => $link(Yii::t('app', 'Terms of use'), Url::to(['site/term-of-use'])),
+    'terms' => $link(Yii::t('app', 'Terms of use'), Url::to(['legal/view', 'type' => 'terms'])),
 ])) ?>
 <?= $form->field($consensus, 'consenso_marketing')->checkbox()->label(Html::encode(Yii::t('app', 'I agree to the processing of my data for marketing purposes.'))) ?>
 
+<?php // SIP-040: versioni in vigore mostrate nel modulo, ricontrollate dal server ?>
+<?= Html::hiddenInput('legal[privacy]', (string) ($legal['privacy'] ?? '')) ?>
+<?= Html::hiddenInput('legal[terms]', (string) ($legal['terms'] ?? '')) ?>
 <?= Html::submitButton(Html::encode(Yii::t('app', 'Confirm')), ['class' => 'auth-submit']) ?>
 <?php ActiveForm::end(); ?>
 <div class="auth-links">

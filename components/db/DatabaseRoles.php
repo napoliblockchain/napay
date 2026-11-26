@@ -14,6 +14,8 @@ final class DatabaseRoles
         'pos_operator_invitations', 'membership_reminders',
         // SIP-030 passo 5: store e app POS dei negozi v1 sul ponte (comando btcpay-bridge/sync del cron, utente DB del web)
         'btcpay_bridge_stores', 'btcpay_bridge_pos_links',
+        // SIP-040: documenti legali versionati (bozze modificabili dall'admin, versioni pubblicate immutabili nel model)
+        'legal_documents',
     ];
     private const B1_TABLES = [
         'btcpay_merchant_accounts', 'btcpay_merchant_credentials', 'btcpay_store_links',

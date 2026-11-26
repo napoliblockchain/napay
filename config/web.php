@@ -14,6 +14,8 @@ $config = [
         '@bower' => '@vendor/bower-asset',
         '@npm'   => '@vendor/npm-asset',
     ],
+    // SIP-040: nuova accettazione delle condizioni pubblicate prima di usare il backoffice
+    'as termsGate' => \app\components\legal\TermsGate::class,
     'components' => [
         'formatter' => [
             'defaultTimeZone' => $params['defaultTimeZone'],
@@ -72,6 +74,8 @@ $config = [
             'rules' => [
                 // link esterno per pagare la quota (come il vecchio loginquota): login, poi pagina Paga quota
                 'quota' => 'pay-fee/index',
+                // SIP-040: pagine pubbliche dei documenti legali
+                'legal/<type:(privacy|terms|cookies)>' => 'legal/view',
                 // webhook PayPal (equivalente del vecchio IPN): tutti i metodi qui, la action accetta solo POST
                 'api/paypal/v1/webhook' => 'webhooks/paypal/receive',
                 // webhook BTCPay Greenfield per i pagamenti quota in Bitcoin
