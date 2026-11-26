@@ -1,0 +1,189 @@
+{
+    "format": 1,
+    "source_schema": "napay_v2",
+    "sql_sha256": "f89fd15d1e6e44f22a4bcdb337fa65360787c4e933ec407d521a18f58415040a",
+    "schema_sha256": "2ec1ac9c16c29966ec37a8d2276938b13fc548266685184dddef41905e1624c0",
+    "tables": {
+        "logs": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "timestamp",
+                "user_id",
+                "remote_address",
+                "browser",
+                "controller",
+                "action",
+                "description"
+            ]
+        },
+        "merchants": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "user_id",
+                "description",
+                "email",
+                "vatNumber",
+                "phone",
+                "mobile",
+                "addressStreet",
+                "addressNumberHouse",
+                "addressCity",
+                "addressZip",
+                "addressProvince",
+                "addressCountry"
+            ]
+        },
+        "migration": {
+            "rows": 11,
+            "sha256": "82ee6b8f131c5ecf6633d2be0123ac1f1343e0dfeb8b14365875ac69d320d9f5",
+            "columns": [
+                "version",
+                "apply_time"
+            ]
+        },
+        "np_comuni_italiani": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "citta",
+                "provincia",
+                "sigla"
+            ]
+        },
+        "privileges": {
+            "rows": 3,
+            "sha256": "2c8b3ac65b626181dc8ab97ccbf27f46b4d4ee371196516dde7eea88ab7bda85",
+            "columns": [
+                "id",
+                "description",
+                "level",
+                "codice_ruolo"
+            ]
+        },
+        "settings": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "description",
+                "code",
+                "value"
+            ]
+        },
+        "stores": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "merchant_id",
+                "description",
+                "email",
+                "phone",
+                "mobile",
+                "addressStreet",
+                "addressNumberHouse",
+                "addressCity",
+                "addressZip",
+                "addressProvince",
+                "addressCountry"
+            ]
+        },
+        "storesettings": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "store_id",
+                "bps_storeid",
+                "website",
+                "defaultCurrency",
+                "invoiceExpiration",
+                "displayExpirationTimer",
+                "monitoringExpiration",
+                "speedPolicy",
+                "lightningDescriptionTemplate",
+                "paymentTolerance",
+                "anyoneCanCreateInvoice",
+                "requiresRefundEmail",
+                "checkoutType",
+                "receipt",
+                "lightningAmountInSatoshi",
+                "lightningPrivateRouteHints",
+                "onChainWithLnInvoiceFallback",
+                "redirectAutomatically",
+                "showRecommendedFee",
+                "recommendedFeeBlockTarget",
+                "defaultLang",
+                "customLogo",
+                "customCSS",
+                "htmlTitle",
+                "networkFeeMode",
+                "payJoinEnabled",
+                "lazyPaymentMethods",
+                "defaultPaymentMethod",
+                "paymentMethodCriteria",
+                "spread",
+                "preferredSource",
+                "isCustomScript",
+                "effectiveScript",
+                "derivationScheme",
+                "label",
+                "accountKeyPath"
+            ]
+        },
+        "user_consensus": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "user_id",
+                "consenso_statuto",
+                "consenso_privacy",
+                "consenso_condizioni",
+                "consenso_condizioni_pos",
+                "consenso_marketing",
+                "timestamp_statuto",
+                "timestamp_privacy",
+                "timestamp_condizioni",
+                "timestamp_condizioni_pos",
+                "timestamp_marketing"
+            ]
+        },
+        "users": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "username",
+                "email",
+                "password",
+                "first_name",
+                "last_name",
+                "oauth_provider",
+                "oauth_uid",
+                "authKey",
+                "accessToken",
+                "picture",
+                "privilege_id",
+                "is_merchant",
+                "is_active"
+            ]
+        },
+        "webhooks": {
+            "rows": 0,
+            "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "columns": [
+                "id",
+                "store_id",
+                "bps_storeid",
+                "webhookId",
+                "url"
+            ]
+        }
+    }
+}

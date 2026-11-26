@@ -1,0 +1,334 @@
+<?php
+
+namespace app\controllers;
+
+use Yii;
+use yii\web\Controller;
+use yii\web\NotFoundHttpException;
+use yii\web\ForbiddenHttpException;
+use yii\filters\VerbFilter;
+use yii\filters\AccessControl;
+use yii\data\ActiveDataProvider;
+use yii\db\Query;
+
+use app\components\Crypt;
+use app\components\Log;
+use app\components\identity\AccountEligibility;
+use app\components\pos\management\ManagementException;
+use app\components\pos\management\PosInvitations;
+use app\components\pos\management\PosManagement;
+use app\components\pos\TerminalOpenings;
+use app\components\pos\management\Scope;
+use app\models\Merchants;
+use app\models\PosOperatorInvitations;
+use app\models\PosOperators;
+use app\models\PosStoreOperators;
+use app\models\PosTerminals;
+use app\models\Stores;
+use app\models\Users;
+use app\models\forms\pos\GrantForm;
+use app\models\forms\pos\InvitationForm;
+use app\models\forms\pos\TerminalForm;
+
+/**
+ * C4 (SIP-021/SIP-023): terminali POS, profili operatore esistenti e grant ai negozi.
+ * Admin su tutti i merchant, gestore solo sul proprio; scope nella query e su ogni ID.
+ * Disponibilità dalle aperture esclusive (SIP-021 fase 2); qui solo lo sblocco forzato, mai l'apertura.
+ */
+class PosManagementController extends Controller
+{
+    private Scope $scope;
+
+    public function behaviors()
+    {
+        return [
+            'verbs' => [
+                'class' => VerbFilter::class,
+                'actions' => [
+                    'index' => ['GET'], 'operator' => ['GET'],
+                    'terminal-create' => ['GET', 'POST'], 'terminal-update' => ['GET', 'POST'],
+                    'terminal-enable' => ['POST'], 'terminal-disable' => ['POST'], 'terminal-unlock' => ['POST'],
+                    'operator-enable' => ['POST'], 'operator-disable' => ['POST'],
+                    'grant-create' => ['POST'], 'grant-enable' => ['POST'], 'grant-disable' => ['POST'],
+                    'invitation-create' => ['POST'], 'invitation-resend' => ['POST'], 'invitation-revoke' => ['POST'],
+                ],
+            ],
+            'access' => [
+                'class' => AccessControl::class,
+                'rules' => [
+                    [
+                        'allow' => true,
+                        'roles' => ['@'],
+                        'matchCallback' => fn($rule, $action) => Scope::current() !== null,
+                    ],
+                ],
+            ],
+        ];
+    }
+
+    public function beforeAction($action)
+    {
+        if (!parent::beforeAction($action)) return false;
+        $scope = Scope::current();
+        if ($scope === null) throw new ForbiddenHttpException();
+        $this->scope = $scope;
+        return true;
+    }
+
+    public const TABS = ['terminals', 'invitations', 'operators'];
+
+    public function actionIndex(?string $store = null, string $tab = 'terminals')
+    {
+        if (!in_array($tab, self::TABS, true)) $tab = 'terminals';
+        $storeId = $store === null ? null : $this->scopedStore($store);
+        $terminals = (new Query())
+            ->select(['t.id', 't.public_id', 't.name', 't.is_enabled', 'store' => 's.description', 'merchant' => 'm.description'])
+            ->from(['t' => PosTerminals::tableName()])
+            ->innerJoin(['s' => Stores::tableName()], 's.id=t.store_id AND s.merchant_id=t.merchant_id')
+            ->innerJoin(['m' => Merchants::tableName()], 'm.id=t.merchant_id')
+            ->orderBy(['m.description' => SORT_ASC, 's.description' => SORT_ASC, 't.name' => SORT_ASC, 't.id' => SORT_ASC]);
+        $this->scope->apply($terminals, 't.merchant_id');
+        if ($storeId !== null) $terminals->andWhere(['t.store_id' => $storeId]);
+
+        $operators = (new Query())
+            ->select(['o.user_id', 'o.is_enabled', 'u.first_name', 'u.last_name', 'u.email', 'merchant' => 'm.description'])
+            ->from(['o' => PosOperators::tableName()])
+            ->innerJoin(['u' => Users::tableName()], 'u.id=o.user_id')
+            ->innerJoin(['m' => Merchants::tableName()], 'm.id=o.merchant_id')
+            ->orderBy(['m.description' => SORT_ASC, 'u.last_name' => SORT_ASC, 'u.first_name' => SORT_ASC, 'o.user_id' => SORT_ASC]);
+        $this->scope->apply($operators, 'o.merchant_id');
+
+        $invitations = (new Query())
+            ->select(['i.id', 'i.email', 'i.expires_at', 'i.sent_at', 'i.send_failures', 'i.consumed_at', 'i.revoked_at', 'merchant' => 'm.description'])
+            ->from(['i' => PosOperatorInvitations::tableName()])
+            ->innerJoin(['m' => Merchants::tableName()], 'm.id=i.merchant_id')
+            ->orderBy(['i.created_at' => SORT_DESC, 'i.id' => SORT_DESC]);
+        $this->scope->apply($invitations, 'i.merchant_id');
+
+        $terminalList = new ActiveDataProvider(['query' => $terminals, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'tpage']]);
+        return $this->render('index', [
+            'openings' => TerminalOpenings::activeFor(array_column($terminalList->getModels(), 'id')),
+            'invitations' => new ActiveDataProvider(['query' => $invitations, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'ipage']]),
+            'invitationForm' => new InvitationForm(),
+            'merchants' => $this->scope->isAdmin() ? $this->merchantOptions() : [],
+            'admin' => $this->scope->isAdmin(),
+            'stores' => $this->storeOptions(),
+            'store' => $storeId === null ? null : $store,
+            'terminals' => $terminalList,
+            'operators' => new ActiveDataProvider(['query' => $operators, 'sort' => false, 'pagination' => ['pageSize' => 20, 'pageParam' => 'opage']]),
+            'tab' => $tab,
+        ]);
+    }
+
+    public function actionTerminalCreate()
+    {
+        $form = new TerminalForm(['scenario' => 'create']);
+        if ($form->load(Yii::$app->request->post()) && $form->validate()) {
+            $storeId = $this->decodeId($form->store);
+            try {
+                PosManagement::createTerminal($this->scope, $storeId, $form->name);
+                Yii::$app->session->setFlash('success', Yii::t('app', 'Terminal created, disabled.'));
+                return $this->redirect(['index']);
+            } catch (ManagementException $e) {
+                // negozio fuori scope o inesistente: stesso esito di un dato non valido
+                $form->addError('store', $e->getMessage() === ManagementException::NOT_FOUND ? Yii::t('app', 'Invalid store.') : $e->userMessage());
+            }
+        }
+        return $this->render('terminal-form', ['form' => $form, 'stores' => $this->storeOptions(), 'terminal' => null]);
+    }
+
+    public function actionTerminalUpdate(string $id)
+    {
+        $terminal = $this->scopedTerminal($id);
+        $form = new TerminalForm(['scenario' => 'update', 'name' => $terminal['name']]);
+        if ($form->load(Yii::$app->request->post()) && $form->validate()) {
+            return $this->write(fn() => PosManagement::renameTerminal($this->scope, $terminal['public_id'], $form->name),
+                Yii::t('app', 'Terminal updated.'), ['index']);
+        }
+        return $this->render('terminal-form', ['form' => $form, 'stores' => [], 'terminal' => $terminal]);
+    }
+
+    public function actionTerminalEnable(string $id)
+    {
+        return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, true), Yii::t('app', 'Terminal enabled.'), ['index']);
+    }
+
+    public function actionTerminalDisable(string $id)
+    {
+        return $this->write(fn() => PosManagement::setTerminalEnabled($this->scope, $id, false), Yii::t('app', 'Terminal disabled.'), ['index']);
+    }
+
+    public function actionTerminalUnlock(string $id)
+    {
+        try {
+            $unlocked = PosManagement::unlockTerminal($this->scope, $id);
+            Yii::$app->session->setFlash($unlocked ? 'success' : 'info', $unlocked
+                ? Yii::t('app', 'Terminal unlocked: the previous opening is no longer valid.')
+                : Yii::t('app', 'The terminal was already free.'));
+        } catch (ManagementException $e) {
+            if ($e->getMessage() === ManagementException::NOT_FOUND) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+            Yii::$app->session->setFlash('danger', $e->userMessage());
+        }
+        return $this->redirect(['index']);
+    }
+
+    public function actionOperator(string $id)
+    {
+        $userId = $this->decodeId($id);
+        $query = (new Query())
+            ->select(['o.user_id', 'o.merchant_id', 'o.is_enabled', 'u.first_name', 'u.last_name', 'u.email', 'merchant' => 'm.description'])
+            ->from(['o' => PosOperators::tableName()])
+            ->innerJoin(['u' => Users::tableName()], 'u.id=o.user_id')
+            ->innerJoin(['m' => Merchants::tableName()], 'm.id=o.merchant_id')
+            ->where(['o.user_id' => $userId]);
+        $this->scope->apply($query, 'o.merchant_id');
+        $operator = $query->one();
+        if ($operator === false) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+
+        $grants = (new Query())->select(['g.store_id', 'g.is_enabled', 'store' => 's.description'])
+            ->from(['g' => PosStoreOperators::tableName()])
+            ->innerJoin(['s' => Stores::tableName()], 's.id=g.store_id AND s.merchant_id=g.merchant_id')
+            ->where(['g.user_id' => $userId, 'g.merchant_id' => $operator['merchant_id']])
+            ->orderBy(['s.description' => SORT_ASC, 's.id' => SORT_ASC])->all();
+        $available = Stores::find()->select(['description', 'id'])
+            ->where(['merchant_id' => $operator['merchant_id'], 'archived_at' => null])
+            ->andWhere(['not in', 'id', array_column($grants, 'store_id')])
+            ->orderBy(['description' => SORT_ASC, 'id' => SORT_ASC])->asArray()->all();
+
+        return $this->render('operator', [
+            'operator' => $operator,
+            'grants' => $grants,
+            'available' => $available,
+            // solo presentazione: il server ricontrolla i gate a ogni POST
+            'eligible' => AccountEligibility::qualifiedMerchant((int) $operator['merchant_id']) && AccountEligibility::isOperatorAccount($userId),
+            'grantForm' => new GrantForm(),
+            'admin' => $this->scope->isAdmin(),
+        ]);
+    }
+
+    public function actionOperatorEnable(string $id)
+    {
+        $userId = $this->decodeId($id);
+        return $this->write(fn() => PosManagement::setOperatorEnabled($this->scope, $userId, true),
+            Yii::t('app', 'Operator enabled. They must sign in to the POS again.'), ['operator', 'id' => $id]);
+    }
+
+    public function actionOperatorDisable(string $id)
+    {
+        $userId = $this->decodeId($id);
+        return $this->write(fn() => PosManagement::setOperatorEnabled($this->scope, $userId, false),
+            Yii::t('app', 'Operator disabled and signed out of the POS.'), ['operator', 'id' => $id]);
+    }
+
+    public function actionGrantCreate(string $id)
+    {
+        $userId = $this->decodeId($id);
+        $form = new GrantForm();
+        if (!$form->load(Yii::$app->request->post()) || !$form->validate()) {
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'Invalid data.'));
+            return $this->redirect(['operator', 'id' => $id]);
+        }
+        $storeId = $this->decodeId($form->store);
+        return $this->write(fn() => PosManagement::createGrant($this->scope, $userId, $storeId),
+            Yii::t('app', 'Store assigned, disabled.'), ['operator', 'id' => $id]);
+    }
+
+    public function actionGrantEnable(string $id, string $store)
+    {
+        return $this->grant($id, $store, true);
+    }
+
+    public function actionGrantDisable(string $id, string $store)
+    {
+        return $this->grant($id, $store, false);
+    }
+
+    private function grant($id, $store, bool $enabled)
+    {
+        $userId = $this->decodeId($id);
+        $storeId = $this->decodeId($store);
+        return $this->write(fn() => PosManagement::setGrantEnabled($this->scope, $userId, $storeId, $enabled),
+            $enabled ? Yii::t('app', 'Store enabled.') : Yii::t('app', 'Store disabled.'), ['operator', 'id' => $id]);
+    }
+
+    public function actionInvitationCreate()
+    {
+        $form = new InvitationForm();
+        if (!$form->load(Yii::$app->request->post()) || !$form->validate()) {
+            Yii::$app->session->setFlash('danger', $form->getFirstError('email') ?? Yii::t('app', 'Invalid data.'));
+            return $this->redirect(['index', 'tab' => 'invitations']);
+        }
+        // gestore: sempre il proprio merchant; admin: selettore cifrato, risolto e ricontrollato sotto lock
+        $merchantId = $this->scope->isAdmin() ? $this->decodeId($form->merchant) : (int) $this->scope->merchantId;
+        // stesso messaggio qualunque sia lo stato dell'indirizzo: nessuna enumerazione degli account
+        return $this->write(fn() => PosInvitations::invite($this->scope, $merchantId, $form->email),
+            Yii::t('app', 'Invitation recorded. If the address can be used, it will receive the instructions by email.'), ['index', 'tab' => 'invitations']);
+    }
+
+    public function actionInvitationResend(string $id)
+    {
+        $invitationId = $this->decodeId($id);
+        return $this->write(fn() => PosInvitations::resend($this->scope, $invitationId), Yii::t('app', 'Invitation sent again with a new link.'), ['index', 'tab' => 'invitations']);
+    }
+
+    public function actionInvitationRevoke(string $id)
+    {
+        $invitationId = $this->decodeId($id);
+        return $this->write(fn() => PosInvitations::revoke($this->scope, $invitationId), Yii::t('app', 'Invitation cancelled.'), ['index', 'tab' => 'invitations']);
+    }
+
+    /** Merchant in scope per l'admin: chiave = ID cifrato (solo selettore). */
+    private function merchantOptions(): array
+    {
+        $options = [];
+        foreach (Merchants::find()->select(['id', 'description'])->orderBy(['description' => SORT_ASC, 'id' => SORT_ASC])->asArray()->all() as $row) {
+            $options[Crypt::encrypt($row['id'])] = $row['description'];
+        }
+        return $options;
+    }
+
+    /** Esito della scrittura: record fuori scope = 404, altri esiti come messaggio generico. */
+    private function write(callable $operation, string $success, array $redirect)
+    {
+        try {
+            $operation();
+            Yii::$app->session->setFlash('success', $success);
+        } catch (ManagementException $e) {
+            if ($e->getMessage() === ManagementException::NOT_FOUND) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+            // concessione negata dai gate di identità: fuori dalla transazione annullata
+            if ($e->getMessage() === ManagementException::NOT_ALLOWED) Log::security(sprintf('Concessione POS rifiutata: %s', $this->action->id));
+            Yii::$app->session->setFlash('danger', $e->userMessage());
+        }
+        return $this->redirect($redirect);
+    }
+
+    private function scopedTerminal($id): array
+    {
+        if (!PosManagement::validPublicId($id)) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        $query = (new Query())->select(['t.public_id', 't.name', 'store' => 's.description'])
+            ->from(['t' => PosTerminals::tableName()])
+            ->innerJoin(['s' => Stores::tableName()], 's.id=t.store_id AND s.merchant_id=t.merchant_id')
+            ->where(['t.public_id' => $id]);
+        $this->scope->apply($query, 't.merchant_id');
+        $terminal = $query->one();
+        if ($terminal === false) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        return $terminal;
+    }
+
+    private function scopedStore($store): int
+    {
+        $id = $this->scope->storeId($store);
+        if ($id === null) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+        return $id;
+    }
+
+    private function storeOptions(): array
+    {
+        return $this->scope->storeOptions();
+    }
+
+    private function decodeId($id): int
+    {
+        return Scope::decodeId($id);
+    }
+}

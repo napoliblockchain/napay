@@ -1,0 +1,11 @@
+{
+  "name": "napay-service-worker-build",
+  "private": true,
+  "description": "Build del service worker napay (web/sw.js) con Workbox: docker/sw/build.sh",
+  "devDependencies": {
+    "workbox-cli": "7.4.1"
+  },
+  "overrides": {
+    "tmp": "^0.2.7"
+  }
+}

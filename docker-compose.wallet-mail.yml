@@ -1,0 +1,14 @@
+# Posta del wallet salvata su file (SMTP non disponibile): la cartella delle email del wallet, in sola lettura, per la
+# pagina admin "Posta in uscita". Incluso da docker/deploy.sh dopo docker-compose.prod.yml solo con
+# NAPAY_WALLET_MAIL_VOLUME (volume creato dal rilascio del wallet) e NAPAY_WALLET_URL (dominio dei link del wallet).
+services:
+  web:
+    environment:
+      NAPAY_WALLET_MAIL_DIR: /var/napay-wallet-mail
+      NAPAY_WALLET_URL: ${NAPAY_WALLET_URL:?Set wallet URL}
+    volumes:
+      - wallet-mail:/var/napay-wallet-mail:ro
+volumes:
+  wallet-mail:
+    external: true
+    name: ${NAPAY_WALLET_MAIL_VOLUME:?Set wallet mail volume}

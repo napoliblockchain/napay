@@ -1,0 +1,69 @@
+# SIP-022 B5: worker di provisioning BTCPay (utenti merchant, store, app POS). Overlay da includere dopo
+# docker-compose.roles.yml, solo quando i suoi segreti esistono (file privati 0600 fuori dal repository).
+# Il worker usa il proprio utente DB ristretto e l'unica uscita è il proxy (rete egress, fornita dall'ambiente).
+# Il web riceve solo il digest pubblico dell'origine (BTCPAY_PROVISION_INSTANCE) per accodare i lavori.
+services:
+  web:
+    environment:
+      BTCPAY_PROVISION_INSTANCE: ${BTCPAY_PROVISION_INSTANCE:?Set SHA-256 of the BTCPay origin}
+      # SIP-022 passo 4: chiave madre dei segreti dei webhook degli store (verifica della firma BTCPay-Sig)
+      BTCPAY_STORE_WEBHOOK_KEY: ${BTCPAY_STORE_WEBHOOK_KEY:?Set store webhook master key}
+      # SIP-033: origine pubblica di BTCPay (deve dare lo stesso digest di BTCPAY_PROVISION_INSTANCE) per le fatture dei terminali
+      BTCPAY_PROVISION_ORIGIN: ${BTCPAY_PROVISION_ORIGIN:?Set BTCPay origin}
+      BTCPAY_PROVISION_CA_FILE: ${BTCPAY_PROVISION_CA_FILE:-}
+  # SIP-033: scadenza dei pagamenti BTC del POS (stato pubblico delle fatture)
+  cron:
+    environment:
+      BTCPAY_PROVISION_INSTANCE: ${BTCPAY_PROVISION_INSTANCE:?Set SHA-256 of the BTCPay origin}
+      BTCPAY_PROVISION_ORIGIN: ${BTCPAY_PROVISION_ORIGIN:?Set BTCPay origin}
+      BTCPAY_PROVISION_CA_FILE: ${BTCPAY_PROVISION_CA_FILE:-}
+      # SIP-030 passo 5: webhook degli store v1 sul ponte (btcpay-bridge/sync), stessi valori del worker
+      BTCPAY_STORE_WEBHOOK_KEY: ${BTCPAY_STORE_WEBHOOK_KEY:?Set store webhook master key}
+      BTCPAY_STORE_WEBHOOK_URL: ${BTCPAY_STORE_WEBHOOK_URL:?Set public store webhook URL}
+  btcpay-worker:
+    image: napay/bootstrap:dev
+    user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"
+    working_dir: /app
+    entrypoint: [sh, /app/docker/btcpay-worker-loop.sh]
+    restart: unless-stopped
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    environment:
+      APP_ENV: prod
+      APP_DEBUG: "false"
+      NAPAY_DB_ROLE_MODE: "true"
+      NAPAY_DB_ROLE: worker
+      NAPAY_DB_PASSWORD_FILE: /run/secrets/napay_db_worker_password
+      DB_DATABASE: ${DB_DATABASE:?Set DB_DATABASE}
+      DB_DSN: ${DB_DSN:?Set DB_DSN}
+      DB_USERNAME: ${NAPAY_DB_WORKER_USERNAME:-napay_worker}
+      NAPAY_DB_WAIT_SECONDS: ${NAPAY_DB_WAIT_SECONDS:-120}
+      NAPAY_WORKER_RUNTIME_PATH: /tmp/napay-btcpay-worker
+      PAYMENT_PROXY: http://egress:3128
+      BTCPAY_PROVISION_ORIGIN: ${BTCPAY_PROVISION_ORIGIN:?Set BTCPay origin}
+      BTCPAY_PROVISION_CA_FILE: ${BTCPAY_PROVISION_CA_FILE:-}
+      BTCPAY_PROVISIONER_KEY_FILE: /run/secrets/btcpay_provisioner_key
+      BTCPAY_KEK_KEYRING_FILE: /run/secrets/btcpay_kek_keyring
+      BTCPAY_WORKER_INTERVAL: ${BTCPAY_WORKER_INTERVAL:-30}
+      # URL pubblico di Napay raggiungibile da BTCPay per i webhook degli store
+      BTCPAY_STORE_WEBHOOK_URL: ${BTCPAY_STORE_WEBHOOK_URL:?Set public store webhook URL}
+      BTCPAY_STORE_WEBHOOK_KEY_FILE: /run/secrets/btcpay_store_webhook_key
+    secrets: [napay_db_worker_password, btcpay_provisioner_key, btcpay_kek_keyring, btcpay_store_webhook_key]
+    volumes:
+      - .:/app:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    networks: [database, egress]
+
+secrets:
+  btcpay_provisioner_key:
+    file: ${BTCPAY_PROVISIONER_KEY_SECRET_FILE:?Set external provisioner key file}
+  btcpay_kek_keyring:
+    file: ${BTCPAY_KEK_KEYRING_SECRET_FILE:?Set external KEK keyring file}
+  btcpay_store_webhook_key:
+    file: ${BTCPAY_STORE_WEBHOOK_KEY_SECRET_FILE:?Set external store webhook key file}

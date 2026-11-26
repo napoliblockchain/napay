@@ -1,0 +1,108 @@
+<?php
+
+use yii\helpers\Html;
+use yii\helpers\Url;
+use app\widgets\TablerGridView as GridView;
+use app\components\Crypt;
+use app\components\User;
+use yii\bootstrap5\ActiveForm;
+use app\widgets\Alert;
+
+/* @var $this yii\web\View */
+/* @var $searchModel app\models\search\CommerciantiSearch */
+/* @var $dataProvider yii\data\ActiveDataProvider */
+
+$this->title = Yii::t('app', 'Aziende');
+$this->params['breadcrumbs'][] = $this->title;
+
+// $status_list = ['Attivo', 'Disabilitato'];
+?>
+    <div class="row row-cards">
+        <div class="col-md-12">
+            <div class="merchants-index">
+                <?= app\widgets\Alert::widget() ?>
+                <div class="card">
+                    <div class="card-header">
+                        <div class="d-flex flex-wrap align-items-center gap-2 w-100">
+                            <h3 class="card-title mb-0"><?= Html::encode($this->title) ?></h3>
+                            <div class="p-1 ms-auto ">
+                                <?= Html::a('<i class="fas fa-file-excel me-1"></i>' . Yii::t('app', 'Esporta'),
+                                    ['export'], 
+                                [
+                                    'class' => 'btn btn-success',
+                                    'target' => '_blank',
+                                ]) ?>
+                            </div>
+                            <?php if (User::isAdministrator()) : ?>
+                                <div class="p-1">
+                                    <?= Html::a('<i class="fas fa-plus"></i> ' . Yii::t('app', 'Nuovo esercente'), ['create'], ['class' => 'btn btn-primary']) ?>
+                                </div>
+                            <?php endif; ?>
+                        </div>
+                    </div>
+
+                    <div class="card-body p-0">
+                        <?= GridView::widget([
+                            'dataProvider' => $dataProvider,
+                            'filterModel' => $searchModel,
+                            'columns' => [
+                                // ['class' => 'yii\grid\SerialColumn'],
+                                [
+                                    'attribute' => 'id',
+                                    'format' => 'raw',
+                                    'value' => function ($data) {
+                                        return $data->id;
+                                    },
+                                    'contentOptions' => [
+                                        'style' => 'width: 60px;',
+                                        'class' => 'text-center',
+                                    ],
+                                ],
+
+                                // view button
+                                [
+                                    'class' => 'yii\grid\ActionColumn',
+                                    'template' => '{view}',
+                                    'contentOptions' => [
+                                        'style' => 'width: 35px;'
+                                    ],
+                                    'buttons' => [
+                                        'view' => function ($url, $model) {
+
+                                            $url = Url::to(['view', 'id' => Crypt::encrypt($model->id)]);
+                                            return Html::a('<i class="fa fa-eye"></i>', $url, [
+                                                'title' => Yii::t('app', 'Dettaglio'),
+                                                'class' => 'btn btn-sm btn-outline-secondary',
+                                            ]);
+                                        },
+
+                                    ],
+
+                                ],
+
+                                // 'id',
+                                'description',
+                                'vatNumber',
+                                'email:email',
+                                //'create_date',
+                                //'close_date',
+                                //'historical',
+                                // [
+                                //     'attribute' => 'historical',
+                                //     'label' => 'Stato',
+                                //     'value' => function($data) use ($status_list){
+                                //         return $status_list[$data->historical];
+                                //     },
+                                //     'filter' => $status_list
+
+                                // ],
+
+                                // ['class' => 'yii\grid\ActionColumn'],
+
+                            ],
+                        ]); ?>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>

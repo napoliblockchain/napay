@@ -1,0 +1,90 @@
+services:
+  web:
+    ports: !reset []
+    # HTTPS terminato da napay-gateway (orchestratore napay-project): https://napay.local
+    # IP reale del client nel registro attività: X-Forwarded-For accettato solo dal gateway (reti private interne)
+    environment:
+      TRUSTED_PROXIES: "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16"
+      # uscita solo verso i gateway di pagamento, tramite il proxy con allowlist (servizio egress)
+      PAYMENT_PROXY: "http://egress:3128"
+      # SIP-021 fase 3: chain di sviluppo passata da start-localhost.sh; vuote (launcher da solo) = pagamenti TTS spenti
+      TTS_RPC_URL: "${NAPAY_LOCAL_TTS_RPC_URL:-}"
+      TTS_CHAIN_ID: "${NAPAY_LOCAL_TTS_CHAIN_ID:-}"
+      TTS_TOKEN_ADDRESS: "${NAPAY_LOCAL_TTS_TOKEN_ADDRESS:-}"
+      # cambio TTS/EUR degli incassi POS (EUR per 1 TTS); assente = 1.00
+      TTS_EUR_RATE: "${NAPAY_LOCAL_TTS_EUR_RATE:-1.00}"
+      # SIP-022 xpub: BTCPay della sandbox in regtest (indirizzi bcrt1, chiavi tpub/upub/vpub)
+      BTCPAY_BTC_NETWORK: regtest
+    networks: !override
+      database: {}
+      egress: {}
+      napay_local_browser:
+        aliases: [napay-local-web]
+      # SIP-021 fase 3: sola lettura della chain di sviluppo (wallet-besu) per i pagamenti TTS del POS
+      napay_local_chain: {}
+    volumes:
+      - .:/var/www/html:ro
+      - ./docker/local/https.conf:/etc/apache2/conf-enabled/napay-local-https.conf:ro
+      - local_runtime:/var/www/html/runtime
+      - local_assets:/var/www/html/web/assets
+    entrypoint:
+      - sh
+      - -ec
+      - |
+        install -d -o 33 -g 33 -m 0700 /var/www/html/runtime
+        install -d -o 33 -g 33 -m 0755 /var/www/html/web/assets
+        # SIP-033: CA locale di BTCPay (file privato dell'host, uid dell'utente) copiata per www-data nel runtime, condiviso col cron
+        [ ! -f /run/btcpay-ca-source.crt ] || install -o 33 -g 33 -m 0400 /run/btcpay-ca-source.crt /var/www/html/runtime/btcpay-ca.crt
+        exec sh /var/www/html/docker/web-entrypoint.sh apache2-foreground
+  # cron della sandbox: stesso codice e runtime del web (mail in runtime/mail), chain di sviluppo per la scadenza dei pagamenti TTS
+  cron:
+    environment:
+      TTS_RPC_URL: "${NAPAY_LOCAL_TTS_RPC_URL:-}"
+      TTS_CHAIN_ID: "${NAPAY_LOCAL_TTS_CHAIN_ID:-}"
+      TTS_TOKEN_ADDRESS: "${NAPAY_LOCAL_TTS_TOKEN_ADDRESS:-}"
+    networks: !override
+      database: {}
+      napay_local_chain: {}
+    volumes:
+      - .:/var/www/html:ro
+      - local_runtime:/var/www/html/runtime
+  # proxy di uscita (SIP-020): unico container con internet, solo HTTPS verso PayPal e BTCPay (docker/egress/squid.conf)
+  egress:
+    build:
+      context: ./docker/egress
+    image: napay/egress:dev
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    # The BTCPay backend is on a different network and cannot reach Squid.
+    networks: [egress, internet, btcpay_regtest_client]
+    healthcheck:
+      test: ["CMD", "nc", "-z", "127.0.0.1", "3128"]
+      interval: 10s
+      timeout: 3s
+      retries: 10
+networks:
+  # web <-> proxy, senza uscita
+  egress:
+    internal: true
+  # solo il proxy
+  internet: {}
+  # interna, creata da start-localhost.sh: solo web e napay-gateway, nessuna uscita Internet
+  napay_local_browser:
+    name: napay_local_browser
+    external: true
+  # interna, creata da start-localhost.sh: solo web e wallet-besu
+  napay_local_chain:
+    name: napay_local_chain
+    external: true
+  btcpay_regtest_client:
+    name: btcpay_regtest_client
+    external: true
+volumes:
+  local_runtime:
+  local_assets:
