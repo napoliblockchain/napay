@@ -61,7 +61,9 @@ class AssociationController extends Controller
                         'allow' => true,
                         'roles' => ['@'],
                         'actions' => ['minutes', 'minute-file', 'receipt'],
-                        'matchCallback' => static fn() => AccountEligibility::isMemberAccount((int) Yii::$app->user->id),
+                        // richiesta di iscrizione in attesa: niente documenti associativi (anche con una sessione già aperta)
+                        'matchCallback' => static fn() => AccountEligibility::isMemberAccount((int) Yii::$app->user->id)
+                            && !MemberProfiles::isPending((int) Yii::$app->user->id),
                     ],
                     [
                         'allow' => true,

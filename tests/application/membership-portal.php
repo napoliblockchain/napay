@@ -106,4 +106,9 @@ check(request('/pay-fee/index')['status']===403&&!Policy::isMemberAccount($pg),'
 check(request('/association/minutes')['status']===403,'PG with incomplete profile loses document access');
 $db->createCommand()->update('member_profiles',['denomination'=>'PG pg'],['user_id'=>$pg])->execute();
 check(Policy::merchantForManager($manager)===$merchantId,'PG merchant keeps its independent commercial identity');
+// richiesta tornata in attesa con una sessione aperta: verbali e ricevute negati (difesa in profondita, il login la rifiuta gia)
+$db->createCommand()->update('member_profiles',['approval_state'=>'pending'],['user_id'=>$pg])->execute();
+foreach(['/association/minutes','/association/minute-file?id=bad','/association/receipt?id=bad']as$path)check(request($path)['status']===403,'Pending membership request denies association documents: '.$path);
+$db->createCommand()->update('member_profiles',['approval_state'=>'approved'],['user_id'=>$pg])->execute();
+check(request('/association/minutes')['status']===200,'Approved again: documents available');
 echo "PASS $checks membership portal checks\n";
