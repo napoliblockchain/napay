@@ -44,6 +44,7 @@ function login(string $email): array {
 }
 function location(array $r): string { return preg_match('/^Location:\s*(\S+)/mi', $r['headers'], $m) ? $m[1] : ''; }
 function scalar(string $sql, array $p = []) { global $db; return $db->createCommand($sql, $p)->queryScalar(); }
+function snapshotOf(array $page): string { return preg_match('/name="snapshot" value="([0-9a-f]{64})"/', $page['body'], $m) ? $m[1] : ''; }
 function post(string $path, array $fields = []): array { $page = web('/site/index'); return web($path, ['_csrf' => csrf($page)] + $fields); }
 
 // --- nessun documento pubblicato: pagine "in preparazione", registrazione aperta (decisione B)
@@ -84,7 +85,12 @@ login('admin@example.invalid');
 $evil = "## Titolare\n\nTesto approvato.\n\n<script>window.pwned=1</script>\n\n<img src=x onerror=alert(1)>\n\n[link](javascript:alert(1)) e [sito](https://napoliblockchain.it)\n";
 $page = web('/legal-documents/update?id=' . (int) $draft->id);
 web('/legal-documents/update?id=' . (int) $draft->id, ['_csrf' => csrf($page), 'LegalDocuments' => ['title' => 'Informativa <b>privacy</b>', 'body' => $evil]]);
+$page = web('/legal-documents/update?id=' . (int) $draft->id);
 post('/legal-documents/publish?id=' . (int) $draft->id);
+check(LegalDocuments::findOne($draft->id)->status === 'draft', 'Publishing without the snapshot of the reviewed text refused');
+post('/legal-documents/publish?id=' . (int) $draft->id, ['snapshot' => str_repeat('0', 64)]);
+check(LegalDocuments::findOne($draft->id)->status === 'draft', 'Publishing with a different snapshot refused');
+post('/legal-documents/publish?id=' . (int) $draft->id, ['snapshot' => snapshotOf($page)]);
 $doc = LegalDocuments::findOne($draft->id);
 check($doc->status === 'published' && (int) $doc->published_by > 0 && (int) $doc->published_at > 0, 'Clean draft published by the admin');
 anonymous();
@@ -105,12 +111,43 @@ check($after !== null && $after->body === $doc->body && $after->title === $doc->
 $after->body = 'changed'; $model = $after->save(false); $deleted = $after->delete();
 check($model === false && $deleted === false && LegalDocuments::findOne($doc->id)->body === $doc->body, 'Published version cannot be changed or deleted in the model');
 $dup = new LegalDocuments(['type' => 'privacy', 'version' => 9, 'title' => 't', 'body' => 'b', 'status' => 'draft', 'created_by' => null]);
-check($dup->save() && $dup->publish(1) && !$dup->publish(1), 'Concurrent second publication of the same draft refused');
+$snap = fn(LegalDocuments $d) => LegalDocuments::snapshot($d->title, $d->body);
+check($dup->save() && $dup->publish(1, $snap($dup)) && !$dup->publish(1, $snap($dup)), 'Second publication of the same draft refused');
+
+// --- RV1/RV2: istanze e connessioni concorrenti, entrambi gli ordini
+$other = new yii\db\Connection(['dsn' => $db->dsn, 'username' => $db->username, 'password' => $db->password, 'charset' => 'utf8mb4']);
+$mk = fn(string $body) => LegalDocuments::newDraft('cookies', 'Cookie', $body, 1);
+// publish poi save da istanza caricata prima
+$c = $mk("Cookie uno."); $stale = LegalDocuments::findOne($c->id); $fresh = LegalDocuments::findOne($c->id);
+check($fresh->publish(1, $snap($fresh)), 'Publish from a second instance');
+$stale->body = 'testo cambiato'; $saved = $stale->save(false);
+check($saved === false && LegalDocuments::findOne($c->id)->body === 'Cookie uno.', 'Stale draft instance cannot change a version published meanwhile');
+check($stale->delete() === false && LegalDocuments::findOne($c->id) !== null, 'Stale draft instance cannot delete a version published meanwhile');
+// save poi publish con l'impronta vista prima della modifica
+$c = $mk("Cookie due."); $seen = LegalDocuments::findOne($c->id); $editor = LegalDocuments::findOne($c->id);
+$editor->body = "Cookie due modificato " . LegalDocuments::PLACEHOLDER . ": x]"; check($editor->save(false), 'Concurrent edit saved first');
+check(!$seen->publish(1, $snap($seen)) && LegalDocuments::findOne($c->id)->status === 'draft', 'Publish refused when the text changed after it was reviewed');
+// modifica da un'altra connessione tra revisione e pubblicazione
+$other->createCommand()->update('legal_documents', ['body' => 'Cookie tre, cambiato da altra connessione.'], ['id' => (int) $c->id])->execute();
+$reviewed = LegalDocuments::findOne($c->id); $hash = $snap($reviewed);
+$other->createCommand()->update('legal_documents', ['body' => 'Cookie tre ' . LegalDocuments::PLACEHOLDER . ': y]'], ['id' => (int) $c->id])->execute();
+check(!$reviewed->publish(1, $hash) && LegalDocuments::findOne($c->id)->status === 'draft', 'Publish refused after an edit from another connection');
+// delete poi publish
+$gone = LegalDocuments::findOne($c->id); $hash = $snap($gone); $killer = LegalDocuments::findOne($c->id);
+check($killer->delete() !== false && !$gone->publish(1, $hash) && LegalDocuments::findOne($c->id) === null, 'Publish of a draft deleted meanwhile refused');
+// collisione di versione: bozza concorrente già creata, nessun errore 500
+$collide = new class extends LegalDocuments { public static function tableName() { return '{{%legal_documents}}'; } protected static function nextVersion(string $type): int { return 1; } };
+$first = LegalDocuments::newDraft('cookies', 'Cookie', 'Bozza aperta.', 1);
+check(get_class($collide)::newDraft('cookies', 'Cookie', 'x', 1)->id === $first->id, 'Open draft returned instead of a duplicate version');
+$first->delete();
+$threw = false; try { get_class($collide)::newDraft('cookies', 'Cookie', 'x', 1); } catch (RuntimeException $e) { $threw = $e->getMessage() === 'draft_busy'; }
+check($threw, 'Version collision handled as busy, not as a database error');
+$other->close();
 check((int) LegalDocuments::current('privacy')->version === 9, 'Highest published version is in force');
 
 // --- condizioni: consenso con versione alla registrazione
 $terms = LegalDocuments::newDraft('terms', 'Condizioni', "## Oggetto\n\nCondizioni approvate.", 1);
-check($terms->publish(1), 'Terms version 1 published');
+check($terms->publish(1, LegalDocuments::snapshot($terms->title, $terms->body)), 'Terms version 1 published');
 anonymous();
 $page = web('/site/signup');
 check(str_contains($page['body'], 'name="legal[terms]" value="' . (int) $terms->id . '"'), 'Signup form carries the terms version in force');
@@ -136,7 +173,7 @@ check($page['status'] === 200 && str_contains($page['body'], 'Condizioni approva
 web('/site/accept-terms', ['_csrf' => csrf($page), 'document' => (string) $terms->id]);
 check(str_contains(location(web('/site/index')), 'accept-terms'), 'Without the checkbox nothing is accepted');
 $v2 = LegalDocuments::newDraft('terms', 'Condizioni', "## Oggetto\n\nCondizioni versione due.", 1);
-check($v2->publish(1), 'Terms version 2 published while the page was open');
+check($v2->publish(1, LegalDocuments::snapshot($v2->title, $v2->body)), 'Terms version 2 published while the page was open');
 web('/site/accept-terms', ['_csrf' => csrf($page), 'document' => (string) $terms->id, 'accept' => '1']);
 check(str_contains(location(web('/site/index')), 'accept-terms'), 'Accepting an outdated version is refused');
 $page = web('/site/accept-terms');

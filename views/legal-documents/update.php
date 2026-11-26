@@ -23,7 +23,8 @@ $this->params['breadcrumbs'][] = $this->title;
         <?php ActiveForm::end(); ?>
     </div>
     <div class="card-footer d-flex gap-2">
-        <?= Html::beginForm(['publish', 'id' => (int) $document->id], 'post') . Html::submitButton(Html::encode(Yii::t('app', 'Publish this version')), ['class' => 'btn btn-success']) . Html::endForm() ?>
+        <?php // impronta del testo salvato mostrato in questa pagina: si pubblica solo questo testo (RV2) ?>
+        <?= Html::beginForm(['publish', 'id' => (int) $document->id], 'post') . Html::hiddenInput('snapshot', LegalDocuments::snapshot((string) $document->getOldAttribute('title'), (string) $document->getOldAttribute('body'))) . Html::submitButton(Html::encode(Yii::t('app', 'Publish this version')), ['class' => 'btn btn-success']) . Html::endForm() ?>
         <?= Html::beginForm(['delete', 'id' => (int) $document->id], 'post') . Html::submitButton(Html::encode(Yii::t('app', 'Delete draft')), ['class' => 'btn btn-outline-danger']) . Html::endForm() ?>
     </div>
 </div>

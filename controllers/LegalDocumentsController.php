@@ -47,7 +47,12 @@ class LegalDocumentsController extends Controller
     {
         $type = Yii::$app->request->post('type');
         if (!LegalDocuments::validType($type)) throw new NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
-        $draft = LegalDocuments::newDraft($type, LegalDocuments::typeLabel($type), $this->template($type), (int) Yii::$app->user->id);
+        try {
+            $draft = LegalDocuments::newDraft($type, LegalDocuments::typeLabel($type), $this->template($type), (int) Yii::$app->user->id);
+        } catch (\RuntimeException $error) {
+            Yii::$app->session->setFlash('warning', Yii::t('app', 'The draft could not be created now. Try again.'));
+            return $this->redirect(['index']);
+        }
         Log::event(sprintf('Legal document draft %s v%d', $type, (int) $draft->version), Log::TYPE_DATA);
         return $this->redirect(['update', 'id' => (int) $draft->id]);
     }
@@ -71,8 +76,9 @@ class LegalDocumentsController extends Controller
     public function actionPublish($id)
     {
         $document = $this->find($id);
-        if (!$document->publish((int) Yii::$app->user->id)) {
-            Yii::$app->session->setFlash('danger', Yii::t('app', 'Not published: the text is empty or still contains parts to approve ({marker}).', ['marker' => LegalDocuments::PLACEHOLDER . ']']));
+        $snapshot = Yii::$app->request->post('snapshot');
+        if (!is_string($snapshot) || !preg_match('/^[0-9a-f]{64}$/D', $snapshot) || !$document->publish((int) Yii::$app->user->id, $snapshot)) {
+            Yii::$app->session->setFlash('danger', Yii::t('app', 'Not published: the text is empty, still contains parts to approve ({marker}) or was changed meanwhile. Check it again.', ['marker' => LegalDocuments::PLACEHOLDER . ']']));
             return $this->redirect(['update', 'id' => (int) $document->id]);
         }
         Log::event(sprintf('Legal document published %s v%d', $document->type, (int) $document->version), Log::TYPE_DATA);

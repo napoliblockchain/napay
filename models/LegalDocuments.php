@@ -4,6 +4,7 @@ namespace app\models;
 
 use Yii;
 use yii\db\ActiveRecord;
+use yii\db\IntegrityException;
 use yii\helpers\HtmlPurifier;
 use yii\helpers\Markdown;
 
@@ -100,10 +101,29 @@ class LegalDocuments extends ActiveRecord
         });
     }
 
-    /** Le versioni pubblicate non cambiano più: solo le bozze si salvano. */
+    /** Modifiche e cancellazioni in transazione: il controllo dello stato avviene sul record bloccato. */
+    public function transactions()
+    {
+        return [self::SCENARIO_DEFAULT => self::OP_UPDATE | self::OP_DELETE];
+    }
+
+    /** Stato attuale nel database con il record bloccato (null se non esiste più). */
+    private function lockedStatus(): ?string
+    {
+        $status = self::getDb()->createCommand('SELECT status FROM ' . self::tableName() . ' WHERE id=:id FOR UPDATE', [':id' => (int) $this->id])->queryScalar();
+        return $status === false ? null : (string) $status;
+    }
+
+    /** Impronta del testo mostrato all'admin: si pubblica solo se il database contiene esattamente questo testo. */
+    public static function snapshot(string $title, string $body): string
+    {
+        return hash('sha256', $title . "\0" . $body);
+    }
+
+    /** Le versioni pubblicate non cambiano più: solo le bozze si salvano, verificato sullo stato reale nel database. */
     public function beforeSave($insert)
     {
-        if (!$insert && $this->isPublished()) return false;
+        if (!$insert && ($this->isPublished() || $this->lockedStatus() !== self::DRAFT)) return false;
         if (!self::validType($this->type) || !in_array($this->status, [self::DRAFT, self::PUBLISHED], true)) return false;
         $now = time();
         if ($insert) $this->created_at = $now;
@@ -113,7 +133,7 @@ class LegalDocuments extends ActiveRecord
 
     public function beforeDelete()
     {
-        return !$this->isPublished() && parent::beforeDelete();
+        return !$this->isPublished() && $this->lockedStatus() === self::DRAFT && parent::beforeDelete();
     }
 
     /**
@@ -123,28 +143,49 @@ class LegalDocuments extends ActiveRecord
     public static function newDraft(string $type, string $title, string $body, ?int $userId): self
     {
         if (!self::validType($type)) throw new \InvalidArgumentException('invalid_type');
-        $open = self::findOne(['type' => $type, 'status' => self::DRAFT]);
-        if ($open !== null) return $open;
-        $next = (int) self::find()->where(['type' => $type])->max('version') + 1;
-        $draft = new self(['type' => $type, 'version' => $next, 'title' => $title, 'body' => $body, 'status' => self::DRAFT, 'created_by' => $userId]);
-        if (!$draft->save()) throw new \RuntimeException('draft_not_saved');
-        return $draft;
+        $db = self::getDb();
+        try {
+            return $db->transaction(static function () use ($db, $type, $title, $body, $userId): self {
+                // righe del tipo bloccate: due richieste concorrenti non calcolano la stessa versione
+                $db->createCommand('SELECT id FROM ' . self::tableName() . ' WHERE type=:t FOR UPDATE', [':t' => $type])->queryColumn();
+                $open = self::findOne(['type' => $type, 'status' => self::DRAFT]);
+                if ($open !== null) return $open;
+                $draft = new static(['type' => $type, 'version' => static::nextVersion($type), 'title' => $title, 'body' => $body,
+                    'status' => self::DRAFT, 'created_by' => $userId]);
+                if (!$draft->save()) throw new \RuntimeException('draft_not_saved');
+                return $draft;
+            });
+        } catch (IntegrityException $error) {
+            // versione presa da una richiesta concorrente: si usa la sua bozza, mai un errore 500
+            $open = self::findOne(['type' => $type, 'status' => self::DRAFT]);
+            if ($open !== null) return $open;
+            throw new \RuntimeException('draft_busy');
+        }
+    }
+
+    /** Numero della prossima versione del tipo (bozze comprese). */
+    protected static function nextVersion(string $type): int
+    {
+        return (int) self::find()->where(['type' => $type])->max('version') + 1;
     }
 
     /**
-     * Pubblica una bozza: rifiutata se contiene ancora segnaposto dei modelli o testo vuoto.
-     * L'UPDATE è condizionato sullo stato bozza: due pubblicazioni concorrenti non producono due versioni in vigore.
+     * Pubblica una bozza solo se il testo nel database è quello mostrato all'admin ($snapshot) e non contiene segnaposto né
+     * è vuoto. Controlli e cambio di stato sul record bloccato, nella stessa transazione: una modifica o una pubblicazione
+     * concorrente fa rifiutare la richiesta (l'admin ricontrolla), mai pubblicare un testo diverso da quello visto.
      */
-    public function publish(int $userId): bool
+    public function publish(int $userId, string $snapshot): bool
     {
-        if ($this->isPublished() || trim($this->body) === '' || str_contains($this->body, self::PLACEHOLDER) || str_contains($this->title, self::PLACEHOLDER)) {
-            return false;
-        }
-        $now = time();
-        $rows = self::updateAll(['status' => self::PUBLISHED, 'published_by' => $userId, 'published_at' => $now, 'updated_at' => $now],
-            ['id' => $this->id, 'status' => self::DRAFT]);
-        if ($rows !== 1) return false;
-        $this->refresh();
-        return true;
+        $db = self::getDb();
+        $done = $db->transaction(function () use ($db, $userId, $snapshot): bool {
+            $row = $db->createCommand('SELECT status, title, body FROM ' . self::tableName() . ' WHERE id=:id FOR UPDATE', [':id' => (int) $this->id])->queryOne();
+            if ($row === false || $row['status'] !== self::DRAFT || !hash_equals(self::snapshot((string) $row['title'], (string) $row['body']), $snapshot)) return false;
+            if (trim((string) $row['body']) === '' || str_contains((string) $row['body'], self::PLACEHOLDER) || str_contains((string) $row['title'], self::PLACEHOLDER)) return false;
+            $now = time();
+            return $db->createCommand()->update(self::tableName(), ['status' => self::PUBLISHED, 'published_by' => $userId, 'published_at' => $now, 'updated_at' => $now],
+                ['id' => (int) $this->id, 'status' => self::DRAFT])->execute() === 1;
+        });
+        if ($done) $this->refresh();
+        return $done;
     }
 }
