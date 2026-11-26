@@ -52,6 +52,12 @@ try {
     $web->exec('INSERT INTO pos_btc_payments (id) SELECT id FROM pos_btc_payments WHERE 1=0');
     check(true, 'Web can read, insert and update POS BTC payments');
     denied($web, 'DELETE FROM pos_btc_payments WHERE 1=0', 'Web cannot delete POS BTC payment history');
+    // SIP-040 A2: registro dei consensi in sola aggiunta
+    $web->query('SELECT * FROM consent_events WHERE 1=0')->fetchAll();
+    $web->exec('INSERT INTO consent_events (user_id, item, action, source, created_at) SELECT user_id, item, action, source, created_at FROM consent_events WHERE 1=0');
+    check(true, 'Web can read and append consent events');
+    denied($web, 'UPDATE consent_events SET action=action WHERE 1=0', 'Web cannot change consent events');
+    denied($web, 'DELETE FROM consent_events WHERE 1=0', 'Web cannot delete consent events');
     $web->query('SELECT terminal_id, remote_app_id, state FROM btcpay_pos_links WHERE 1=0')->fetchAll();
     check(true, 'Web reads the POS app ID of a terminal (BTC invoices)');
     denied($web, 'SELECT marker FROM btcpay_pos_links WHERE 1=0', 'Web cannot read POS link markers');

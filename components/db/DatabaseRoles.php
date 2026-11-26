@@ -25,6 +25,8 @@ final class DatabaseRoles
     private const WEB_HISTORY = ['pos_terminal_openings', 'pos_tts_payments', 'pos_btc_payments', 'tts_lost_wallets'];
     /** wallet TTS del negozio: il gestore può anche rimuoverlo (le richieste create tengono l'indirizzo congelato) */
     private const WEB_DELETABLE = ['store_tts_wallets'];
+    /** SIP-040 A2: registro dei consensi in sola aggiunta (nessun UPDATE né DELETE dall'utente web) */
+    private const WEB_APPEND = ['consent_events'];
     private const WEB_READ = [
         'istat_comuni' => ['codice', 'denominazione', 'provincia', 'sigla'],
         'btcpay_merchant_accounts' => ['id', 'instance', 'merchant_id', 'state', 'last_error_code', 'updated_at'],
@@ -70,7 +72,7 @@ final class DatabaseRoles
             $statement = $admin->prepare('SELECT TABLE_NAME, COLUMN_NAME FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = ?');
             $statement->execute([$database]);
             foreach ($statement->fetchAll(\PDO::FETCH_ASSOC) as $row) $columns[$row['TABLE_NAME']][] = $row['COLUMN_NAME'];
-            foreach (array_merge(self::APP_TABLES, self::B1_TABLES, self::WEB_HISTORY, self::WEB_DELETABLE, ['migration', '_napay_bootstrap']) as $table) {
+            foreach (array_merge(self::APP_TABLES, self::B1_TABLES, self::WEB_HISTORY, self::WEB_DELETABLE, self::WEB_APPEND, ['migration', '_napay_bootstrap']) as $table) {
                 if (!isset($columns[$table])) throw new \RuntimeException('database_roles_preflight_failed');
             }
             foreach ([self::WEB_READ, self::WORKER_READ, ['btcpay_provisioning_jobs' => self::WEB_ENQUEUE]] as $matrix) {
@@ -87,6 +89,7 @@ final class DatabaseRoles
             foreach (self::APP_TABLES as $table) $grant('SELECT, INSERT, UPDATE, DELETE', $table, $web);
             foreach (self::WEB_HISTORY as $table) $grant('SELECT, INSERT, UPDATE', $table, $web);
             foreach (self::WEB_DELETABLE as $table) $grant('SELECT, INSERT, UPDATE, DELETE', $table, $web);
+            foreach (self::WEB_APPEND as $table) $grant('SELECT, INSERT', $table, $web);
             foreach (['migration', '_napay_bootstrap'] as $table) $grant('SELECT', $table, $web);
             foreach (self::WEB_READ as $table => $allowed) $grant(self::columnGrant('SELECT', $allowed), $table, $web);
             $grant(self::columnGrant('INSERT', self::WEB_ENQUEUE), 'btcpay_provisioning_jobs', $web);

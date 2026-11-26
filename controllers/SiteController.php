@@ -15,6 +15,7 @@ use app\models\forms\ActivationResendForm;
 use app\models\Users;
 use app\models\UserConsensus;
 use app\models\LegalDocuments;
+use app\models\ConsentEvents;
 use app\models\MemberProfiles;
 
 use app\components\Log;
@@ -47,10 +48,10 @@ class SiteController extends Controller
         return [
             'access' => [
                 'class' => AccessControl::class,
-                'only' => ['logout', 'accept-terms'],
+                'only' => ['logout', 'accept-terms', 'consents', 'marketing'],
                 'rules' => [
                     [
-                        'actions' => ['logout', 'accept-terms'],
+                        'actions' => ['logout', 'accept-terms', 'consents', 'marketing'],
                         'allow' => true,
                         'roles' => ['@'],
                         'denyCallback' => function ($rule, $action) {
@@ -68,6 +69,8 @@ class SiteController extends Controller
                     'activate' => ['GET', 'POST'],
                     'resend-activation' => ['GET', 'POST'],
                     'accept-terms' => ['GET', 'POST'],
+                    'consents' => ['GET'],
+                    'marketing' => ['POST'],
                 ],
             ],
         ];
@@ -237,7 +240,7 @@ class SiteController extends Controller
                     if ($user = $model->signup()){
                         $consensus->user_id = $user->id;
                         $consensus->consenso_condizioni_pos = 0;
-                        if (!$invalidConsent && $consensus->save()){
+                        if (!$invalidConsent && $consensus->save() && self::signupEvents($consensus)){
                             // A delivered link must refer to committed user/consent rows.
                             $transaction->commit();
                             // SIP-030: agli admin solo dopo la verifica dell'email (actionActivate), mai per registrazioni non confermate
@@ -287,6 +290,54 @@ class SiteController extends Controller
             'consensus' => $consensus,
             'legal' => $legal,
         ]);
+    }
+
+    /** SIP-040 A2: eventi della registrazione (stessa transazione della riga dei consensi). */
+    private static function signupEvents(UserConsensus $consensus): bool
+    {
+        $user = (int) $consensus->user_id;
+        ConsentEvents::record($user, 'statute', 'given', null, 'signup');
+        ConsentEvents::record($user, 'privacy', 'given', $consensus->privacy_document_id === null ? null : (int) $consensus->privacy_document_id, 'signup');
+        ConsentEvents::record($user, 'terms', 'given', $consensus->terms_document_id === null ? null : (int) $consensus->terms_document_id, 'signup');
+        ConsentEvents::record($user, 'marketing', (int) $consensus->consenso_marketing === 1 ? 'given' : 'refused', null, 'signup');
+        return true;
+    }
+
+    /** SIP-040 A2: i miei consensi (solo il proprio account): stato, versioni, storico; marketing modificabile. */
+    public function actionConsents($user = null)
+    {
+        $userId = (int) Yii::$app->user->id;
+        $readOnly = false;
+        if ($user !== null) {
+            // admin: storico di un socio in sola lettura; per gli altri l'ID altrui non esiste
+            if (!User::isAdministrator()) throw new \yii\web\NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+            $target = is_string($user) ? (int) Crypt::decrypt($user) : 0;
+            if ($target < 1 || Users::findOne($target) === null) throw new \yii\web\NotFoundHttpException(Yii::t('app', 'The requested page does not exist.'));
+            $readOnly = $target !== $userId;
+            $userId = $target;
+        }
+        $consensus = UserConsensus::find()->where(['user_id' => $userId])->orderBy(['id' => SORT_DESC])->one();
+        return $this->render('consents', ['consensus' => $consensus, 'events' => ConsentEvents::history($userId), 'readOnly' => $readOnly]);
+    }
+
+    /** SIP-040 A2: dare o revocare il consenso marketing; un evento solo se il valore cambia. Mai altri consensi. */
+    public function actionMarketing()
+    {
+        $value = Yii::$app->request->post('marketing');
+        if (!in_array($value, ['0', '1'], true)) throw new BadRequestHttpException(Yii::t('app', 'Invalid request.'));
+        $userId = (int) Yii::$app->user->id;
+        $changed = Yii::$app->db->transaction(static function () use ($userId, $value): bool {
+            $row = UserConsensus::find()->where(['user_id' => $userId])->orderBy(['id' => SORT_DESC])->one();
+            if ($row === null || (int) $row->consenso_marketing === (int) $value) return false;
+            $row->consenso_marketing = (int) $value;
+            $row->timestamp_marketing = time();
+            if (!$row->save(false)) throw new \RuntimeException('consent_not_saved');
+            ConsentEvents::record($userId, 'marketing', $value === '1' ? 'given' : 'withdrawn', null, 'profile');
+            return true;
+        });
+        if ($changed) Log::event($value === '1' ? 'Marketing consent given' : 'Marketing consent withdrawn', Log::TYPE_DATA);
+        Yii::$app->session->setFlash('success', $value === '1' ? Yii::t('app', 'Marketing consent given.') : Yii::t('app', 'Marketing consent withdrawn.'));
+        return $this->redirect(['consents']);
     }
 
     /** SIP-040: nuova accettazione delle condizioni in vigore (TermsGate); la versione accettata è quella mostrata. */

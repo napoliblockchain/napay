@@ -172,3 +172,16 @@ Test previsti
   consenso dal profilo (un evento per cambiamento, nessuno se invariato), CSRF e solo POST,
   profilo altrui vietato, admin in sola lettura, backfill senza eventi per valori 0, permessi DB
   senza UPDATE/DELETE, utente eliminato -> evento anonimo.
+
+### A2 - implementazione e test (2026-11-26)
+
+- File: migration `m261126_130000_create_consent_events` (tabella + pregresso), `models/ConsentEvents.php`,
+  `DatabaseRoles` (categoria WEB_APPEND: SELECT, INSERT), `SiteController` (eventi della registrazione,
+  `consents` con vista admin in sola lettura via `?user=`, `marketing` POST), `TermsGate` (evento `reaccept`
+  in transazione; `site/consents` e `site/marketing` liberi anche prima della nuova accettazione),
+  `views/site/consents.php`, link in `navbar.php` e in `association/member.php`, catalogo it-IT.
+- Test: `tests/application/consent-events.php` **23 PASS** (nel runner legal-documents.sh, dopo i 49 dei
+  documenti e prima della gara reale 2 PASS); `database-roles.sh` 78 (web: lettura e aggiunta sì, UPDATE e
+  DELETE no); `runtime.sh` completa verde; `navigation.sh` 117.
+- Limiti: i controlli del pregresso verificano che non nascano consensi da valori 0; la corrispondenza 1:1
+  con le righe del dataset non è verificata riga per riga. Browser reale non provato.

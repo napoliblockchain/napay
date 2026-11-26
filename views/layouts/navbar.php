@@ -42,6 +42,7 @@ use app\components\User;
                                 'class'=>'dropdown-item', 'data-napay-activate-merchant-link'=>true,
                             ]) ?>
                         <?php endif ?>
+                        <?= Html::a(Html::encode(Yii::t('app', 'My consents')), ['/site/consents'], ['class' => 'dropdown-item']) // SIP-040 A2 ?>
                         <?= Html::a(Html::encode(Yii::t('app', 'Change password')), ['/users/change-password'], ['class' => 'dropdown-item']) ?>
                         <?= Html::a(Html::encode(Yii::t('app', 'Logout')), ['/site/logout'], [
                             'data-method' => 'post', 'class' => 'dropdown-item',

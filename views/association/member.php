@@ -24,6 +24,7 @@ $writable = empty($this->params['associationReadOnly']);
                     <?= $this->render('_status', ['status' => $member->memberStatus(), 'label' => $member->memberStatusLabel()]) ?>
                     <?php if ($writable): ?>
                         <?= Html::a('<i class="fas fa-pen"></i>', ['member-update', 'id' => \app\components\Crypt::encrypt($member->id)], ['class' => 'btn btn-sm btn-outline-secondary ms-2', 'title' => Yii::t('app', 'Modifica profilo')]) ?>
+                        <?= Html::a(Html::encode(Yii::t('app', 'Consents')), ['/site/consents', 'user' => \app\components\Crypt::encrypt($member->id)], ['class' => 'btn btn-sm btn-outline-secondary ms-2']) // SIP-040 A2, sola lettura ?>
                     <?php endif; ?>
                 </div>
             </div>

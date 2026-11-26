@@ -15,7 +15,8 @@ use app\models\UserConsensus;
  */
 final class TermsGate extends ActionFilter
 {
-    private const FREE_ROUTES = ['site/accept-terms', 'site/logout', 'site/error', 'legal/view'];
+    // i consensi (revoca del marketing) restano accessibili anche prima della nuova accettazione (art. 7.3 GDPR)
+    private const FREE_ROUTES = ['site/accept-terms', 'site/logout', 'site/error', 'legal/view', 'site/consents', 'site/marketing'];
 
     public function beforeAction($action)
     {
@@ -49,6 +50,11 @@ final class TermsGate extends ActionFilter
         $row->consenso_condizioni = 1;
         $row->timestamp_condizioni = $now;
         $row->terms_document_id = $documentId;
-        return $row->save(false);
+        // stato ed evento insieme; solo le condizioni, mai il marketing (SIP-041)
+        return UserConsensus::getDb()->transaction(static function () use ($row, $userId, $documentId): bool {
+            if (!$row->save(false)) return false;
+            \app\models\ConsentEvents::record($userId, 'terms', 'given', $documentId, 'reaccept');
+            return true;
+        });
     }
 }

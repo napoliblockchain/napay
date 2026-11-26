@@ -15,6 +15,7 @@ awk '
 ' "$root/tests/docker/runtime.sh" > "$private/runtime.sh"
 cat >> "$private/runtime.sh" <<'TESTS'
 compose exec -T web php /var/www/html/tests/application/legal-documents.php
+compose exec -T web php /var/www/html/tests/application/consent-events.php
 # RV3: prima bozza da due processi/connessioni sovrapposti
 compose exec -T web php /var/www/html/tests/application/legal-documents-race.php prepare
 compose exec -T web php /var/www/html/tests/application/legal-documents-race.php a > "$work/race-a.log" & race_a=$!
