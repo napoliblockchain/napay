@@ -15,5 +15,11 @@ awk '
 ' "$root/tests/docker/runtime.sh" > "$private/runtime.sh"
 cat >> "$private/runtime.sh" <<'TESTS'
 compose exec -T web php /var/www/html/tests/application/legal-documents.php
+# RV3: prima bozza da due processi/connessioni sovrapposti
+compose exec -T web php /var/www/html/tests/application/legal-documents-race.php prepare
+compose exec -T web php /var/www/html/tests/application/legal-documents-race.php a > "$work/race-a.log" & race_a=$!
+compose exec -T web php /var/www/html/tests/application/legal-documents-race.php b > "$work/race-b.log" & race_b=$!
+wait "$race_a"; wait "$race_b"
+cat "$work/race-a.log" "$work/race-b.log" | compose exec -T web php /var/www/html/tests/application/legal-documents-race.php verify
 TESTS
 sh "$private/runtime.sh"

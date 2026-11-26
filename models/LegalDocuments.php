@@ -33,6 +33,8 @@ class LegalDocuments extends ActiveRecord
     /** segnaposto dei modelli standard: un testo che lo contiene non si pubblica */
     public const PLACEHOLDER = '[DA APPROVARE';
     public const MAX_BODY = 200000;
+    private const DRAFT_ATTEMPTS = 3;
+    private const DRAFT_LOCK_SECONDS = 5;
 
     public static function tableName()
     {
@@ -144,23 +146,35 @@ class LegalDocuments extends ActiveRecord
     {
         if (!self::validType($type)) throw new \InvalidArgumentException('invalid_type');
         $db = self::getDb();
-        try {
-            return $db->transaction(static function () use ($db, $type, $title, $body, $userId): self {
-                // righe del tipo bloccate: due richieste concorrenti non calcolano la stessa versione
-                $db->createCommand('SELECT id FROM ' . self::tableName() . ' WHERE type=:t FOR UPDATE', [':t' => $type])->queryColumn();
+        // lock con nome per tipo, valido anche senza righe (RV3): le richieste concorrenti si mettono in fila
+        $lock = 'napay-legal-draft-' . $type;
+        for ($attempt = 1; $attempt <= self::DRAFT_ATTEMPTS; $attempt++) {
+            if ((int) $db->createCommand('SELECT GET_LOCK(:l, :t)', [':l' => $lock, ':t' => self::DRAFT_LOCK_SECONDS])->queryScalar() !== 1) {
+                throw new \RuntimeException('draft_busy');
+            }
+            try {
+                return $db->transaction(static function () use ($type, $title, $body, $userId): self {
+                    $open = self::findOne(['type' => $type, 'status' => self::DRAFT]);
+                    if ($open !== null) return $open;
+                    $draft = new static(['type' => $type, 'version' => static::nextVersion($type), 'title' => $title, 'body' => $body,
+                        'status' => self::DRAFT, 'created_by' => $userId]);
+                    if (!$draft->save()) throw new \RuntimeException('draft_not_saved');
+                    return $draft;
+                });
+            } catch (IntegrityException $error) {
+                // versione già presa: si usa la bozza aperta, mai un errore 500
                 $open = self::findOne(['type' => $type, 'status' => self::DRAFT]);
                 if ($open !== null) return $open;
-                $draft = new static(['type' => $type, 'version' => static::nextVersion($type), 'title' => $title, 'body' => $body,
-                    'status' => self::DRAFT, 'created_by' => $userId]);
-                if (!$draft->save()) throw new \RuntimeException('draft_not_saved');
-                return $draft;
-            });
-        } catch (IntegrityException $error) {
-            // versione presa da una richiesta concorrente: si usa la sua bozza, mai un errore 500
-            $open = self::findOne(['type' => $type, 'status' => self::DRAFT]);
-            if ($open !== null) return $open;
-            throw new \RuntimeException('draft_busy');
+                throw new \RuntimeException('draft_busy');
+            } catch (\yii\db\Exception $error) {
+                // solo deadlock e lock timeout si ritentano, in una nuova transazione; gli altri errori non si mascherano
+                if (!in_array((int) ($error->errorInfo[1] ?? 0), [1205, 1213], true)) throw $error;
+                if ($attempt === self::DRAFT_ATTEMPTS) throw new \RuntimeException('draft_busy');
+            } finally {
+                $db->createCommand('SELECT RELEASE_LOCK(:l)', [':l' => $lock])->queryScalar();
+            }
         }
+        throw new \RuntimeException('draft_busy');
     }
 
     /** Numero della prossima versione del tipo (bozze comprese). */
