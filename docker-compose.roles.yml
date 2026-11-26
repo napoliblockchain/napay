@@ -1,0 +1,62 @@
+# B1 role separation. Include after docker-compose.yml; secrets must be private files outside the repository.
+# Stop existing writers before a bootstrap upgrade: privileges are rebuilt without transactional GRANTs.
+services:
+  web:
+    environment:
+      NAPAY_DB_ROLE_MODE: "true"
+      NAPAY_DB_ROLE: web
+      NAPAY_DB_PASSWORD_FILE: ""
+  # il cron usa l'utente DB del web (stesse tabelle: soci, promemoria, pagamenti TTS, registro)
+  cron:
+    environment:
+      NAPAY_DB_ROLE_MODE: "true"
+      NAPAY_DB_ROLE: web
+      NAPAY_DB_PASSWORD_FILE: ""
+  bootstrap:
+    environment:
+      NAPAY_DB_ROLE_MODE: "true"
+      NAPAY_DB_ROLE: bootstrap
+      DB_USERNAME: ${NAPAY_DB_MIGRATOR_USERNAME:-napay_migrator}
+      DB_PASSWORD: ""
+      NAPAY_DB_PASSWORD_FILE: /run/secrets/napay_db_migrator_password
+      NAPAY_WEB_DB_USERNAME: ${DB_USERNAME:?Set web DB_USERNAME}
+      NAPAY_WEB_DB_PASSWORD: ${DB_PASSWORD:?Set web DB_PASSWORD}
+      NAPAY_DB_WORKER_USERNAME: ${NAPAY_DB_WORKER_USERNAME:-napay_worker}
+    secrets:
+      - mysql_root_password
+      - napay_db_migrator_password
+      - napay_db_worker_password
+  worker-db-check:
+    image: napay/bootstrap:dev
+    profiles: [db-check]
+    user: "${NAPAY_BOOTSTRAP_UID:-1000}:${NAPAY_BOOTSTRAP_GID:-1000}"
+    working_dir: /app
+    command: [php, docker/bootstrap-check.php]
+    restart: "no"
+    read_only: true
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    tmpfs: [/tmp]
+    environment:
+      DB_DSN: ${DB_DSN:?Set DB_DSN}
+      DB_DATABASE: ${DB_DATABASE:?Set DB_DATABASE}
+      DB_USERNAME: ${NAPAY_DB_WORKER_USERNAME:-napay_worker}
+      NAPAY_DB_PASSWORD_FILE: /run/secrets/napay_db_worker_password
+      NAPAY_DB_ROLE_MODE: "true"
+      NAPAY_DB_ROLE: worker
+      NAPAY_DB_WAIT_SECONDS: ${NAPAY_DB_WAIT_SECONDS:-120}
+    secrets: [napay_db_worker_password]
+    volumes:
+      - .:/app:ro
+    depends_on:
+      mysql:
+        condition: service_healthy
+      bootstrap:
+        condition: service_completed_successfully
+    networks: [database]
+
+secrets:
+  napay_db_migrator_password:
+    file: ${NAPAY_DB_MIGRATOR_SECRET_FILE:?Set external migrator secret}
+  napay_db_worker_password:
+    file: ${NAPAY_DB_WORKER_SECRET_FILE:?Set external worker secret}

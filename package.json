@@ -1,0 +1,17 @@
+{
+    "name": "yii2-app-basic",
+    "keywords": [
+        "yii2",
+        "framework",
+        "basic",
+        "project template"
+    ],
+    "scripts": {
+        "build-sw": "sh docker/sw/build.sh",
+        "web-push": "web-push",
+        "vapid-keys": "web-push generate-vapid-keys"
+    },
+    "dependencies": {
+        "web-push": "^3.5.0"
+    }
+}

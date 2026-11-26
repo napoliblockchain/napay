@@ -1,34 +1,42 @@
-assets/*
-!assets/.gitignore
+# nodejs modules
+node_modules
+package-lock.json
 
-protected/runtime/*
-!protected/runtime/.gitignore
+# windows thumbnail cache
+Thumbs.db
 
-protected/data/*.db
+# composer vendor dir
+/vendor
 
-protected/log/*
-!protected/log/.gitignore
+# runtime
+runtime/
 
-protected/qrcodes/*
-!protected/qrcodes/.gitignore
+# composer.lock is versioned for reproducible application installs.
 
-protected/privatekeys/*
-!protected/privatekeys/.gitignore
 
-custom/*
-!custom/.gitignore
+tests/_output/*
+tests/_support/_generated
 
-protected/verbali/*
-!protected/verbali/.gitignore
+#vagrant folder
+/.vagrant
 
-protected/uploads/*
-!protected/uploads/.gitignore
+# web/sw.js è versionato (generato da docker/sw/build.sh, verificato dai test)
 
-protected/products/*
-!protected/products/.gitignore
+# altri ignore
+.env
+.stignore
+.vscode/
 
-*.log
-*.db
+# Local application configuration
+/config/secrets.php
+.env.*
+!.env.example
 
-ChangeLog.md
-MysqlbyVersions.md
+# Database exports must never enter Git or the application document root.
+/backups/
+*.sql
+# dataset base del primo avvio in produzione (SIP-036 A5): solo schema, migration e livelli di privilegio
+!docker/base-dataset/napay-v2.sql
+*.sql.gz
+*.sql.partial
+*.sql.gz.partial
