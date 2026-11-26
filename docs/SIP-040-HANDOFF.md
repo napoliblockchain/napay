@@ -134,3 +134,41 @@ File scritti (lint PHP verde, nessun commit):
 - Account senza riga di consensi (se esistono): l'accettazione crea una riga con statuto,
   privacy e marketing a 0 (non dati), mai valori inventati.
 - `vendor/`, `runtime/`, `web/assets/` presenti nel worktree solo per i test (ignorati da git).
+
+## 7. Fase A2 - storico e gestione dei consensi (contratto, 2026-11-26)
+
+Fase A approvata da COD su 8daac974 (RV1/RV2/RV3 chiusi). A2 parte sopra, stesso branch.
+
+Dati
+- Nuova tabella `consent_events`, **sola aggiunta**: utente, voce (`statute` | `privacy` |
+  `terms` | `marketing`), azione (`given` | `refused` | `withdrawn`), documento (riga
+  `legal_documents`, facoltativo), origine (`signup` | `profile` | `reaccept` | `backfill`),
+  data. Niente IP o browser nell'evento (minimizzazione: l'IP resta nel registro attività).
+- Permessi DB dell'utente web: solo SELECT e INSERT (nuova categoria in `DatabaseRoles`),
+  quindi nessuna modifica o cancellazione nemmeno per errore di codice.
+- Utente eliminato: `user_id` diventa NULL (anonimizzazione, SIP-039), l'evento resta.
+- `user_consensus` resta lo stato corrente; ogni cambiamento scrive stato + evento nella
+  stessa transazione.
+
+Eventi
+- Registrazione: statuto, informativa (presa visione, con versione se pubblicata), condizioni
+  (con versione), marketing `given` se scelto, `refused` se non scelto.
+- Nuova accettazione delle condizioni: `terms given`, origine `reaccept`. **Mai** eventi o
+  cambi sul marketing (vincolo SIP-041).
+- Profilo: marketing `given` / `withdrawn`, origine `profile`, solo se il valore cambia.
+- Pregresso (`backfill`, una volta, nella migration): un evento per ogni voce **con valore 1**
+  già registrato in `user_consensus`, con la sua data e la versione se nota. Valori 0 e righe
+  mancanti non generano eventi: niente consensi inventati.
+
+Interfaccia
+- Profilo (`users/view` del proprio account): sezione "I miei consensi" con stato e versioni
+  (link alle versioni pubbliche), marketing modificabile (POST + CSRF), storico eventi; per
+  statuto e condizioni rimando a uscita / cancellazione account (SIP-039).
+- Admin: storico in sola lettura nella scheda del socio (`association/member`).
+- Nessun altro utente vede i consensi altrui (anche via ID modificato).
+
+Test previsti
+- registrazione (eventi e versioni), nuova accettazione senza eventi marketing, revoca e nuovo
+  consenso dal profilo (un evento per cambiamento, nessuno se invariato), CSRF e solo POST,
+  profilo altrui vietato, admin in sola lettura, backfill senza eventi per valori 0, permessi DB
+  senza UPDATE/DELETE, utente eliminato -> evento anonimo.
