@@ -31,7 +31,7 @@ check(get('/workbox-sw.prod.v2.1.3.js')['status'] === 404, 'Old Workbox v2 remov
 check(preg_match('/precacheAndRoute\((\[.*?\])\)/s', $sw['body'], $m) === 1 && !str_contains($sw['body'], '__WB_MANIFEST'), 'Precache manifest injected');
 $manifest = json_decode($m[1], true);
 check(is_array($manifest) && count($manifest) >= 3, 'Precache manifest is valid JSON');
-$allowed = '#^(offline\.html|manifest\.json|favicon\.ico|bundles/site/images/logo\.png|brand/(icon|maskable)(-\d+)?\.(png|svg)|brand/apple-touch-icon\.png)$#';
+$allowed = '#^(offline\.html|manifest\.json|favicon\.ico|brand/(icon|maskable|logo-wordmark)(-\d+)?\.(png|svg)|brand/apple-touch-icon\.png)$#';
 foreach ($manifest as $entry) {
     $file = $root . '/web/' . $entry['url'];
     check(preg_match($allowed, $entry['url']) === 1, 'Only static shell files precached: ' . $entry['url']);

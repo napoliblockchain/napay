@@ -6,7 +6,6 @@ module.exports = {
     'offline.html',
     'manifest.json',
     'favicon.ico',
-    'bundles/site/images/logo.png',
     // icone dell'app (stile Napay, 2026-11-16)
     'brand/*.{png,svg}',
   ],
